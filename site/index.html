@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Koe (声) — Mac用 日本語音声入力</title>
+<meta name="description" content="Koe は macOS ネイティブの日本語音声入力アプリ。whisper.cpp + Metal GPU で完全ローカル処理。プライバシー最優先、クラウド不要、0.5秒で変換。">
+<meta property="og:title" content="Koe (声) — Mac用 日本語音声入力">
+<meta property="og:description" content="完全ローカル。日本語に最適化された音声入力。whisper.cpp + Metal で爆速変換。">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0a;--card:#141414;--border:#222;--text:#e8e8e8;--muted:#888;--accent:#ff3b30;--accent2:#ff9500;--grad:linear-gradient(135deg,#ff3b30,#ff9500)}
+body{font-family:'Inter','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);line-height:1.7;-webkit-font-smoothing:antialiased}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+.container{max-width:960px;margin:0 auto;padding:0 24px}
+
+/* Hero */
+.hero{text-align:center;padding:100px 0 80px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(255,59,48,.08) 0%,transparent 70%);pointer-events:none}
+.hero-icon{width:120px;height:120px;margin:0 auto 32px;position:relative}
+.hero-icon svg{width:100%;height:100%}
+.hero h1{font-size:56px;font-weight:700;letter-spacing:-2px;margin-bottom:8px}
+.hero h1 span{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero .tagline{font-size:20px;color:var(--muted);margin-bottom:12px;font-weight:400}
+.hero .sub{font-size:15px;color:#666;margin-bottom:40px}
+
+.dl-btn{display:inline-flex;align-items:center;gap:10px;background:var(--grad);color:#fff;font-size:17px;font-weight:600;padding:16px 36px;border-radius:14px;border:none;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.dl-btn:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(255,59,48,.3);text-decoration:none;color:#fff}
+.dl-btn svg{width:20px;height:20px}
+.dl-sub{font-size:13px;color:#555;margin-top:12px}
+
+/* Stats */
+.stats{display:flex;justify-content:center;gap:48px;padding:40px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:80px}
+.stat{text-align:center}
+.stat-val{font-size:32px;font-weight:700;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.stat-label{font-size:13px;color:var(--muted);margin-top:4px}
+
+/* Section */
+section{padding:60px 0}
+.section-title{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:var(--accent);margin-bottom:8px}
+.section-heading{font-size:36px;font-weight:700;letter-spacing:-1px;margin-bottom:16px}
+.section-desc{font-size:16px;color:var(--muted);max-width:600px;margin-bottom:48px}
+
+/* Feature grid */
+.features{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feat{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 24px;transition:border-color .2s}
+.feat:hover{border-color:#333}
+.feat-icon{font-size:28px;margin-bottom:14px}
+.feat h3{font-size:16px;font-weight:600;margin-bottom:8px}
+.feat p{font-size:14px;color:var(--muted);line-height:1.6}
+
+/* Japanese section */
+.jp-section{background:linear-gradient(180deg,rgba(255,59,48,.04),transparent);border-radius:24px;padding:60px 48px;margin:40px 0}
+.jp-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:32px}
+.jp-item{display:flex;gap:16px;align-items:flex-start}
+.jp-item .icon{flex-shrink:0;width:44px;height:44px;background:rgba(255,59,48,.1);border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.jp-item h4{font-size:15px;font-weight:600;margin-bottom:4px}
+.jp-item p{font-size:13px;color:var(--muted);line-height:1.5}
+
+/* How it works */
+.steps{display:flex;gap:24px;counter-reset:step}
+.step{flex:1;position:relative;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px 24px}
+.step::before{counter-increment:step;content:counter(step);position:absolute;top:-14px;left:20px;width:28px;height:28px;background:var(--grad);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
+.step h3{font-size:15px;font-weight:600;margin-bottom:6px;margin-top:8px}
+.step p{font-size:13px;color:var(--muted);line-height:1.5}
+
+/* Comparison table */
+.compare{width:100%;border-collapse:collapse;margin-top:32px;font-size:14px}
+.compare th{text-align:left;padding:12px 16px;font-weight:600;border-bottom:2px solid var(--border);color:var(--muted);font-size:13px;text-transform:uppercase;letter-spacing:1px}
+.compare td{padding:12px 16px;border-bottom:1px solid var(--border)}
+.compare tr:last-child td{border-bottom:none}
+.compare .hl{background:rgba(255,59,48,.06)}
+.compare .hl td:first-child{font-weight:600;color:var(--accent)}
+.check{color:#34c759}
+.cross{color:#555}
+
+/* Footer */
+footer{border-top:1px solid var(--border);padding:40px 0;text-align:center;color:#555;font-size:13px}
+footer a{color:#777}
+
+/* Install section */
+.install-code{background:#111;border:1px solid var(--border);border-radius:12px;padding:20px 24px;font-family:'SF Mono',monospace;font-size:14px;color:#ccc;margin-top:24px;position:relative;overflow-x:auto}
+.install-code .comment{color:#555}
+.install-code .cmd{color:#ff9500}
+
+/* UI Showcase */
+.ui-showcase{display:flex;gap:32px;justify-content:center;flex-wrap:wrap;margin-top:48px}
+.ui-mock{background:#1a1a1a;border:1px solid #2a2a2a;border-radius:20px;overflow:hidden;width:320px;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.ui-mock-titlebar{height:32px;background:#222;display:flex;align-items:center;padding:0 12px;gap:6px}
+.ui-mock-dot{width:10px;height:10px;border-radius:50%}
+.ui-mock-dot.r{background:#ff5f57}.ui-mock-dot.y{background:#ffbd2e}.ui-mock-dot.g{background:#28c840}
+.ui-mock-body{padding:24px;min-height:200px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ui-mock-label{font-size:12px;color:#555;text-align:center;margin-top:12px;letter-spacing:1px;text-transform:uppercase}
+
+/* Recording overlay mock */
+.mock-overlay{background:rgba(0,0,0,.85);border-radius:28px;padding:14px 28px;display:flex;align-items:center;gap:12px}
+.mock-bars{display:flex;align-items:center;gap:3px;height:28px}
+.mock-bar{width:3px;border-radius:2px;background:var(--accent);animation:mock-pulse 1.2s ease-in-out infinite}
+.mock-bar:nth-child(1){height:8px;animation-delay:0s}
+.mock-bar:nth-child(2){height:16px;animation-delay:.1s}
+.mock-bar:nth-child(3){height:24px;animation-delay:.2s}
+.mock-bar:nth-child(4){height:20px;animation-delay:.3s}
+.mock-bar:nth-child(5){height:28px;animation-delay:.15s}
+.mock-bar:nth-child(6){height:14px;animation-delay:.25s}
+.mock-bar:nth-child(7){height:22px;animation-delay:.05s}
+.mock-bar:nth-child(8){height:10px;animation-delay:.35s}
+.mock-bar:nth-child(9){height:18px;animation-delay:.2s}
+.mock-bar:nth-child(10){height:6px;animation-delay:.3s}
+.mock-bar:nth-child(11){height:12px;animation-delay:.1s}
+.mock-bar:nth-child(12){height:20px;animation-delay:.25s}
+@keyframes mock-pulse{0%,100%{transform:scaleY(.4);opacity:.5}50%{transform:scaleY(1);opacity:1}}
+.mock-rec-dot{width:10px;height:10px;border-radius:50%;background:#ff3b30;animation:mock-blink 1s ease-in-out infinite}
+@keyframes mock-blink{0%,100%{opacity:1}50%{opacity:.3}}
+.mock-rec-text{font-size:13px;color:#ccc;font-weight:500}
+
+/* Recognizing mock */
+.mock-recog{display:flex;align-items:center;gap:6px}
+.mock-recog-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);animation:mock-bounce .6s ease-in-out infinite}
+.mock-recog-dot:nth-child(2){animation-delay:.15s}
+.mock-recog-dot:nth-child(3){animation-delay:.3s}
+@keyframes mock-bounce{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(-6px);opacity:1}}
+
+/* Floating button mock */
+.mock-float-btn{width:52px;height:52px;border-radius:50%;background:rgba(30,30,30,.9);border:2px solid #333;display:flex;align-items:center;justify-content:center;position:relative;cursor:pointer}
+.mock-float-btn.rec{border-color:#ff3b30;animation:mock-ring-pulse 1.5s ease-in-out infinite}
+@keyframes mock-ring-pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,59,48,.4)}50%{box-shadow:0 0 0 8px rgba(255,59,48,0)}}
+.mock-float-btn svg{width:22px;height:22px;fill:#ccc}
+.mock-float-btn.rec svg{fill:#ff3b30}
+
+/* Menu bar mock */
+.mock-menubar{background:#2a2a2a;border-radius:6px;padding:8px 0;min-width:240px;font-size:13px}
+.mock-menu-item{padding:4px 16px;color:#ddd;display:flex;justify-content:space-between}
+.mock-menu-item.disabled{color:#666}
+.mock-menu-item.hover{background:rgba(255,59,48,.15);border-radius:4px;margin:0 4px;padding:4px 12px}
+.mock-menu-sep{height:1px;background:#3a3a3a;margin:4px 0}
+
+/* Settings mock */
+.mock-settings{width:100%;font-size:13px}
+.mock-tabs{display:flex;gap:0;border-bottom:1px solid #333;margin-bottom:16px}
+.mock-tab{padding:8px 14px;color:#666;font-size:12px;border-bottom:2px solid transparent}
+.mock-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.mock-setting-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;color:#aaa}
+.mock-setting-row .label{color:#ccc}
+.mock-toggle{width:36px;height:20px;border-radius:10px;background:#444;position:relative}
+.mock-toggle.on{background:#34c759}
+.mock-toggle::after{content:'';position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:left .2s}
+.mock-toggle.on::after{left:18px}
+.mock-select{background:#333;border:1px solid #444;border-radius:6px;padding:3px 8px;color:#ccc;font-size:12px}
+
+/* Responsive */
+@media(max-width:768px){
+  .hero h1{font-size:36px}
+  .features{grid-template-columns:1fr}
+  .jp-grid{grid-template-columns:1fr}
+  .stats{flex-direction:column;gap:24px}
+  .steps{flex-direction:column}
+  .hero{padding:60px 0 40px}
+  .jp-section{padding:40px 24px}
+  .ui-showcase{flex-direction:column;align-items:center}
+  .ui-mock{width:100%;max-width:360px}
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-icon">
+    <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="120" height="120" rx="28" fill="#0a0a0a"/>
+      <rect x="1" y="1" width="118" height="118" rx="27" stroke="url(#g)" stroke-width="1.5" stroke-opacity="0.3"/>
+      <g transform="translate(60,60)">
+        <rect x="-3" y="-28" width="6" height="56" rx="3" fill="url(#g)"/>
+        <rect x="-15" y="-20" width="6" height="40" rx="3" fill="url(#g)" opacity="0.8"/>
+        <rect x="9" y="-22" width="6" height="44" rx="3" fill="url(#g)" opacity="0.85"/>
+        <rect x="-27" y="-14" width="6" height="28" rx="3" fill="url(#g)" opacity="0.6"/>
+        <rect x="21" y="-16" width="6" height="32" rx="3" fill="url(#g)" opacity="0.65"/>
+        <rect x="-39" y="-8" width="6" height="16" rx="3" fill="url(#g)" opacity="0.4"/>
+        <rect x="33" y="-10" width="6" height="20" rx="3" fill="url(#g)" opacity="0.45"/>
+      </g>
+      <defs><linearGradient id="g" x1="0" y1="0" x2="120" y2="120"><stop stop-color="#ff3b30"/><stop offset="1" stop-color="#ff9500"/></linearGradient></defs>
+    </svg>
+  </div>
+  <h1><span>Koe</span> (声)</h1>
+  <p class="tagline">Mac で最も速い日本語音声入力</p>
+  <p class="sub">whisper.cpp + Metal GPU — 完全ローカル処理・クラウド不要・プライバシー最優先</p>
+  <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest" target="_blank">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+    ダウンロード (macOS)
+  </a>
+  <p class="dl-sub">macOS 13+ / Apple Silicon (M1以降) / 無料・オープンソース</p>
+</div>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat-val">&lt; 0.5秒</div>
+    <div class="stat-label">音声認識速度</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">100%</div>
+    <div class="stat-label">ローカル処理</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">0円</div>
+    <div class="stat-label">月額料金</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val">60秒+</div>
+    <div class="stat-label">連続録音</div>
+  </div>
+</div>
+
+<!-- UI Showcase -->
+<section>
+  <div class="section-title">インターフェース</div>
+  <h2 class="section-heading">シンプルで邪魔にならないUI</h2>
+  <p class="section-desc">画面に溶け込むミニマルなオーバーレイ。作業の流れを一切止めません。</p>
+
+  <div class="ui-showcase">
+
+    <!-- Recording state -->
+    <div>
+      <div class="ui-mock" style="width:340px">
+        <div class="ui-mock-body" style="min-height:160px;background:linear-gradient(180deg,#111,#0d0d0d)">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:20px">
+            <div class="mock-overlay">
+              <div class="mock-rec-dot"></div>
+              <div class="mock-bars">
+                <div class="mock-bar"></div><div class="mock-bar"></div><div class="mock-bar"></div>
+                <div class="mock-bar"></div><div class="mock-bar"></div><div class="mock-bar"></div>
+                <div class="mock-bar"></div><div class="mock-bar"></div><div class="mock-bar"></div>
+                <div class="mock-bar"></div><div class="mock-bar"></div><div class="mock-bar"></div>
+              </div>
+              <div class="mock-rec-text">0:03</div>
+            </div>
+            <div style="font-size:11px;color:#555;text-align:center;line-height:1.6">
+              話している間、波形がリアルタイムに動く<br>
+              話し終わると自動停止
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ui-mock-label">録音中のオーバーレイ</div>
+    </div>
+
+    <!-- Recognizing + result -->
+    <div>
+      <div class="ui-mock" style="width:340px">
+        <div class="ui-mock-body" style="min-height:160px;background:linear-gradient(180deg,#111,#0d0d0d)">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:24px">
+            <div class="mock-overlay" style="gap:16px">
+              <div class="mock-recog">
+                <div class="mock-recog-dot"></div>
+                <div class="mock-recog-dot"></div>
+                <div class="mock-recog-dot"></div>
+              </div>
+              <div class="mock-rec-text">認識中…</div>
+            </div>
+            <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 16px;max-width:280px">
+              <div style="font-size:12px;color:#ff9500;margin-bottom:4px;font-weight:500">認識結果</div>
+              <div style="font-size:14px;color:#e0e0e0;line-height:1.5">今日のミーティングの議事録を作成してください</div>
+              <div style="font-size:10px;color:#444;margin-top:6px">0.42秒 — whisper.cpp (Metal)</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ui-mock-label">認識 → テキスト変換</div>
+    </div>
+
+    <!-- Settings window -->
+    <div>
+      <div class="ui-mock" style="width:340px">
+        <div class="ui-mock-titlebar">
+          <div class="ui-mock-dot r"></div>
+          <div class="ui-mock-dot y"></div>
+          <div class="ui-mock-dot g"></div>
+          <span style="font-size:12px;color:#888;margin-left:auto;margin-right:auto">Koe 設定</span>
+        </div>
+        <div class="ui-mock-body" style="padding:16px;align-items:stretch;justify-content:flex-start;min-height:180px">
+          <div class="mock-settings">
+            <div class="mock-tabs">
+              <div class="mock-tab active">一般</div>
+              <div class="mock-tab">アプリ</div>
+              <div class="mock-tab">AI</div>
+              <div class="mock-tab">辞書</div>
+              <div class="mock-tab">履歴</div>
+            </div>
+            <div class="mock-setting-row">
+              <span class="label">ショートカット</span>
+              <span class="mock-select">⌘⌥V</span>
+            </div>
+            <div class="mock-setting-row">
+              <span class="label">録音モード</span>
+              <span class="mock-select">ホールド</span>
+            </div>
+            <div class="mock-setting-row">
+              <span class="label">認識エンジン</span>
+              <span class="mock-select">whisper.cpp</span>
+            </div>
+            <div class="mock-setting-row">
+              <span class="label">フローティングボタン</span>
+              <div class="mock-toggle on"></div>
+            </div>
+            <div class="mock-setting-row">
+              <span class="label">ウェイクワード</span>
+              <div class="mock-toggle"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ui-mock-label">設定画面</div>
+    </div>
+
+  </div>
+
+  <!-- Floating button + menu bar row -->
+  <div class="ui-showcase" style="margin-top:32px">
+    <!-- Floating button states -->
+    <div>
+      <div class="ui-mock" style="width:220px">
+        <div class="ui-mock-body" style="min-height:120px;flex-direction:row;gap:32px">
+          <div style="text-align:center">
+            <div class="mock-float-btn">
+              <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:8px">待機</div>
+          </div>
+          <div style="text-align:center">
+            <div class="mock-float-btn rec">
+              <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:8px">録音中</div>
+          </div>
+        </div>
+      </div>
+      <div class="ui-mock-label">フローティングボタン</div>
+    </div>
+
+    <!-- Menu bar -->
+    <div>
+      <div class="ui-mock" style="width:280px">
+        <div class="ui-mock-body" style="padding:16px;align-items:stretch;justify-content:flex-start;min-height:120px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#ccc"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+            <span style="font-size:12px;color:#888">メニューバー</span>
+          </div>
+          <div class="mock-menubar">
+            <div class="mock-menu-item disabled">Koe — ⌘⌥V で録音</div>
+            <div class="mock-menu-sep"></div>
+            <div class="mock-menu-item hover">⚫ 議事録開始 <span style="color:#666">⌘M</span></div>
+            <div class="mock-menu-sep"></div>
+            <div class="mock-menu-item">設定… <span style="color:#666">⌘,</span></div>
+            <div class="mock-menu-sep"></div>
+            <div class="mock-menu-item">終了 <span style="color:#666">⌘Q</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="ui-mock-label">ステータスバーメニュー</div>
+    </div>
+
+    <!-- App-specific profile -->
+    <div>
+      <div class="ui-mock" style="width:280px">
+        <div class="ui-mock-body" style="padding:16px;align-items:stretch;justify-content:flex-start;min-height:120px">
+          <div style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:10px">アプリ別プロファイル</div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1e1e1e;border-radius:8px;border:1px solid #2a2a2a">
+              <span style="font-size:16px">⬛</span>
+              <div>
+                <div style="font-size:12px;color:#ddd;font-weight:500">Ghostty</div>
+                <div style="font-size:10px;color:#666">CLI・Git・シェル用語</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1e1e1e;border-radius:8px;border:1px solid #2a2a2a">
+              <span style="font-size:16px">🔵</span>
+              <div>
+                <div style="font-size:12px;color:#ddd;font-weight:500">VS Code</div>
+                <div style="font-size:10px;color:#666">プログラミング用語</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1e1e1e;border-radius:8px;border:1px solid #2a2a2a">
+              <span style="font-size:16px">🔨</span>
+              <div>
+                <div style="font-size:12px;color:#ddd;font-weight:500">Xcode</div>
+                <div style="font-size:10px;color:#666">Swift・SwiftUI</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ui-mock-label">アプリごとに最適化</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- Japanese Strength -->
+<section>
+  <div class="section-title">日本語特化</div>
+  <h2 class="section-heading">日本語音声入力のために設計</h2>
+  <p class="section-desc">macOS標準の音声入力では満足できない。Koe は日本語の認識精度と速度を徹底的に追求しました。</p>
+
+  <div class="jp-section">
+    <div class="jp-grid">
+      <div class="jp-item">
+        <div class="icon">🎯</div>
+        <div>
+          <h4>アプリ別プロンプト最適化</h4>
+          <p>ターミナルでは「git commit」「kubectl」、Xcodeでは「SwiftUI」「@State」など、使用中のアプリに合わせてWhisperへのヒントを自動切替。専門用語の認識精度が飛躍的に向上。</p>
+        </div>
+      </div>
+      <div class="jp-item">
+        <div class="icon">⚡</div>
+        <div>
+          <h4>投機的実行 (Speculative Execution)</h4>
+          <p>話し終わった瞬間にWhisperへ送信開始。0.85秒の無音確認を待たず、結果を先取りキャッシュ。体感レイテンシ500ms削減。</p>
+        </div>
+      </div>
+      <div class="jp-item">
+        <div class="icon">🗾</div>
+        <div>
+          <h4>whisper.cpp large-v3-turbo</h4>
+          <p>OpenAIのWhisper large-v3-turboモデルをローカル実行。日本語WER(単語誤り率)で業界最高水準。Metal GPUで0.5秒変換。</p>
+        </div>
+      </div>
+      <div class="jp-item">
+        <div class="icon">📝</div>
+        <div>
+          <h4>テキスト展開辞書</h4>
+          <p>「メアド」→ メールアドレスに自動展開。「じゅうしょ」→ 住所に変換。よく使うフレーズをO(1)高速ルックアップ。</p>
+        </div>
+      </div>
+      <div class="jp-item">
+        <div class="icon">🤖</div>
+        <div>
+          <h4>LLM後処理 (オプション)</h4>
+          <p>認識結果をLLMで自動修正。句読点の補正、敬語への変換、コードフォーマットなど、アプリごとに異なる指示を設定可能。</p>
+        </div>
+      </div>
+      <div class="jp-item">
+        <div class="icon">🗣️</div>
+        <div>
+          <h4>ウェイクワード (ハンズフリー)</h4>
+          <p>「ヘイこえ」で録音開始。MFCC+DTW自社エンジンで外部依存ゼロ。テンプレート登録で自分の声に最適化。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section>
+  <div class="section-title">機能</div>
+  <h2 class="section-heading">開発者のための音声入力</h2>
+  <p class="section-desc">キーボードから手を離さずに、思考の速度でテキスト入力。</p>
+
+  <div class="features">
+    <div class="feat">
+      <div class="feat-icon">⌨️</div>
+      <h3>グローバルホットキー</h3>
+      <p>⌘⌥V でどのアプリからでも即起動。ホールド / トグルモード選択可。ESCでキャンセル。</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🔇</div>
+      <h3>無音自動停止</h3>
+      <p>話し終わると0.85秒で自動的に認識開始。長い発話はSpace長押しで延長。</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🖥️</div>
+      <h3>アプリ別設定</h3>
+      <p>Terminal、VS Code、Xcode…アプリごとに言語・プロンプト・LLM指示を自動切替。</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">📋</div>
+      <h3>議事録モード</h3>
+      <p>会議中の発話をタイムスタンプ付きで自動記録。デスクトップにテキストファイル出力。</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🔒</div>
+      <h3>完全プライベート</h3>
+      <p>音声データは一切外部送信なし。全処理がMac上で完結。機密情報も安心。</p>
+    </div>
+    <div class="feat">
+      <div class="feat-icon">🎙️</div>
+      <h3>フローティングボタン</h3>
+      <p>画面上のマイクボタンをワンクリックで録音。ドラッグで好きな位置に配置。</p>
+    </div>
+  </div>
+</section>
+
+<!-- Comparison -->
+<section>
+  <div class="section-title">比較</div>
+  <h2 class="section-heading">なぜ Koe を選ぶのか</h2>
+  <p class="section-desc"></p>
+
+  <table class="compare">
+    <thead>
+      <tr>
+        <th></th>
+        <th>Koe</th>
+        <th>macOS標準</th>
+        <th>クラウドSTT</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="hl">
+        <td>日本語精度</td>
+        <td><span class="check">◎ Whisper large-v3</span></td>
+        <td>△ やや低い</td>
+        <td>○ 高い</td>
+      </tr>
+      <tr class="hl">
+        <td>速度</td>
+        <td><span class="check">◎ &lt;0.5秒 (Metal)</span></td>
+        <td>△ 1-3秒</td>
+        <td>△ ネットワーク依存</td>
+      </tr>
+      <tr class="hl">
+        <td>プライバシー</td>
+        <td><span class="check">◎ 完全ローカル</span></td>
+        <td>○ 一部ローカル</td>
+        <td><span class="cross">✕ クラウド送信</span></td>
+      </tr>
+      <tr class="hl">
+        <td>月額費用</td>
+        <td><span class="check">◎ 無料</span></td>
+        <td>○ 無料</td>
+        <td><span class="cross">✕ 従量課金</span></td>
+      </tr>
+      <tr class="hl">
+        <td>アプリ別最適化</td>
+        <td><span class="check">◎ プロンプト切替</span></td>
+        <td><span class="cross">✕ なし</span></td>
+        <td><span class="cross">✕ なし</span></td>
+      </tr>
+      <tr class="hl">
+        <td>ウェイクワード</td>
+        <td><span class="check">◎ カスタム可</span></td>
+        <td><span class="cross">✕ なし</span></td>
+        <td><span class="cross">✕ なし</span></td>
+      </tr>
+      <tr class="hl">
+        <td>専門用語対応</td>
+        <td><span class="check">◎ プロンプト指定</span></td>
+        <td><span class="cross">✕ 不可</span></td>
+        <td>△ 一部対応</td>
+      </tr>
+      <tr class="hl">
+        <td>LLM後処理</td>
+        <td><span class="check">◎ 内蔵</span></td>
+        <td><span class="cross">✕ なし</span></td>
+        <td><span class="cross">✕ なし</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- How to install -->
+<section>
+  <div class="section-title">インストール</div>
+  <h2 class="section-heading">3分でセットアップ</h2>
+  <p class="section-desc"></p>
+
+  <div class="steps">
+    <div class="step">
+      <h3>whisper.cpp を入れる</h3>
+      <p>Homebrew で whisper.cpp とモデルをインストール。Metal GPU が自動で有効化。</p>
+    </div>
+    <div class="step">
+      <h3>Koe をダウンロード</h3>
+      <p>GitHub Releases から Koe.app.zip をダウンロード。アプリケーションフォルダに移動。</p>
+    </div>
+    <div class="step">
+      <h3>権限を許可して完了</h3>
+      <p>マイク・アクセシビリティ権限を許可。⌘⌥V を押せば即座に音声入力開始。</p>
+    </div>
+  </div>
+
+  <div class="install-code">
+    <span class="comment"># 1. whisper.cpp インストール</span><br>
+    <span class="cmd">brew install whisper-cpp</span><br><br>
+    <span class="comment"># 2. 日本語最適モデルをダウンロード</span><br>
+    <span class="cmd">brew install huggingface-cli</span><br>
+    <span class="cmd">huggingface-cli download ggerganov/whisper.cpp \</span><br>
+    <span class="cmd">&nbsp;&nbsp;ggml-large-v3-turbo.bin --local-dir ~/.local/share/whisper</span><br><br>
+    <span class="comment"># 3. Koe をダウンロード・起動</span><br>
+    <span class="cmd">curl -L -o /tmp/Koe.zip \</span><br>
+    <span class="cmd">&nbsp;&nbsp;https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.app.zip</span><br>
+    <span class="cmd">unzip /tmp/Koe.zip -d /Applications</span><br>
+    <span class="cmd">open /Applications/Koe.app</span>
+  </div>
+</section>
+
+<!-- OSS -->
+<section style="text-align:center;padding:80px 0">
+  <div class="section-title">オープンソース</div>
+  <h2 class="section-heading">100% 無料・MIT License</h2>
+  <p style="color:var(--muted);font-size:16px;margin-bottom:32px">コードはすべて公開。フォーク・改変・商用利用自由。</p>
+  <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift" target="_blank" style="background:#24292e">
+    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+    GitHub で見る
+  </a>
+</section>
+
+</div>
+
+<footer>
+  <div class="container">
+    <p>Koe (声) &mdash; Built with Swift + whisper.cpp<br>
+    <a href="https://github.com/yukihamada/Koe-swift" target="_blank">GitHub</a> &middot;
+    <a href="https://github.com/yukihamada/Koe-swift/issues" target="_blank">Issues</a> &middot;
+    MIT License</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -17,8 +17,11 @@ class LLMProcessor {
             "max_tokens": 1000,
             "stream": false
         ]
-        guard let url = URL(string: "\(s.llmBaseURL)/v1/chat/completions"),
+        let urlStr = "\(s.llmBaseURL)/v1/chat/completions"
+        guard let url = URL(string: urlStr),
+              url.scheme == "https" || url.host == "127.0.0.1" || url.host == "localhost",
               let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            if URL(string: urlStr)?.scheme == "http" { klog("LLM: HTTP rejected (use HTTPS)") }
             completion(text); return
         }
         var req = URLRequest(url: url)

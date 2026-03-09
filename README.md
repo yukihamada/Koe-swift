@@ -9,6 +9,10 @@
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange?style=flat-square&logo=swift)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
+**[koe.elio.love](https://koe.elio.love)** — 公式サイト
+
+[![Download](https://img.shields.io/github/v/release/yukihamada/Koe-swift?label=Download&style=for-the-badge&color=ff3b30)](https://github.com/yukihamada/Koe-swift/releases/latest)
+
 </div>
 
 ---
@@ -25,17 +29,32 @@
 | 📝 **議事録モード** | 録音を自動でタイムスタンプ付きテキストに保存 |
 | 🔤 **テキスト展開** | 「メアド」→ 「yuki@example.com」などの辞書 |
 | 🎛️ **アプリ別プロファイル** | VS Code ではコード、ターミナルではコマンドに最適化 |
+| 🔄 **オートアップデート** | GitHub Releases から自動更新 |
 
-## セットアップ
+## インストール
+
+### ワンライナー (推奨)
 
 ```bash
-# 1. whisper.cpp をインストール
-brew install whisper-cpp
+# 1. whisper.cpp + モデルをインストール
+brew install whisper-cpp && brew install huggingface-cli && \
+huggingface-cli download ggerganov/whisper.cpp ggml-large-v3-turbo.bin --local-dir ~/.local/share/whisper
 
-# 2. 日本語特化モデルをダウンロード (513MB)
-whisper-download-ggml-model kotoba-whisper-v2.0-q5_0
+# 2. Koe をダウンロード & 起動
+curl -L -o /tmp/Koe.zip https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.app.zip && \
+unzip -o /tmp/Koe.zip -d /Applications && open /Applications/Koe.app
+```
 
-# 3. Koe をビルド＆起動
+### 手動インストール
+
+1. [Koe.app.zip をダウンロード](https://github.com/yukihamada/Koe-swift/releases/latest)
+2. `Koe.app` を `/Applications` に移動
+3. 起動してマイク・アクセシビリティ権限を許可
+4. 設定画面でモデルパスを指定
+
+### ソースからビルド
+
+```bash
 git clone https://github.com/yukihamada/Koe-swift
 cd Koe-swift
 bash build.sh
@@ -55,7 +74,7 @@ bash build.sh
 マイク → AVAudioRecorder (16kHz WAV)
   ↓
 whisper-server (Metal GPU, オンメモリ)
-  ↓  ~0.5秒
+  ↓  ~0.5秒 (投機的実行で更に短縮)
 LLM後処理 (任意)
   ↓
 CGEvent Cmd+V → テキスト入力
@@ -64,5 +83,8 @@ CGEvent Cmd+V → テキスト入力
 ---
 
 <div align="center">
+
+**[koe.elio.love](https://koe.elio.love)**
+
 <sub>Built with ♥ in Tokyo · Fully local · No subscription</sub>
 </div>

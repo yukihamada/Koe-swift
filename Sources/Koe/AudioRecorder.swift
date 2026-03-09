@@ -2,7 +2,7 @@ import AVFoundation
 
 class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     private var recorder: AVAudioRecorder?
-    private var tempURL: URL?
+    var tempURL: URL?
 
     private let settings: [String: Any] = [
         AVFormatIDKey:             Int(kAudioFormatLinearPCM),
@@ -13,10 +13,17 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         AVLinearPCMIsFloatKey:     false,
     ]
 
+    /// アプリ専用ディレクトリ (0700) に音声ファイルを保存
+    private static let audioDir: URL = {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("com.yuki.koe")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true,
+                                                  attributes: [.posixPermissions: 0o700])
+        return dir
+    }()
+
     // 事前にバッファを確保してレイテンシをゼロにする
     func prepare() {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("koe_rec.wav")
+        let url = Self.audioDir.appendingPathComponent("rec.wav")
         try? FileManager.default.removeItem(at: url)
         tempURL = url
         guard let r = try? AVAudioRecorder(url: url, settings: settings) else { return }
@@ -38,8 +45,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         recorder = nil
         guard let src = tempURL else { return nil }
         // 認識が終わるまで上書きされないよう別名にコピー
-        let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent("koe_recognize.wav")
+        let dest = Self.audioDir.appendingPathComponent("recognize.wav")
         try? FileManager.default.removeItem(at: dest)
         try? FileManager.default.copyItem(at: src, to: dest)
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0

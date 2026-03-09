@@ -25,8 +25,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var silenceStart: Date?
 
     // Space key extension
-    private var spaceHeld    = false  // 現在スペース長押し中
-    private var spacePressed = false  // 今回の録音でスペースを1回押した
+    private var spaceHeld    = false
+    private var spacePressed = false
+
+    // Speculative execution
+    private var speculativeResult: String? = nil
+    private var speculationID = 0
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -40,6 +44,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         WakeWordDetector.shared.onDetected = { [weak self] in self?.startRecording() }
         if AppSettings.shared.wakeWordEnabled { WakeWordDetector.shared.start() }
         if AppSettings.shared.floatingButtonEnabled { FloatingButton.shared.show() }
+
+        // 起動後3秒でアップデート確認（サイレント）
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            AutoUpdater.shared.checkForUpdates(silent: true)
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -67,6 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: meetingTitle, action: #selector(toggleMeetingMode), keyEquivalent: "m")
         menu.addItem(.separator())
         menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "アップデートを確認…", action: #selector(checkUpdate), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "終了", action: #selector(quit), keyEquivalent: "q")
         statusItem.menu = menu
@@ -174,8 +184,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         recordingStart = Date()
         speechDetected = false
         silenceStart   = nil
-        spaceHeld      = false
-        spacePressed   = false
+        spaceHeld        = false
+        spacePressed     = false
+        speculativeResult = nil
+        speculationID    += 1  // 前回の投機を無効化
         setIcon(recording: true)
         if overlay == nil { overlay = OverlayWindow() }
         overlay?.show(state: .recording)
@@ -202,30 +214,71 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.show(state: .recognizing)
 
         let profile = AppSettings.shared.profile(for: activeAppBundleID)
+
+        // 投機実行の結果がすでに届いていればそれを使う（whisper呼び出しをスキップ）
+        if let cached = speculativeResult {
+            klog("Speculation: cache hit '\(cached)'")
+            speculativeResult = nil
+            handleRecognitionResult(cached, profile: profile)
+            return
+        }
+
+        // 投機実行が進行中なら完了まで待つ（上書きコールバック方式）
+        let myID = speculationID
         speech.recognize(url: audioURL,
                          prompt: profile?.prompt ?? "",
                          languageOverride: profile?.language ?? "") { [weak self] raw in
-            guard let self else { return }
-            let expanded = AppSettings.shared.expand(raw)
-            let instruction = profile?.llmInstruction ?? ""
-            LLMProcessor.shared.process(text: expanded, instruction: instruction) { final in
-                DispatchQueue.main.async {
-                    self.overlay?.hide()
-                    klog("final: '\(final)'")
-                    if !final.isEmpty {
-                        HistoryStore.shared.add(final)
-                        MeetingMode.shared.append(text: final)
-                        self.typer.type(final)
-                    }
-                    self.rebuildMenu()
-                    // Restart wake word after done
-                    if AppSettings.shared.wakeWordEnabled {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            WakeWordDetector.shared.start()
-                        }
+            guard let self, self.speculationID == myID else { return }
+            self.handleRecognitionResult(raw, profile: profile)
+        }
+    }
+
+    private func handleRecognitionResult(_ raw: String, profile: AppProfile?) {
+        // Whisperが返す改行を除去（明示的に指示がない限り改行なし）
+        let cleaned = raw.replacingOccurrences(of: "\n", with: " ")
+                         .replacingOccurrences(of: "\r", with: "")
+                         .trimmingCharacters(in: .whitespaces)
+        let expanded = AppSettings.shared.expand(cleaned)
+        let instruction = profile?.llmInstruction ?? ""
+        LLMProcessor.shared.process(text: expanded, instruction: instruction) { [weak self] final in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.overlay?.hide()
+                klog("final: '\(final)'")
+                if !final.isEmpty {
+                    HistoryStore.shared.add(final)
+                    MeetingMode.shared.append(text: final)
+                    self.typer.type(final)
+                }
+                self.rebuildMenu()
+                if AppSettings.shared.wakeWordEnabled {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        WakeWordDetector.shared.start()
                     }
                 }
             }
+        }
+    }
+
+    private func startSpeculation() {
+        guard AppSettings.shared.recognitionEngine == .whisperCpp,
+              WhisperServer.shared.isAlive(),
+              let srcURL = recorder.tempURL else { return }
+        let specURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("com.yuki.koe/spec.wav")
+        try? FileManager.default.removeItem(at: specURL)
+        guard (try? FileManager.default.copyItem(at: srcURL, to: specURL)) != nil else { return }
+
+        let myID = speculationID
+        let profile = AppSettings.shared.profile(for: activeAppBundleID)
+        let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
+        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+        klog("Speculation: firing (id=\(myID))")
+
+        WhisperServer.shared.transcribe(url: specURL, language: lang, prompt: profile?.prompt ?? "") { [weak self] text in
+            guard let self, self.speculationID == myID, let text, !text.isEmpty else { return }
+            klog("Speculation: result ready '\(text)'")
+            DispatchQueue.main.async { self.speculativeResult = text }
         }
     }
 
@@ -248,9 +301,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if level >= voiceThreshold {
             speechDetected = true
-            silenceStart = nil
+            // 発話再開 → 投機結果を無効化
+            if silenceStart != nil {
+                silenceStart = nil
+                speculationID += 1
+                speculativeResult = nil
+                klog("Speculation: invalidated (speech resumed)")
+            }
         } else if speechDetected && level < silenceThreshold {
-            if silenceStart == nil { silenceStart = Date() }
+            if silenceStart == nil {
+                silenceStart = Date()
+                // 無音検知開始と同時に投機実行を起動
+                startSpeculation()
+            }
             if let s = silenceStart, Date().timeIntervalSince(s) >= silenceAutoStop {
                 klog("Auto-stop: silence detected after speech")
                 stopAndRecognize()
@@ -293,6 +356,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleMeetingMode() {
         MeetingMode.shared.toggle()
         rebuildMenu()
+    }
+
+    @objc private func checkUpdate() {
+        AutoUpdater.shared.checkForUpdates(silent: false)
     }
 
     @objc private func quit() {

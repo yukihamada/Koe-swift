@@ -1,0 +1,8 @@
+*.o
+*.d
+.DS_Store
+Koe.app/Contents/MacOS/Koe
+*.icns
+icon_1024.png
+Koe.iconset/
+koe_debug.log

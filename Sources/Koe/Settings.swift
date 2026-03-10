@@ -206,7 +206,7 @@ class AppSettings: ObservableObject {
         autoCopyToClipboard   = ud.bool(forKey: "autoCopyToClipboard")
         notifyOnComplete      = ud.bool(forKey: "notifyOnComplete")
         floatingButtonEnabled = ud.bool(forKey: "floatingButtonEnabled")
-        llmEnabled  = ud.bool(forKey: "llmEnabled")
+        llmEnabled  = ud.object(forKey: "llmEnabled") as? Bool ?? true  // デフォルトON
         llmUseLocal = ud.object(forKey: "llmUseLocal") as? Bool ?? true  // デフォルトはローカル
         llmBaseURL  = ud.string(forKey: "llmBaseURL") ?? "https://api.chatweb.ai"
         llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""

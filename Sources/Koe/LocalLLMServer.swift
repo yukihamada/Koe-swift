@@ -25,9 +25,17 @@ final class LlamaContext {
 
     static let availableModels: [LLMModel] = [
         LLMModel(
+            id: "qwen3-0.6b-q8",
+            name: "Qwen3 0.6B (Q8_0)",
+            description: "最軽量・即応。メモリ16GB以下に最適",
+            sizeMB: 750,
+            url: "https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
+            fileName: "Qwen3-0.6B-Q8_0.gguf"
+        ),
+        LLMModel(
             id: "qwen3-1.7b-q4",
             name: "Qwen3 1.7B (Q4_K_M)",
-            description: "超軽量・高速。基本的な後処理に最適",
+            description: "軽量・高速。基本的な後処理に最適",
             sizeMB: 1280,
             url: "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
             fileName: "Qwen3-1.7B-Q4_K_M.gguf"
@@ -35,7 +43,7 @@ final class LlamaContext {
         LLMModel(
             id: "qwen3-1.7b-q8",
             name: "Qwen3 1.7B (Q8_0)",
-            description: "高品質・軽量。精度重視の後処理に",
+            description: "高品質。精度重視の後処理に",
             sizeMB: 2170,
             url: "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf",
             fileName: "Qwen3-1.7B-Q8_0.gguf"
@@ -43,7 +51,7 @@ final class LlamaContext {
         LLMModel(
             id: "qwen3.5-4b-q4",
             name: "Qwen3.5 4B (Q4_K_M)",
-            description: "高性能。複雑な文章修正・要約に",
+            description: "高性能。メモリ32GB以上推奨",
             sizeMB: 2740,
             url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
             fileName: "Qwen3.5-4B-Q4_K_M.gguf"
@@ -65,7 +73,13 @@ final class LlamaContext {
     }
 
     var selectedModelID: String {
-        get { UserDefaults.standard.string(forKey: "localLLMModelID") ?? "qwen3-1.7b-q4" }
+        get {
+            // 初回はメモリに応じた推奨モデルをデフォルトに
+            if let saved = UserDefaults.standard.string(forKey: "localLLMModelID") {
+                return saved
+            }
+            return MemoryMonitor.recommendedLLMModel() ?? "qwen3-0.6b-q8"
+        }
         set { UserDefaults.standard.set(newValue, forKey: "localLLMModelID") }
     }
 
@@ -74,6 +88,12 @@ final class LlamaContext {
     }
 
     // MARK: - Load / Unload
+
+    /// ロード前にメモリ不足の警告メッセージを返す（nil = 安全）
+    var memoryWarning: String? {
+        guard let model = selectedModel else { return nil }
+        return MemoryMonitor.warningText(modelSizeMB: model.sizeMB)
+    }
 
     func loadModel(completion: @escaping (Bool) -> Void) {
         guard !isLoading, !isLoaded else { completion(isLoaded); return }
@@ -87,18 +107,31 @@ final class LlamaContext {
             completion(false); return
         }
 
+        // メモリチェック
+        if !MemoryMonitor.canLoad(modelSizeMB: model.sizeMB) {
+            klog("Llama: insufficient memory for \(model.name) (\(MemoryMonitor.availableMemoryMB)MB available)")
+            completion(false); return
+        }
+
         isLoading = true
-        klog("Llama: loading \(model.name)...")
+        klog("Llama: loading \(model.name) (\(MemoryMonitor.statusText))...")
 
         queue.async { [weak self] in
             guard let self else { return }
 
-            // Initialize backends (Metal etc.)
+            // Initialize backends (Metal etc.) — whisperと共有済みなら軽い
             ggml_backend_load_all()
 
-            // Load model with GPU
+            // メモリに応じてGPUレイヤー数を調整
             var mparams = llama_model_default_params()
-            mparams.n_gpu_layers = 99  // 全レイヤーGPU
+            let availMB = MemoryMonitor.availableMemoryMB
+            if availMB > model.sizeMB * 2 {
+                mparams.n_gpu_layers = 99  // 全レイヤーGPU
+            } else {
+                // メモリ少ない場合は一部CPUにオフロード
+                mparams.n_gpu_layers = 20
+                klog("Llama: limited GPU layers (low memory)")
+            }
 
             guard let mdl = llama_model_load_from_file(path, mparams) else {
                 DispatchQueue.main.async {

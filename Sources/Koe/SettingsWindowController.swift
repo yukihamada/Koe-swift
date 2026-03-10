@@ -645,6 +645,14 @@ struct WhisperCppSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Memory status
+            HStack(spacing: 4) {
+                Image(systemName: "memorychip")
+                    .foregroundColor(.secondary)
+                Text(MemoryMonitor.statusText)
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+
             // Current model
             HStack(spacing: 6) {
                 Image(systemName: dl.isModelAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -754,11 +762,20 @@ struct LocalLLMSettingsView: View {
     @State private var downloadProgress: Double = 0
     @State private var downloadDetail = ""
     @State private var loading = false
+    @State private var loadError = ""
 
     private let llm = LlamaContext.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Memory status
+            HStack(spacing: 4) {
+                Image(systemName: "memorychip")
+                    .foregroundColor(.secondary)
+                Text(MemoryMonitor.statusText)
+                    .font(.caption2).foregroundColor(.secondary)
+            }
+
             // Status
             HStack(spacing: 6) {
                 Image(systemName: llm.isLoaded ? "checkmark.circle.fill" : "xmark.circle.fill")
@@ -775,6 +792,22 @@ struct LocalLLMSettingsView: View {
                 }
             }
 
+            if !loadError.isEmpty {
+                Text(loadError)
+                    .font(.caption2).foregroundColor(.red)
+            }
+
+            // Recommended model
+            if !llm.isLoaded, let recID = MemoryMonitor.recommendedLLMModel() {
+                if let rec = LlamaContext.availableModels.first(where: { $0.id == recID }) {
+                    Text("推奨: \(rec.name) (空きメモリから判定)")
+                        .font(.caption2).foregroundColor(.blue)
+                }
+            } else if !llm.isLoaded && MemoryMonitor.recommendedLLMModel() == nil {
+                Text("⚠ メモリ不足のためローカルLLMは使用できません。クラウドAPIをご利用ください。")
+                    .font(.caption2).foregroundColor(.orange)
+            }
+
             // Model list
             ForEach(LlamaContext.availableModels, id: \.id) { model in
                 HStack(spacing: 8) {
@@ -787,6 +820,13 @@ struct LocalLLMSettingsView: View {
                                     .padding(.horizontal, 4).padding(.vertical, 1)
                                     .background(Color.green.opacity(0.2))
                                     .cornerRadius(3)
+                            }
+                            // Memory warning badge
+                            if let warning = MemoryMonitor.warningText(modelSizeMB: model.sizeMB) {
+                                let _ = warning  // suppress unused warning
+                                Text("⚠")
+                                    .font(.system(size: 9))
+                                    .help("メモリ不足の可能性があります")
                             }
                         }
                         Text("\(model.description) — \(model.sizeMB)MB")
@@ -824,6 +864,7 @@ struct LocalLLMSettingsView: View {
             if llm.isLoaded {
                 Button("アンロード（メモリ解放）") {
                     llm.unload()
+                    loadError = ""
                 }
                 .foregroundColor(.red)
                 .buttonStyle(.link)
@@ -833,12 +874,26 @@ struct LocalLLMSettingsView: View {
     }
 
     private func loadModel(_ model: LlamaContext.LLMModel) {
+        loadError = ""
+
+        // メモリ事前チェック
+        if let warning = MemoryMonitor.warningText(modelSizeMB: model.sizeMB) {
+            loadError = warning
+        }
+
+        if !MemoryMonitor.canLoad(modelSizeMB: model.sizeMB) {
+            loadError = "メモリ不足 (空き\(MemoryMonitor.availableMemoryMB)MB)。他のアプリを閉じるか小さいモデルを選んでください。"
+            return
+        }
+
         loading = true
         llm.selectedModelID = model.id
         llm.unload()
         llm.loadModel { ok in
             loading = false
-            if !ok { klog("LocalLLM settings: failed to load \(model.name)") }
+            if !ok {
+                loadError = "ロード失敗。メモリ不足の可能性があります (空き\(MemoryMonitor.availableMemoryMB)MB)"
+            }
         }
     }
 

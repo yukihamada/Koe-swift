@@ -31,18 +31,19 @@ enum MemoryMonitor {
     }
 
     /// モデルロードに必要な推定メモリ (MB)
-    /// ファイルサイズ + GPU バッファ + KVキャッシュのオーバーヘッド
+    /// ファイルサイズ + Metal GPU バッファ + KVキャッシュ + ggml初期化オーバーヘッド
     static func estimatedMemoryMB(modelSizeMB: Int, contextSize: Int = 2048) -> Int {
-        // モデルウェイト + GPU バッファ (~20% overhead) + KVキャッシュ
-        let kvCacheMB = contextSize / 10  // 大まかな見積もり
-        return Int(Double(modelSizeMB) * 1.2) + kvCacheMB
+        // モデルウェイト × 1.5 (GPU バッファ + Metal overhead) + KVキャッシュ + Metal初期化 (~500MB)
+        let kvCacheMB = contextSize / 8
+        let metalOverhead = 500  // Metal library init + residency sets
+        return Int(Double(modelSizeMB) * 1.5) + kvCacheMB + metalOverhead
     }
 
-    /// ロード可能かチェック。最低 1GB の余裕を残す。
+    /// ロード可能かチェック。Whisperも既にMetalを使っているため余裕を多めに。
     static func canLoad(modelSizeMB: Int, contextSize: Int = 2048) -> Bool {
         let needed = estimatedMemoryMB(modelSizeMB: modelSizeMB, contextSize: contextSize)
         let available = availableMemoryMB
-        let safetyMarginMB = 1024  // 1GB はシステム用に確保
+        let safetyMarginMB = 2048  // 2GB はシステム + Whisper用に確保
         let canFit = available - needed > safetyMarginMB
         klog("Memory: available=\(available)MB needed=\(needed)MB safety=\(safetyMarginMB)MB → \(canFit ? "OK" : "NG")")
         return canFit
@@ -62,19 +63,19 @@ enum MemoryMonitor {
 
     /// メモリ状況に基づいたLLMモデル推奨
     static func recommendedLLMModel() -> String? {
-        let avail = availableMemoryMB
-        // Whisperが既にロード済みと仮定して、残りメモリから判定
-        let whisperUsageMB = 700  // Kotoba Q5 + GPU buffer
-        let remaining = avail - whisperUsageMB
-
-        if remaining > 4000 {
-            return "qwen3.5-4b-q4"    // 2740MB — 十分な余裕
-        } else if remaining > 2500 {
-            return "qwen3-1.7b-q8"    // 2170MB
-        } else if remaining > 2000 {
-            return "qwen3-1.7b-q4"    // 1280MB
+        let total = totalMemoryMB
+        // 物理メモリ総量で判定（空きは変動するので総量ベースが安定）
+        // Whisper (Kotoba Q5 ~700MB GPU) + Metal overhead (~500MB) を差し引く
+        if total >= 64_000 {
+            return "qwen3.5-4b-q4"    // 2740MB — 64GB以上
+        } else if total >= 32_000 {
+            return "qwen3-1.7b-q4"    // 1280MB — 32GB
+        } else if total >= 24_000 {
+            return "qwen3-0.6b-q8"    // 750MB — 24GB
+        } else if total >= 16_000 {
+            return "qwen3-0.6b-q8"    // 750MB — 16GBはこれが限界
         } else {
-            return nil  // メモリ不足 — LLM使用不可
+            return nil  // 8GB以下 — LLM使用不可
         }
     }
 
@@ -89,8 +90,8 @@ enum MemoryMonitor {
     static func warningText(modelSizeMB: Int) -> String? {
         let needed = estimatedMemoryMB(modelSizeMB: modelSizeMB)
         let available = availableMemoryMB
-        if available - needed < 1024 {
-            return "⚠ メモリ不足の可能性 (空き\(available)MB, 必要\(needed)MB+1024MB)。クラッシュする場合は他のアプリを閉じるか、より小さいモデルを選択してください。"
+        if available - needed < 2048 {
+            return "⚠ メモリ不足の可能性 (空き\(available)MB, 必要~\(needed)MB)。クラッシュする場合は他のアプリを閉じるか、より小さいモデルを選択してください。"
         }
         return nil
     }

@@ -288,27 +288,64 @@ footer a{color:#777}
     </svg>
   </div>
   <h1><span>Koe</span> <span data-i18n="hero_title_suffix">(声)</span></h1>
-  <p class="tagline" data-i18n="hero_tagline">Mac で最も速い日本語音声入力</p>
-  <p class="sub" data-i18n="hero_sub">whisper.cpp + Metal GPU — 完全ローカル処理・クラウド不要・プライバシー最優先</p>
-  <div class="dl-buttons">
-    <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-      <span data-i18n="dl_dmg">DMG をダウンロード</span>
-    </a>
-    <a class="dl-btn dl-btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-      <span data-i18n="dl_pkg">PKG をダウンロード</span>
-    </a>
+  <p class="tagline" data-i18n="hero_tagline">Mac & Windows で最も速い音声入力</p>
+  <p class="sub" data-i18n="hero_sub">whisper.cpp + Metal/CUDA GPU — 完全ローカル処理・20言語対応・クラウド不要</p>
+
+  <!-- Platform tabs -->
+  <div style="display:flex;gap:8px;justify-content:center;margin-bottom:16px">
+    <button onclick="showPlatform('mac')" id="tab-mac" class="dl-btn dl-btn-secondary" style="font-size:14px;padding:8px 20px;min-width:auto">macOS</button>
+    <button onclick="showPlatform('win')" id="tab-win" class="dl-btn dl-btn-secondary" style="font-size:14px;padding:8px 20px;min-width:auto">Windows</button>
   </div>
-  <p class="dl-sub" data-i18n="dl_sub">macOS 13+ / Apple Silicon & Intel 対応 / 無料・オープンソース</p>
+
+  <!-- macOS downloads -->
+  <div id="dl-mac">
+    <div class="dl-buttons">
+      <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        <span data-i18n="dl_pkg">PKG をダウンロード (推奨)</span>
+      </a>
+      <a class="dl-btn dl-btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        <span data-i18n="dl_dmg">DMG をダウンロード</span>
+      </a>
+    </div>
+    <p class="dl-sub" data-i18n="dl_sub">macOS 13+ / Apple Silicon & Intel / Metal GPU</p>
+  </div>
+
+  <!-- Windows downloads -->
+  <div id="dl-win" style="display:none">
+    <div class="dl-buttons">
+      <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest" style="background:linear-gradient(135deg,#0078D6,#00BCF2)">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        <span>Windows インストーラー</span>
+      </a>
+      <a class="dl-btn dl-btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases/latest">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        <span>ポータブル版 (koe.exe)</span>
+      </a>
+    </div>
+    <p class="dl-sub">Windows 10+ / x64 / NVIDIA CUDA GPU 対応</p>
+  </div>
+
   <div class="dl-compare">
-    <div class="dl-compare-item" data-i18n="dl_compare_dmg">
-      <strong>DMG 版</strong> — ドラッグ&ドロップでインストール。自分で Applications に配置。アンインストールはゴミ箱に入れるだけ。
-    </div>
     <div class="dl-compare-item" data-i18n="dl_compare_pkg">
-      <strong>PKG 版</strong> — ダブルクリックで自動インストール。Applications に自動配置。初心者におすすめ。
+      <strong>macOS</strong> — PKG (推奨) またはDMGでインストール。Metal GPUで超高速。ショートカット: ⌥⌘V
+    </div>
+    <div class="dl-compare-item">
+      <strong>Windows</strong> — インストーラーまたはポータブル版。CUDA GPUで超高速。ショートカット: Ctrl+Alt+V
     </div>
   </div>
+
+  <script>
+  function showPlatform(p){
+    document.getElementById('dl-mac').style.display=p==='mac'?'block':'none';
+    document.getElementById('dl-win').style.display=p==='win'?'block':'none';
+    document.getElementById('tab-mac').style.opacity=p==='mac'?'1':'0.5';
+    document.getElementById('tab-win').style.opacity=p==='win'?'1':'0.5';
+  }
+  // Auto-detect platform
+  (function(){var ua=navigator.userAgent;if(/Windows/.test(ua))showPlatform('win');else showPlatform('mac');})();
+  </script>
 </div>
 
 <!-- Stats -->

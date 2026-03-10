@@ -36,13 +36,13 @@
 ### ワンライナー (推奨)
 
 ```bash
-# 1. whisper.cpp + モデルをインストール
-brew install whisper-cpp && brew install huggingface-cli && \
-huggingface-cli download ggerganov/whisper.cpp ggml-large-v3-turbo.bin --local-dir ~/.local/share/whisper
+# 1. whisper.cpp + llama.cpp をインストール
+brew install whisper-cpp llama.cpp
 
-# 2. Koe をダウンロード & 起動
+# 2. Koe をダウンロード & 起動（モデルはアプリ内で自動ダウンロード）
 curl -L -o /tmp/Koe.zip https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.app.zip && \
 unzip -o /tmp/Koe.zip -d /Applications && open /Applications/Koe.app
+# デフォルト: Kotoba Whisper v2.0（日本語特化）、設定から他モデルにも切替可能
 ```
 
 ### 手動インストール

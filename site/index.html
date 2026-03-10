@@ -496,8 +496,8 @@ footer a{color:#777}
       <div class="jp-item">
         <div class="icon">🗾</div>
         <div>
-          <h4>whisper.cpp large-v3-turbo</h4>
-          <p>OpenAIのWhisper large-v3-turboモデルをローカル実行。日本語WER(単語誤り率)で業界最高水準。Metal GPUで0.5秒変換。</p>
+          <h4>Kotoba Whisper v2.0 (デフォルト)</h4>
+          <p>日本語特化のKotoba Whisperモデルをデフォルト採用。Large V3 Turbo等も選択可能。5つのモデルからアプリ内で切替。Metal GPUで高速変換。</p>
         </div>
       </div>
       <div class="jp-item">
@@ -510,8 +510,8 @@ footer a{color:#777}
       <div class="jp-item">
         <div class="icon">🤖</div>
         <div>
-          <h4>LLM後処理 (オプション)</h4>
-          <p>認識結果をLLMで自動修正。句読点の補正、敬語への変換、コードフォーマットなど、アプリごとに異なる指示を設定可能。</p>
+          <h4>LLM後処理 (ローカル / クラウド)</h4>
+          <p>認識結果をLLMで自動修正。llama.cpp (Qwen3) でローカル実行可能。句読点の補正、敬語への変換、コードフォーマットなど、アプリごとに異なる指示を設定可能。</p>
         </div>
       </div>
       <div class="jp-item">
@@ -583,7 +583,7 @@ footer a{color:#777}
     <tbody>
       <tr class="hl">
         <td>日本語精度</td>
-        <td><span class="check">◎ Whisper large-v3</span></td>
+        <td><span class="check">◎ Kotoba v2.0 / large-v3</span></td>
         <td>△ やや低い</td>
         <td>○ 高い</td>
       </tr>
@@ -655,11 +655,10 @@ footer a{color:#777}
   </div>
 
   <div class="install-code">
-    <span class="comment"># whisper.cpp + 日本語モデルをインストール</span><br>
-    <span class="cmd">brew install whisper-cpp</span><br>
-    <span class="cmd">brew install huggingface-cli</span><br>
-    <span class="cmd">huggingface-cli download ggerganov/whisper.cpp \</span><br>
-    <span class="cmd">&nbsp;&nbsp;ggml-large-v3-turbo.bin --local-dir ~/.local/share/whisper</span>
+    <span class="comment"># Koe をインストール（モデルはアプリ内で自動ダウンロード）</span><br>
+    <span class="cmd">brew install whisper-cpp llama.cpp</span><br>
+    <span class="comment"># デフォルト: Kotoba Whisper v2.0（日本語特化）</span><br>
+    <span class="comment"># 設定画面から Large V3 Turbo 等にも切替可能</span>
   </div>
 </section>
 

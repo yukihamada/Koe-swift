@@ -54,26 +54,20 @@ else
 fi
 
 # --- Step 2: Whisper model ---
-MODEL_DIR="$HOME/.local/share/whisper"
-MODEL_FILE="$MODEL_DIR/ggml-large-v3-turbo.bin"
+# モデルはアプリ内で自動ダウンロード（デフォルト: Kotoba Whisper v2.0 日本語特化）
+MODEL_DIR="$HOME/Library/Application Support/whisper"
+MODEL_FILE="$MODEL_DIR/ggml-kotoba-whisper-v2.0-q5_0.bin"
 
 info "音声認識モデルをチェック中..."
 if [[ -f "$MODEL_FILE" ]]; then
   ok "モデルは既にダウンロード済み ($(du -h "$MODEL_FILE" | cut -f1))"
 else
-  info "日本語最適モデルをダウンロード中 (~1.5GB)..."
-  if command -v huggingface-cli &>/dev/null; then
-    huggingface-cli download ggerganov/whisper.cpp ggml-large-v3-turbo.bin --local-dir "$MODEL_DIR"
-  elif command -v brew &>/dev/null; then
-    brew install huggingface-cli
-    huggingface-cli download ggerganov/whisper.cpp ggml-large-v3-turbo.bin --local-dir "$MODEL_DIR"
-  else
-    mkdir -p "$MODEL_DIR"
-    curl -L --progress-bar \
-      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin" \
-      -o "$MODEL_FILE"
-  fi
-  ok "モデルダウンロード完了"
+  info "Kotoba Whisper v2.0 (日本語特化) をダウンロード中 (~538MB)..."
+  mkdir -p "$MODEL_DIR"
+  curl -L --progress-bar \
+    "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0-q5_0.bin" \
+    -o "$MODEL_FILE"
+  ok "モデルダウンロード完了 (アプリ内で他モデルにも切替可能)"
 fi
 
 # --- Step 3: Koe.app ---

@@ -88,6 +88,7 @@ class AppSettings: ObservableObject {
 
     // LLM
     @Published var llmEnabled: Bool   { didSet { ud.set(llmEnabled,  forKey: "llmEnabled") } }
+    @Published var llmUseLocal: Bool  { didSet { ud.set(llmUseLocal, forKey: "llmUseLocal") } }
     @Published var llmBaseURL: String { didSet { ud.set(llmBaseURL,  forKey: "llmBaseURL") } }
     @Published var llmAPIKey: String  { didSet { ud.set(llmAPIKey,   forKey: "llmAPIKey") } }
     @Published var llmModel: String   { didSet { ud.set(llmModel,    forKey: "llmModel") } }
@@ -206,6 +207,7 @@ class AppSettings: ObservableObject {
         notifyOnComplete      = ud.bool(forKey: "notifyOnComplete")
         floatingButtonEnabled = ud.bool(forKey: "floatingButtonEnabled")
         llmEnabled  = ud.bool(forKey: "llmEnabled")
+        llmUseLocal = ud.object(forKey: "llmUseLocal") as? Bool ?? true  // デフォルトはローカル
         llmBaseURL  = ud.string(forKey: "llmBaseURL") ?? "https://api.chatweb.ai"
         llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""
         llmModel    = ud.string(forKey: "llmModel") ?? "auto"

@@ -465,12 +465,25 @@ struct AITab: View {
             Section {
                 Toggle("LLM後処理を有効にする", isOn: $s.llmEnabled)
                 if s.llmEnabled {
-                    HStack { Text("ベースURL"); TextField("https://api.chatweb.ai", text: $s.llmBaseURL).textFieldStyle(.roundedBorder) }
-                    HStack { Text("APIキー"); SecureFieldWithReveal(text: $s.llmAPIKey, placeholder: "cw_...") }
-                    HStack { Text("モデル"); TextField("auto", text: $s.llmModel).textFieldStyle(.roundedBorder) }
+                    Text("音声認識後にLLMで誤字修正・句読点追加を行います")
+                        .font(.caption).foregroundColor(.secondary)
+
+                    Picker("処理エンジン", selection: $s.llmUseLocal) {
+                        Text("ローカル (llama.cpp + Metal GPU)").tag(true)
+                        Text("クラウド (API)").tag(false)
+                    }
+
+                    if s.llmUseLocal {
+                        LocalLLMSettingsView()
+                    } else {
+                        HStack { Text("ベースURL"); TextField("https://api.chatweb.ai", text: $s.llmBaseURL).textFieldStyle(.roundedBorder) }
+                        HStack { Text("APIキー"); SecureFieldWithReveal(text: $s.llmAPIKey, placeholder: "cw_...") }
+                        HStack { Text("モデル"); TextField("auto", text: $s.llmModel).textFieldStyle(.roundedBorder) }
+                    }
+
                     Text("アプリタブで対象アプリごとに後処理の指示を設定できます").font(.caption).foregroundColor(.secondary)
                 }
-            } header: { Text("LLM後処理（chatweb.ai / OpenAI互換）") }
+            } header: { Text("LLM後処理") }
 
             Section {
                 Toggle("ウェイクワードで録音開始", isOn: $s.wakeWordEnabled)
@@ -731,6 +744,118 @@ struct WhisperCppSettingsView: View {
         }
         objc_setAssociatedObject(task, "obs", observer, .OBJC_ASSOCIATION_RETAIN)
         task.resume()
+    }
+}
+
+// MARK: - LocalLLMSettingsView
+
+struct LocalLLMSettingsView: View {
+    @State private var downloading = false
+    @State private var downloadProgress: Double = 0
+    @State private var downloadDetail = ""
+    @State private var loading = false
+
+    private let llm = LlamaContext.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Status
+            HStack(spacing: 6) {
+                Image(systemName: llm.isLoaded ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundColor(llm.isLoaded ? .green : .red)
+                if llm.isLoaded {
+                    Text("ローカルLLM: \(llm.selectedModel?.name ?? "不明") — Metal GPU")
+                        .font(.caption)
+                } else if loading {
+                    Text("モデルをロード中...")
+                        .font(.caption).foregroundColor(.orange)
+                } else {
+                    Text("モデル未ロード")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            }
+
+            // Model list
+            ForEach(LlamaContext.availableModels, id: \.id) { model in
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Text(model.name).font(.system(size: 12, weight: .medium))
+                            if model.id == llm.selectedModelID && llm.isLoaded {
+                                Text("使用中")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .padding(.horizontal, 4).padding(.vertical, 1)
+                                    .background(Color.green.opacity(0.2))
+                                    .cornerRadius(3)
+                            }
+                        }
+                        Text("\(model.description) — \(model.sizeMB)MB")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if llm.isDownloaded(model) {
+                        if model.id == llm.selectedModelID && llm.isLoaded {
+                            // Already active
+                        } else {
+                            Button("選択・ロード") {
+                                loadModel(model)
+                            }
+                            .controlSize(.small)
+                            .buttonStyle(.bordered)
+                            .disabled(loading)
+                        }
+                    } else {
+                        Button("DL") {
+                            startDownload(model)
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(downloading)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            if downloading {
+                ProgressView(value: downloadProgress, total: 100)
+                Text(downloadDetail).font(.caption2).foregroundColor(.secondary)
+            }
+
+            if llm.isLoaded {
+                Button("アンロード（メモリ解放）") {
+                    llm.unload()
+                }
+                .foregroundColor(.red)
+                .buttonStyle(.link)
+                .font(.caption)
+            }
+        }
+    }
+
+    private func loadModel(_ model: LlamaContext.LLMModel) {
+        loading = true
+        llm.selectedModelID = model.id
+        llm.unload()
+        llm.loadModel { ok in
+            loading = false
+            if !ok { klog("LocalLLM settings: failed to load \(model.name)") }
+        }
+    }
+
+    private func startDownload(_ model: LlamaContext.LLMModel) {
+        downloading = true
+        downloadProgress = 0
+        downloadDetail = "準備中..."
+
+        llm.downloadModel(model, progress: { pct, detail in
+            downloadProgress = pct
+            downloadDetail = detail
+        }) { ok in
+            downloading = false
+            if ok {
+                loadModel(model)
+            }
+        }
     }
 }
 

@@ -26,10 +26,25 @@ if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
     exit 1
 fi
 
+# llama.cpp library paths
+LLAMA_LIB="/opt/homebrew/lib"
+
+# Verify llama dylib exists
+if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then
+    echo "⚠ libllama.dylib not found at $LLAMA_LIB"
+    echo "  Install: brew install llama.cpp"
+    exit 1
+fi
+
 swiftc Sources/Koe/*.swift \
     -I Sources/CWhisper \
+    -I Sources/CLlama \
     -L "$WHISPER_LIB" \
+    -L "$LLAMA_LIB" \
     -lwhisper \
+    -lllama \
+    -lggml \
+    -lggml-base \
     -framework AppKit \
     -framework AVFoundation \
     -framework Speech \
@@ -42,7 +57,7 @@ swiftc Sources/Koe/*.swift \
     -O \
     -o "$APP/Contents/MacOS/Koe"
 
-# Embed whisper dylibs in app bundle for self-contained distribution
+# Embed whisper + llama dylibs in app bundle for self-contained distribution
 FRAMEWORKS="$APP/Contents/Frameworks"
 mkdir -p "$FRAMEWORKS"
 for lib in libwhisper.dylib libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib; do
@@ -50,6 +65,10 @@ for lib in libwhisper.dylib libggml.dylib libggml-base.dylib libggml-cpu.dylib l
         cp "$WHISPER_LIB/$lib" "$FRAMEWORKS/"
     fi
 done
+# llama.cpp dylib
+if [ -f "$LLAMA_LIB/libllama.dylib" ]; then
+    cp "$LLAMA_LIB/libllama.dylib" "$FRAMEWORKS/"
+fi
 
 # Fix dylib rpaths so the app finds embedded libraries
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Koe" 2>/dev/null || true
@@ -62,13 +81,15 @@ done
 
 # Fix inter-dylib references (libwhisper → libggml etc.)
 for lib in "$FRAMEWORKS"/*.dylib; do
-    for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib; do
+    for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libllama.dylib; do
         # Try to change references from various possible original paths
         install_name_tool -change "$WHISPER_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        install_name_tool -change "$LLAMA_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
         install_name_tool -change "@rpath/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
         # Also handle versioned names
-        for versioned in libwhisper.1.dylib libwhisper.1.7.5.dylib; do
+        for versioned in libwhisper.1.dylib libwhisper.1.7.5.dylib libllama.0.dylib; do
             install_name_tool -change "$WHISPER_LIB/$versioned" "@rpath/libwhisper.dylib" "$lib" 2>/dev/null || true
+            install_name_tool -change "$LLAMA_LIB/$versioned" "@rpath/libllama.dylib" "$lib" 2>/dev/null || true
         done
     done
 done

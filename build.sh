@@ -15,19 +15,28 @@ if [ -f "AppIcon.icns" ]; then
     cp AppIcon.icns "$APP/Contents/Resources/"
 fi
 
-# whisper.cpp library paths
+# whisper.cpp library paths (libinternal preferred, fallback to lib)
 WHISPER_LIB="/opt/homebrew/opt/whisper-cpp/libinternal"
+if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
+    WHISPER_LIB="/opt/homebrew/opt/whisper-cpp/lib"
+fi
+if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
+    WHISPER_LIB="/opt/homebrew/lib"
+fi
 GGML_INCLUDE="/opt/homebrew/include"
 
 # Verify whisper dylib exists
 if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
-    echo "⚠ libwhisper.dylib not found at $WHISPER_LIB"
+    echo "⚠ libwhisper.dylib not found"
     echo "  Install: brew install whisper-cpp"
     exit 1
 fi
 
 # llama.cpp library paths
 LLAMA_LIB="/opt/homebrew/lib"
+if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then
+    LLAMA_LIB="/opt/homebrew/opt/llama.cpp/lib"
+fi
 
 # Verify llama dylib exists
 if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then

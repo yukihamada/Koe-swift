@@ -647,7 +647,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.isStreamingInFlight = false
                 if let text, !text.isEmpty {
-                    self.overlay?.updateStreamingText(text)
+                    // 5文字以下は認識途中の不安定な結果なので「音声入力中...」を表示
+                    if text.count <= 5 {
+                        let lang = AppSettings.shared.language
+                        let placeholder = lang.hasPrefix("ja") ? "音声入力中..." : "Listening..."
+                        self.overlay?.updateStreamingText(placeholder)
+                    } else {
+                        self.overlay?.updateStreamingText(text)
+                    }
                 }
             }
         }

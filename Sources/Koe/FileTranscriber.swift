@@ -98,7 +98,7 @@ final class FileTranscriber {
             var chunkText: String?
 
             let lang = AppSettings.shared.language
-            let whisperLang = lang == "auto" ? "auto" : (lang.components(separatedBy: "-").first ?? "ja")
+            let whisperLang = lang == "auto" ? "auto" : (lang.components(separatedBy: "-").first ?? "en")
 
             WhisperContext.shared.transcribeBuffer(samples: samples, language: whisperLang, prompt: "") { text in
                 chunkText = text

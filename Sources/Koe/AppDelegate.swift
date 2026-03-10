@@ -451,7 +451,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
            AppSettings.shared.diarizationEnabled,
            WhisperContext.shared.isLoaded {
             let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
-            let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+            let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "en")
             WhisperContext.shared.transcribeWithSpeakers(url: audioURL, language: lang, prompt: contextPrompt) { [weak self] segments in
                 guard let self else { return }
                 self.isRecognizing = false
@@ -579,7 +579,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let myID = speculationID
         let profile = AppSettings.shared.profile(for: activeAppBundleID)
         let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
-        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "en")
 
         // コンテキスト収集（投機実行にも同じコンテキストを使用）
         let contextPrompt = ContextCollector.collect(
@@ -628,7 +628,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let profile = AppSettings.shared.profile(for: activeAppBundleID)
         let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
-        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "en")
 
         streamingTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             guard let self, self.isRecording else { return }

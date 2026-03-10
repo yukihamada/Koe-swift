@@ -7,7 +7,7 @@ class SpeechEngine {
 
     init() {
         let lang = AppSettings.shared.language
-        recognizer = SFSpeechRecognizer(locale: Locale(identifier: lang == "auto" ? "ja-JP" : lang))
+        recognizer = SFSpeechRecognizer(locale: Locale(identifier: lang == "auto" ? Locale.current.identifier : lang))
             ?? SFSpeechRecognizer(locale: .current)!
         klog("SpeechEngine init: \(lang), available=\(recognizer.isAvailable)")
     }
@@ -38,7 +38,20 @@ class SpeechEngine {
     private func recognizeWhisperCpp(url: URL, prompt: String, languageOverride: String,
                                       onDone: @escaping (String) -> Void) {
         let rawLang = languageOverride.isEmpty ? AppSettings.shared.language : languageOverride
-        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "en")
+
+        // モデル自動切替: 現在のモデルが選択言語をサポートしない場合、最適モデルに切替
+        let dl = ModelDownloader.shared
+        let best = ModelDownloader.bestModel(for: lang)
+        if best.id != dl.currentModel.id {
+            if dl.isDownloaded(best) {
+                klog("SpeechEngine: auto-switching model to \(best.name) for lang=\(lang)")
+                dl.selectModel(best)
+                WhisperContext.shared.loadModel(path: dl.path(for: best)) { _ in }
+            } else {
+                klog("SpeechEngine: need model \(best.name) for lang=\(lang) but not downloaded")
+            }
+        }
 
         // 組み込みモデルが読み込み済みなら C API 直接呼び出し（最速パス）
         if WhisperContext.shared.isLoaded {
@@ -170,7 +183,7 @@ class SpeechEngine {
         }
 
         let baseLang = languageOverride.isEmpty ? AppSettings.shared.language : languageOverride
-        let langCode = baseLang == "auto" ? nil : (baseLang.components(separatedBy: "-").first ?? "ja")
+        let langCode = baseLang == "auto" ? nil : (baseLang.components(separatedBy: "-").first ?? "en")
         klog("Whisper: baseURL=\(baseURL) model=\(model) lang=\(langCode ?? "auto")")
 
         let boundary = "KoeBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"

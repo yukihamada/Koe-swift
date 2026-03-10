@@ -1,0 +1,102 @@
+name: Windows Build & Release
+
+on:
+  push:
+    tags:
+      - 'win-v*'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            Koe-windows/target
+          key: windows-cargo-${{ hashFiles('Koe-windows/Cargo.lock') }}
+          restore-keys: windows-cargo-
+
+      - name: Build (CPU mode)
+        working-directory: Koe-windows
+        run: cargo build --release
+
+      - name: Create installer
+        working-directory: Koe-windows
+        shell: pwsh
+        run: |
+          # Create distribution directory
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item target/release/koe.exe dist/
+          Copy-Item README.md dist/
+
+          # Download NSIS
+          choco install nsis -y
+
+          # Build installer
+          makensis installer/koe-installer.nsi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: koe-windows
+          path: |
+            Koe-windows/dist/koe.exe
+            Koe-windows/installer/Koe-Setup.exe
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Koe-windows/dist/koe.exe
+            Koe-windows/installer/Koe-Setup.exe
+          body: |
+            ## Koe for Windows
+
+            ### インストール
+            - **Koe-Setup.exe** — インストーラー（推奨）
+            - **koe.exe** — ポータブル版（単体実行可能）
+
+            ### 使い方
+            1. 起動するとシステムトレイにアイコンが表示
+            2. `Ctrl+Alt+V` で録音開始/停止
+            3. 自動で文字起こし → 貼り付け
+
+            ### 必要環境
+            - Windows 10/11 (64-bit)
+            - NVIDIA GPU（推奨、CUDA高速化）
+
+  build-cuda:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          cuda: '12.4.0'
+
+      - name: Build (CUDA mode)
+        working-directory: Koe-windows
+        run: cargo build --release --features cuda
+
+      - name: Upload CUDA build
+        uses: actions/upload-artifact@v4
+        with:
+          name: koe-windows-cuda
+          path: Koe-windows/target/release/koe.exe

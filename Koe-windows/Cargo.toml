@@ -1,0 +1,61 @@
+[package]
+name = "koe"
+version = "1.0.0"
+edition = "2021"
+description = "Koe — Ultra-fast voice input for Windows (whisper.cpp + CUDA)"
+authors = ["Yuki Hamada"]
+build = "build.rs"
+
+[features]
+default = []
+cuda = ["whisper-rs/cuda"]
+
+[dependencies]
+# whisper.cpp bindings
+whisper-rs = "0.14"
+
+# Audio capture (WASAPI on Windows)
+cpal = "0.15"
+
+# System tray + event loop
+tray-icon = "0.19"
+winit = { version = "0.30", features = ["rwh_06"] }
+
+# Global hotkey
+global-hotkey = "0.6"
+
+# Clipboard
+arboard = "3"
+
+# HTTP client (model download)
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Misc
+dirs = "6"
+hound = "3.5"
+indicatif = "0.17"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_Graphics_Gdi",
+] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true

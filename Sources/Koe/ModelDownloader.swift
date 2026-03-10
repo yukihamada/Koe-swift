@@ -10,9 +10,22 @@ struct WhisperModel {
     let url: String
     let sizeMB: Int
     let isDefault: Bool
+    let isJapaneseOnly: Bool
+
+    init(id: String, name: String, description: String, fileName: String, url: String, sizeMB: Int, isDefault: Bool, isJapaneseOnly: Bool = false) {
+        self.id = id; self.name = name; self.description = description
+        self.fileName = fileName; self.url = url; self.sizeMB = sizeMB
+        self.isDefault = isDefault; self.isJapaneseOnly = isJapaneseOnly
+    }
 
     var displayString: String {
         "\(name) (\(sizeMB)MB)"
+    }
+
+    /// この言語コードに対応しているか
+    func supportsLanguage(_ langCode: String) -> Bool {
+        if !isJapaneseOnly { return true }
+        return langCode == "ja" || langCode == "ja-JP" || langCode == "auto"
     }
 }
 
@@ -29,7 +42,8 @@ class ModelDownloader {
             fileName: "ggml-kotoba-whisper-v2.0-q5_0.bin",
             url: "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0-q5_0.bin",
             sizeMB: 538,
-            isDefault: true
+            isDefault: true,
+            isJapaneseOnly: true
         ),
         WhisperModel(
             id: "kotoba-v2-full",
@@ -38,7 +52,8 @@ class ModelDownloader {
             fileName: "ggml-kotoba-whisper-v2.0.bin",
             url: "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0.bin",
             sizeMB: 1520,
-            isDefault: false
+            isDefault: false,
+            isJapaneseOnly: true
         ),
         WhisperModel(
             id: "large-v3-turbo",
@@ -71,6 +86,25 @@ class ModelDownloader {
 
     static var defaultModel: WhisperModel {
         availableModels.first { $0.isDefault }!
+    }
+
+    /// 多言語対応用のデフォルトモデル（Large V3 Turbo Q5）
+    static var multilingualModel: WhisperModel {
+        availableModels.first { $0.id == "large-v3-turbo-q5" }!
+    }
+
+    /// 指定言語に最適なモデルを返す。
+    /// 日本語なら Kotoba（高精度）、それ以外なら Large V3 Turbo Q5（多言語対応）。
+    static func bestModel(for langCode: String) -> WhisperModel {
+        let current = shared.currentModel
+        // 現在のモデルがその言語をサポートしていればそのまま使う
+        if current.supportsLanguage(langCode) { return current }
+        // 日本語系ならデフォルトの Kotoba を推奨
+        if langCode == "ja" || langCode == "ja-JP" {
+            return defaultModel
+        }
+        // それ以外は多言語モデル
+        return multilingualModel
     }
 
     let modelDir = FileManager.default.homeDirectoryForCurrentUser

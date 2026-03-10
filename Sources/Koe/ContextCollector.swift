@@ -9,13 +9,19 @@ import ApplicationServices
 /// 長い英語テキストやコード片を渡すと認識精度が大幅に低下する。
 struct ContextCollector {
 
+    /// 現在の言語が日本語系か判定
+    private static var isJapanese: Bool {
+        let lang = AppSettings.shared.language
+        return lang.hasPrefix("ja")
+    }
+
     /// 現在のコンテキストを収集して prompt 用テキストを生成
     static func collect(appBundleID: String, profilePrompt: String) -> String {
         let settings = AppSettings.shared
         var parts: [String] = []
 
         // 0. システムコンテキスト: Macから音声入力していることをモデルに伝える
-        parts.append("macOS音声入力")
+        parts.append(isJapanese ? "macOS音声入力" : "macOS voice input")
 
         // 1. アプリプロファイルのプロンプト（常に含む — ユーザーが明示的に設定したもの）
         if !profilePrompt.isEmpty {
@@ -56,22 +62,26 @@ struct ContextCollector {
         var parts: [String] = []
 
         // システムコンテキスト
-        parts.append("ユーザーはMacから音声入力でテキストを入力しています。")
+        if isJapanese {
+            parts.append("ユーザーはMacから音声入力でテキストを入力しています。")
+        } else {
+            parts.append("The user is typing via voice input on Mac.")
+        }
 
         // アプリ名
         if let app = NSWorkspace.shared.frontmostApplication {
             let name = app.localizedName ?? appBundleID
-            parts.append("ユーザーは \(name) を使用中。")
+            parts.append(isJapanese ? "ユーザーは \(name) を使用中。" : "User is using \(name).")
         }
 
         // 選択テキスト（Accessibility API）
         if let selected = selectedText(), !selected.isEmpty {
             let trimmed = String(selected.prefix(500))
-            parts.append("選択中のテキスト: \(trimmed)")
+            parts.append(isJapanese ? "選択中のテキスト: \(trimmed)" : "Selected text: \(trimmed)")
         }
 
-        // クリップボードのキーワード
-        if let keywords = japaneseKeywords(from: clipboardText()) {
+        // クリップボードのキーワード（日本語モードのみ — 他言語では効果薄い）
+        if isJapanese, let keywords = japaneseKeywords(from: clipboardText()) {
             parts.append("クリップボード: \(keywords)")
         }
 

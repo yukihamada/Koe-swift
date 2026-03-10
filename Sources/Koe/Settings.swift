@@ -233,11 +233,26 @@ class AppSettings: ObservableObject {
 
     /// 主要言語のフラグ・表示名マッピング（メニューバー・設定画面で共用）
     static let quickLanguages: [(flag: String, name: String, code: String)] = [
-        ("🇯🇵", "日本語",   "ja-JP"),
-        ("🇺🇸", "English", "en-US"),
-        ("🇨🇳", "中文",     "zh-CN"),
-        ("🇰🇷", "한국어",   "ko-KR"),
-        ("🌐", "自動検出",  "auto"),
+        ("🇯🇵", "日本語",       "ja-JP"),
+        ("🇺🇸", "English",     "en-US"),
+        ("🇨🇳", "中文(简体)",   "zh-CN"),
+        ("🇹🇼", "中文(繁體)",   "zh-TW"),
+        ("🇰🇷", "한국어",       "ko-KR"),
+        ("🇪🇸", "Español",     "es-ES"),
+        ("🇫🇷", "Français",    "fr-FR"),
+        ("🇩🇪", "Deutsch",     "de-DE"),
+        ("🇮🇹", "Italiano",    "it-IT"),
+        ("🇵🇹", "Português",   "pt-BR"),
+        ("🇷🇺", "Русский",     "ru-RU"),
+        ("🇮🇳", "हिन्दी",        "hi-IN"),
+        ("🇹🇭", "ไทย",         "th-TH"),
+        ("🇻🇳", "Tiếng Việt",  "vi-VN"),
+        ("🇮🇩", "Indonesia",   "id-ID"),
+        ("🇳🇱", "Nederlands",  "nl-NL"),
+        ("🇵🇱", "Polski",      "pl-PL"),
+        ("🇹🇷", "Türkçe",      "tr-TR"),
+        ("🇸🇦", "العربية",      "ar-SA"),
+        ("🌐", "Auto Detect",  "auto"),
     ]
 
     /// 現在の言語に対応するフラグ絵文字を返す

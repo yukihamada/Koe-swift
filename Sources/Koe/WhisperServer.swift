@@ -28,7 +28,9 @@ class WhisperServer {
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: binary)
-        p.arguments = ["-m", model, "--port", "\(port)", "--host", "127.0.0.1", "-l", "ja"]
+        let lang = AppSettings.shared.language
+        let whisperLang = lang == "auto" ? "auto" : (lang.components(separatedBy: "-").first ?? "en")
+        p.arguments = ["-m", model, "--port", "\(port)", "--host", "127.0.0.1", "-l", whisperLang]
         p.standardOutput = FileHandle.nullDevice
         p.standardError  = FileHandle.nullDevice
 

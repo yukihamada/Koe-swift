@@ -47,9 +47,8 @@ final class FileTranscriber {
                              completion: @escaping CompletionCallback) {
         // Step 1: AVAsset からオーディオを読み取り、16kHz mono WAV に変換
         let asset = AVAsset(url: url)
-        var duration: TimeInterval = 0
-
         // 同期的に duration を取得（既にバックグラウンドスレッドで実行中）
+        nonisolated(unsafe) var duration: TimeInterval = 0
         let semaphore = DispatchSemaphore(value: 0)
         Task {
             do {
@@ -124,7 +123,7 @@ final class FileTranscriber {
     /// AVAsset から指定範囲の音声を 16kHz mono Float32 として抽出
     private func extractAudioSamples(from asset: AVAsset, start: TimeInterval, end: TimeInterval) -> [Float]? {
         // 同期的にトラックを取得（バックグラウンドスレッドで実行中）
-        var audioTrackResult: AVAssetTrack?
+        nonisolated(unsafe) var audioTrackResult: AVAssetTrack?
         let trackSem = DispatchSemaphore(value: 0)
         Task {
             audioTrackResult = try? await asset.loadTracks(withMediaType: .audio).first

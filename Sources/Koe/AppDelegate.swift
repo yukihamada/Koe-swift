@@ -215,17 +215,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         langItem.submenu = langMenu
         menu.addItem(langItem)
 
-        // LLMモード切替サブメニュー
+        // LLMモード切替サブメニュー (β)
         let modeMenu = NSMenu()
         for mode in LLMMode.allCases {
-            let item = NSMenuItem(title: mode.displayName, action: #selector(selectLLMMode(_:)), keyEquivalent: "")
+            let beta = (mode != .none) ? " β" : ""
+            let item = NSMenuItem(title: mode.displayName + beta, action: #selector(selectLLMMode(_:)), keyEquivalent: "")
             item.representedObject = mode.rawValue
             item.state = (AppSettings.shared.llmMode == mode) ? .on : .off
             modeMenu.addItem(item)
         }
-        let modeItem = NSMenuItem(title: "LLMモード: \(AppSettings.shared.llmMode.displayName)", action: nil, keyEquivalent: "")
+        let modeLabel = AppSettings.shared.llmMode == .none ? "LLM修正: オフ" : "LLM修正: \(AppSettings.shared.llmMode.displayName) β"
+        let modeItem = NSMenuItem(title: modeLabel, action: nil, keyEquivalent: "")
         modeItem.submenu = modeMenu
         menu.addItem(modeItem)
+
+        // エージェントモード (β)
+        let agentItem = NSMenuItem(title: "エージェントモード β", action: #selector(toggleAgentMode(_:)), keyEquivalent: "")
+        agentItem.state = AppSettings.shared.agentModeEnabled ? .on : .off
+        menu.addItem(agentItem)
 
         // 翻訳ショートカット表示
         let transDisplay = AppSettings.shared.translateShortcutDisplayString
@@ -734,6 +741,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               let mode = LLMMode(rawValue: rawValue) else { return }
         AppSettings.shared.llmMode = mode
         klog("LLM mode changed: \(mode.displayName)")
+        rebuildMenu()
+    }
+
+    @objc private func toggleAgentMode(_ sender: NSMenuItem) {
+        AppSettings.shared.agentModeEnabled.toggle()
+        klog("Agent mode: \(AppSettings.shared.agentModeEnabled ? "ON" : "OFF")")
         rebuildMenu()
     }
 

@@ -27,7 +27,7 @@ struct SettingsRootView: View {
             GeneralTab()
                 .tabItem { Label("一般", systemImage: "gear") }
             AITab()
-                .tabItem { Label("AI", systemImage: "brain.head.profile") }
+                .tabItem { Label("AI β", systemImage: "brain.head.profile") }
             AppProfilesTab()
                 .tabItem { Label("アプリ", systemImage: "app.badge") }
             TextExpansionsTab()
@@ -35,7 +35,7 @@ struct SettingsRootView: View {
             HistoryTab()
                 .tabItem { Label("履歴", systemImage: "clock.arrow.circlepath") }
             AgentTab()
-                .tabItem { Label("エージェント", systemImage: "terminal") }
+                .tabItem { Label("エージェント β", systemImage: "terminal") }
         }
         .padding(16)
         .frame(width: 540, height: 520)
@@ -54,7 +54,7 @@ struct AgentTab: View {
                 Text("音声コマンドでアプリを開いたり検索したりできます。通常のテキスト入力と併用でき、コマンドとして認識されない発話はそのまま入力されます。")
                     .font(.caption)
                     .foregroundColor(.secondary)
-            } header: { Text("エージェントモード") }
+            } header: { Text("エージェントモード β") }
 
             Section {
                 VStack(alignment: .leading, spacing: 8) {

@@ -28,5 +28,20 @@
     <true/>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
+    <key>NSUserActivityTypes</key>
+    <array>
+        <string>com.yuki.koe.transcription</string>
+    </array>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.yuki.koe</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>koe</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

@@ -26,17 +26,60 @@ struct SettingsRootView: View {
         TabView {
             GeneralTab()
                 .tabItem { Label("一般", systemImage: "gear") }
-            AppProfilesTab()
-                .tabItem { Label("アプリ", systemImage: "app.badge") }
             AITab()
                 .tabItem { Label("AI", systemImage: "brain.head.profile") }
+            AppProfilesTab()
+                .tabItem { Label("アプリ", systemImage: "app.badge") }
             TextExpansionsTab()
                 .tabItem { Label("展開", systemImage: "text.word.spacing") }
             HistoryTab()
                 .tabItem { Label("履歴", systemImage: "clock.arrow.circlepath") }
+            AgentTab()
+                .tabItem { Label("エージェント", systemImage: "terminal") }
         }
         .padding(16)
         .frame(width: 540, height: 520)
+    }
+}
+
+// MARK: - Agent Tab
+
+struct AgentTab: View {
+    @ObservedObject private var settings = AppSettings.shared
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("エージェントモードを有効にする", isOn: $settings.agentModeEnabled)
+                Text("音声コマンドでアプリを開いたり検索したりできます。通常のテキスト入力と併用でき、コマンドとして認識されない発話はそのまま入力されます。")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } header: { Text("エージェントモード") }
+
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    agentCommandRow(command: "アプリを開く", examples: "「Safariを開いて」「Slackを開く」")
+                    Divider()
+                    agentCommandRow(command: "検索", examples: "「天気を検索」「SwiftUIで検索して」")
+                    Divider()
+                    agentCommandRow(command: "スクリーンショット", examples: "「スクショ撮って」「スクリーンショット」")
+                    Divider()
+                    agentCommandRow(command: "タイマー", examples: "「5分タイマー」「タイマー10分」")
+                    Divider()
+                    agentCommandRow(command: "ターミナル", examples: "「ターミナルでls」「コマンドでpwd」")
+                    Divider()
+                    agentCommandRow(command: "ショートカット", examples: "「ショートカット集中モードを実行」")
+                }
+            } header: { Text("対応コマンド一覧") }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func agentCommandRow(command: String, examples: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(command).font(.system(.body, design: .default).bold())
+            Text(examples).font(.caption).foregroundColor(.secondary)
+        }
     }
 }
 
@@ -48,6 +91,7 @@ struct GeneralTab: View {
     @State private var keyMonitor: Any?
 
     let presets: [(String, Int, UInt)] = [
+        ("⌥Space", 49, NSEvent.ModifierFlags.option.rawValue),
         ("⌘⌥V",  9,  NSEvent.ModifierFlags([.command, .option]).rawValue),
         ("F5",   96, 0),
         ("F6",   97, 0),
@@ -116,6 +160,20 @@ struct GeneralTab: View {
                     }
                 }
 
+                // クイック言語切替ボタン
+                HStack(spacing: 6) {
+                    Text("クイック切替")
+                    Spacer()
+                    ForEach(AppSettings.quickLanguages, id: \.code) { lang in
+                        Button(lang.flag) {
+                            settings.language = lang.code
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(settings.language == lang.code ? .accentColor : nil)
+                        .help("\(lang.name) (\(lang.code))")
+                    }
+                }
+
                 Picker("認識言語", selection: $settings.language) {
                     Text("自動検出").tag("auto")
                     Text("日本語").tag("ja-JP")
@@ -133,9 +191,6 @@ struct GeneralTab: View {
                     Text("ไทย").tag("th-TH")
                     Text("Tiếng Việt").tag("vi-VN")
                     Text("Bahasa Indonesia").tag("id-ID")
-                }
-                .onChange(of: settings.language) { _ in
-                    AppDelegate.shared?.reloadSpeechEngine()
                 }
 
                 // Engine badge
@@ -397,11 +452,15 @@ struct ProfileEditSheet: View {
             }
 
             // LLM instruction
-            GroupBox("LLM後処理指示（空欄 = 後処理なし）") {
+            GroupBox("LLM後処理指示（空欄 = デフォルトの後処理を使用）") {
                 TextEditor(text: $llmInstruction)
                     .font(.system(size: 12))
                     .frame(height: 50)
                     .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2)))
+                if llmInstruction.isEmpty {
+                    Text("空欄の場合: AI設定タブのデフォルトプロンプト（誤字修正・句読点追加）が適用されます")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
             }
 
             Spacer()
@@ -468,6 +527,12 @@ struct AITab: View {
                     Text("音声認識後にLLMで誤字修正・句読点追加を行います")
                         .font(.caption).foregroundColor(.secondary)
 
+                    Picker("処理モード", selection: $s.llmMode) {
+                        ForEach(LLMMode.allCases, id: \.self) { mode in
+                            Text(mode.displayName).tag(mode)
+                        }
+                    }
+
                     Picker("処理エンジン", selection: $s.llmUseLocal) {
                         Text("ローカル (llama.cpp + Metal GPU)").tag(true)
                         Text("クラウド (API)").tag(false)
@@ -476,33 +541,100 @@ struct AITab: View {
                     if s.llmUseLocal {
                         LocalLLMSettingsView()
                     } else {
-                        HStack { Text("ベースURL"); TextField("https://api.chatweb.ai", text: $s.llmBaseURL).textFieldStyle(.roundedBorder) }
-                        HStack { Text("APIキー"); SecureFieldWithReveal(text: $s.llmAPIKey, placeholder: "cw_...") }
-                        HStack { Text("モデル"); TextField("auto", text: $s.llmModel).textFieldStyle(.roundedBorder) }
+                        Picker("プロバイダ", selection: $s.llmProvider) {
+                            ForEach(LLMProvider.allCases, id: \.self) { provider in
+                                Text(provider.displayName).tag(provider)
+                            }
+                        }
+
+                        if s.llmProvider.requiresAPIKey {
+                            HStack {
+                                Text("APIキー")
+                                SecureFieldWithReveal(
+                                    text: $s.llmAPIKey,
+                                    placeholder: s.llmProvider == .anthropic ? "sk-ant-..." : "sk-..."
+                                )
+                            }
+                        }
+
+                        HStack {
+                            Text("モデル")
+                            TextField(s.llmProvider.defaultModel, text: $s.llmModel)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        if s.llmProvider == .custom {
+                            HStack {
+                                Text("ベースURL")
+                                TextField("https://api.example.com", text: $s.llmBaseURL)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        }
+
+                        // プロバイダ説明
+                        Group {
+                            switch s.llmProvider {
+                            case .chatweb:
+                                Text("chatweb.ai: APIキー不要・無料で利用可能")
+                            case .openai:
+                                Text("OpenAI: GPT-4o-mini等。APIキーはplatform.openai.comで取得")
+                            case .anthropic:
+                                Text("Anthropic: Claude Haiku等。APIキーはconsole.anthropic.comで取得")
+                            case .groq:
+                                Text("Groq: 超高速推論。APIキーはconsole.groq.comで取得")
+                            case .custom:
+                                Text("OpenAI互換APIのベースURLを指定してください")
+                            }
+                        }
+                        .font(.caption2).foregroundColor(.secondary)
                     }
 
-                    // 後処理プロンプト編集
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("後処理プロンプト（空欄 = デフォルト）")
-                            .font(.caption).foregroundColor(.secondary)
-                        TextEditor(text: $s.llmCustomPrompt)
-                            .font(.system(size: 11))
-                            .frame(height: 70)
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2)))
-                        if s.llmCustomPrompt.isEmpty {
-                            Text("デフォルト: 誤字修正・句読点追加・認識ミス補正")
-                                .font(.caption2).foregroundColor(.secondary)
+                    // カスタムモード時のみプロンプト編集を表示
+                    if s.llmMode == .custom {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("カスタムプロンプト")
+                                .font(.caption).foregroundColor(.secondary)
+                            TextEditor(text: $s.llmCustomPrompt)
+                                .font(.system(size: 11))
+                                .frame(height: 70)
+                                .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2)))
+                            if s.llmCustomPrompt.isEmpty {
+                                Text("空欄の場合はデフォルト（誤字修正・句読点追加）が使用されます")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                            Button("クリア") {
+                                s.llmCustomPrompt = ""
+                            }
+                            .buttonStyle(.link)
+                            .font(.caption2)
+                            .disabled(s.llmCustomPrompt.isEmpty)
                         }
-                        Button("デフォルトに戻す") {
-                            s.llmCustomPrompt = ""
-                        }
-                        .buttonStyle(.link)
-                        .font(.caption2)
-                        .disabled(s.llmCustomPrompt.isEmpty)
                     }
                     Text("アプリタブで対象アプリごとに個別の指示も設定できます").font(.caption).foregroundColor(.secondary)
                 }
             } header: { Text("LLM後処理") }
+
+            Section {
+                Toggle("Super Mode（画面コンテキスト認識）", isOn: $s.superModeEnabled)
+                if s.superModeEnabled {
+                    Text("アクティブなアプリ名や選択中のテキストをLLMに渡し、文脈に合った出力を生成します。アクセシビリティ権限が必要です。")
+                        .font(.caption).foregroundColor(.secondary)
+                    if !AXIsProcessTrusted() {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text("アクセシビリティ権限が未許可です")
+                                .font(.caption).foregroundColor(.orange)
+                            Button("設定を開く") {
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                            }.buttonStyle(.link).font(.caption)
+                        }
+                    }
+                } else {
+                    Text("有効にすると、使用中のアプリや選択テキストに応じてLLMが最適なフォーマットで出力します")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+            } header: { Text("Super Mode") }
 
             Section {
                 Toggle("ウェイクワードで録音開始", isOn: $s.wakeWordEnabled)
@@ -520,43 +652,66 @@ struct WakeWordTemplateView: View {
     @State private var countdown: Int? = nil
     @State private var recording = false
     @State private var lastResult: Bool? = nil
+    @State private var lastError = ""
     @State private var threshold: Float = WakeWordEngine.shared.distThreshold > 0 ? WakeWordEngine.shared.distThreshold : 3.0
+    @State private var currentRound = 0  // 連続録音の何回目か
+
+    private let minRequired = WakeWordEngine.minTemplates  // 最低3回
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             // Status
             HStack {
-                Image(systemName: templateCount == 0 ? "waveform.slash" : "waveform.badge.checkmark")
-                    .foregroundColor(templateCount == 0 ? .orange : .green)
-                if templateCount == 0 {
-                    Text("テンプレート未登録 — 下のボタンで自分の声を録音してください")
+                if templateCount >= minRequired {
+                    Image(systemName: "waveform.badge.checkmark").foregroundColor(.green)
+                    Text("\(templateCount) テンプレート録音済み — 使用可能")
                         .font(.caption).foregroundColor(.secondary)
+                } else if templateCount > 0 {
+                    Image(systemName: "waveform").foregroundColor(.orange)
+                    Text("\(templateCount) / \(minRequired) 録音済み — あと\(minRequired - templateCount)回必要")
+                        .font(.caption).foregroundColor(.orange)
                 } else {
-                    Text("\(templateCount) テンプレート録音済み")
+                    Image(systemName: "waveform.slash").foregroundColor(.orange)
+                    Text("テンプレート未登録 — 最低\(minRequired)回録音が必要です")
                         .font(.caption).foregroundColor(.secondary)
                 }
             }
 
             // Recording button
             HStack(spacing: 12) {
-                Button(action: startRecording) {
+                if recording {
                     HStack {
-                        Image(systemName: recording ? "stop.circle.fill" : "mic.circle.fill")
-                            .foregroundColor(recording ? .red : .accentColor)
-                        if let c = countdown {
-                            Text(c == 0 ? "録音中..." : "録音開始まで \(c)秒")
+                        Image(systemName: "stop.circle.fill").foregroundColor(.red)
+                        if let c = countdown, c > 0 {
+                            Text("\(currentRound)/\(minRequired) 回目: \(c)秒後に録音開始...")
                         } else {
-                            Text("ウェイクワードを録音する (1.5秒)")
+                            Text("\(currentRound)/\(max(minRequired, currentRound)) 回目: 録音中...")
                         }
                     }
+                } else if templateCount < minRequired {
+                    Button(action: { startMultiRecording() }) {
+                        HStack {
+                            Image(systemName: "mic.circle.fill").foregroundColor(.accentColor)
+                            Text("ウェイクワードを\(minRequired)回録音する")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button(action: { startSingleRecording() }) {
+                        HStack {
+                            Image(systemName: "mic.circle.fill").foregroundColor(.accentColor)
+                            Text("追加で録音する")
+                        }
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
-                .disabled(recording)
 
-                if templateCount > 0 {
-                    Button("クリア") {
+                if templateCount > 0 && !recording {
+                    Button("すべてクリア") {
                         WakeWordEngine.shared.clearTemplates()
                         templateCount = 0
+                        lastResult = nil
+                        lastError = ""
                     }
                     .foregroundColor(.red)
                     .buttonStyle(.link)
@@ -564,13 +719,28 @@ struct WakeWordTemplateView: View {
             }
 
             if let ok = lastResult {
-                Text(ok ? "✓ 録音完了！ (\(templateCount)個)" : "✗ 録音失敗。もう一度試してください")
+                Text(ok ? "✓ 録音完了！ (\(templateCount)個)" : "")
                     .font(.caption)
-                    .foregroundColor(ok ? .green : .red)
+                    .foregroundColor(.green)
+            }
+            if !lastError.isEmpty {
+                Text(lastError)
+                    .font(.caption).foregroundColor(.red)
+            }
+
+            // Progress dots for multi-recording
+            if recording || (templateCount > 0 && templateCount < minRequired) {
+                HStack(spacing: 6) {
+                    ForEach(0..<max(minRequired, templateCount), id: \.self) { i in
+                        Circle()
+                            .fill(i < templateCount ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 10, height: 10)
+                    }
+                }
             }
 
             // Threshold slider
-            if templateCount > 0 {
+            if templateCount >= minRequired {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Text("感度").font(.caption).foregroundColor(.secondary)
@@ -587,15 +757,39 @@ struct WakeWordTemplateView: View {
                 }
             }
 
-            Text("ウェイクワード（例:「ヘイこえ」）を3〜5回録音するほど精度が上がります")
+            Text("同じウェイクワード（例:「ヘイこえ」）を繰り返し録音します。声のトーンを少し変えると精度が上がります。")
                 .font(.caption2).foregroundColor(.secondary.opacity(0.8))
         }
         .padding(.vertical, 4)
     }
 
-    private func startRecording() {
-        recording = true
+    /// 最低回数の連続録音を開始
+    private func startMultiRecording() {
+        // まず既存をクリア
+        WakeWordEngine.shared.clearTemplates()
+        templateCount = 0
         lastResult = nil
+        lastError = ""
+        currentRound = 1
+        recordOneRound(remaining: minRequired)
+    }
+
+    /// 追加1回録音
+    private func startSingleRecording() {
+        lastResult = nil
+        lastError = ""
+        currentRound = templateCount + 1
+        recordOneRound(remaining: 1)
+    }
+
+    private func recordOneRound(remaining: Int) {
+        guard remaining > 0 else {
+            recording = false
+            lastResult = true
+            return
+        }
+
+        recording = true
         countdown = 2
 
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
@@ -605,9 +799,26 @@ struct WakeWordTemplateView: View {
                 timer.invalidate()
                 countdown = nil
                 WakeWordEngine.shared.recordTemplate(duration: 1.5) { ok in
-                    recording = false
-                    lastResult = ok
                     templateCount = WakeWordEngine.shared.templates.count
+                    if ok {
+                        currentRound += 1
+                        if remaining - 1 > 0 {
+                            // 次のラウンドへ（少し間をあける）
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                recordOneRound(remaining: remaining - 1)
+                            }
+                        } else {
+                            recording = false
+                            lastResult = true
+                        }
+                    } else {
+                        // 無音だった場合はリトライ
+                        lastError = "✗ 音声が検出されませんでした。もう少し大きな声で話してください。"
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            lastError = ""
+                            recordOneRound(remaining: remaining)  // 同じラウンドをリトライ
+                        }
+                    }
                 }
             }
         }
@@ -702,12 +913,18 @@ struct WhisperCppSettingsView: View {
                         if model.id != dl.currentModel.id {
                             Button("選択") {
                                 dl.selectModel(model)
-                                // Force view refresh
                                 settings.objectWillChange.send()
                             }
                             .controlSize(.small)
                             .buttonStyle(.bordered)
                         }
+                        Button("削除") {
+                            let path = dl.modelDir.appendingPathComponent(model.fileName)
+                            try? FileManager.default.removeItem(at: path)
+                            settings.objectWillChange.send()
+                        }
+                        .controlSize(.small)
+                        .foregroundColor(.red)
                     } else {
                         Button("DL") {
                             startDownload(model)
@@ -723,6 +940,18 @@ struct WhisperCppSettingsView: View {
             if downloading {
                 ProgressView(value: downloadProgress, total: 100)
                 Text(downloadDetail).font(.caption2).foregroundColor(.secondary)
+            }
+
+            // モデル保存フォルダ
+            HStack(spacing: 4) {
+                Text("保存先:").font(.caption2).foregroundColor(.secondary)
+                Text(dl.modelDir.path).font(.caption2).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button("Finderで開く") {
+                    NSWorkspace.shared.open(dl.modelDir)
+                }
+                .font(.caption2)
+                .buttonStyle(.link)
             }
         }
     }
@@ -807,7 +1036,7 @@ struct LocalLLMSettingsView: View {
                         .font(.caption).foregroundColor(.orange)
                 } else if let model = llm.selectedModel, llm.isDownloaded(model) {
                     Image(systemName: "circle.fill").foregroundColor(.blue).font(.system(size: 6))
-                    Text("待機中: \(model.name)（使用時に自動ロード → 30秒後に自動解放）")
+                    Text("待機中: \(model.name)" + (AppSettings.shared.llmMemorySaveMode ? "（メモリ省略: 毎回ロード/解放）" : "（使用時に自動ロード・常駐）"))
                         .font(.caption).foregroundColor(.secondary)
                 } else {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.red)
@@ -868,6 +1097,11 @@ struct LocalLLMSettingsView: View {
                             .buttonStyle(.bordered)
                             .disabled(loading)
                         }
+                        Button("削除") {
+                            deleteModel(model)
+                        }
+                        .controlSize(.small)
+                        .foregroundColor(.red)
                     } else {
                         Button("DL") {
                             startDownload(model)
@@ -894,6 +1128,27 @@ struct LocalLLMSettingsView: View {
                 .buttonStyle(.link)
                 .font(.caption)
             }
+
+            Divider()
+
+            // メモリ省略モード
+            Toggle("メモリ省略モード（LLMを毎回ロード/解放。遅くなるがメモリ節約）", isOn: Binding(
+                get: { AppSettings.shared.llmMemorySaveMode },
+                set: { AppSettings.shared.llmMemorySaveMode = $0 }
+            ))
+            .font(.caption)
+
+            // モデル保存フォルダ
+            HStack(spacing: 4) {
+                Text("保存先:").font(.caption2).foregroundColor(.secondary)
+                Text(llm.modelDir.path).font(.caption2).foregroundColor(.secondary).lineLimit(1).truncationMode(.middle)
+                Spacer()
+                Button("Finderで開く") {
+                    NSWorkspace.shared.open(llm.modelDir)
+                }
+                .font(.caption2)
+                .buttonStyle(.link)
+            }
         }
     }
 
@@ -919,6 +1174,15 @@ struct LocalLLMSettingsView: View {
                 loadError = "ロード失敗。メモリ不足の可能性があります (空き\(MemoryMonitor.availableMemoryMB)MB)"
             }
         }
+    }
+
+    private func deleteModel(_ model: LlamaContext.LLMModel) {
+        let path = llm.modelPath(for: model)
+        if model.id == llm.selectedModelID && llm.isLoaded {
+            llm.unload()
+        }
+        try? FileManager.default.removeItem(at: path)
+        klog("LLM: deleted \(model.name) at \(path.path)")
     }
 
     private func startDownload(_ model: LlamaContext.LLMModel) {
@@ -971,6 +1235,8 @@ struct SecureFieldWithReveal: View {
 
 struct HistoryTab: View {
     @ObservedObject private var history = HistoryStore.shared
+    @State private var searchQuery = ""
+    @State private var showFavoritesOnly = false
 
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -978,43 +1244,114 @@ struct HistoryTab: View {
         return f
     }()
 
+    private var filteredEntries: [HistoryEntry] {
+        var results = history.search(searchQuery)
+        if showFavoritesOnly {
+            results = results.filter { $0.isFavorite }
+        }
+        return results
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if history.entries.isEmpty {
+            // Search bar
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                TextField("検索", text: $searchQuery)
+                    .textFieldStyle(.plain)
+                if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Divider().frame(height: 16)
+                Button {
+                    showFavoritesOnly.toggle()
+                } label: {
+                    Image(systemName: showFavoritesOnly ? "star.fill" : "star")
+                        .foregroundColor(showFavoritesOnly ? .yellow : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(showFavoritesOnly ? "すべて表示" : "お気に入りのみ")
+            }
+            .padding(8)
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(6)
+            .padding(.horizontal, 8)
+            .padding(.top, 8)
+
+            // List
+            if filteredEntries.isEmpty {
                 Spacer()
-                Text("履歴はありません")
+                Text(history.entries.isEmpty ? "履歴はありません" : "一致する項目がありません")
                     .foregroundColor(.secondary)
                 Spacer()
             } else {
                 List {
-                    ForEach(history.entries) { entry in
+                    ForEach(filteredEntries) { entry in
                         HStack(alignment: .top, spacing: 8) {
-                            Text(dateFormatter.string(from: entry.date))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(width: 80, alignment: .leading)
+                            Button {
+                                history.toggleFavorite(id: entry.id)
+                            } label: {
+                                Image(systemName: entry.isFavorite ? "star.fill" : "star")
+                                    .foregroundColor(entry.isFavorite ? .yellow : .secondary)
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
                             Text(entry.text)
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(dateFormatter.string(from: entry.date))
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 80, alignment: .trailing)
+                        }
+                        .padding(.vertical, 2)
+                        .contextMenu {
                             Button {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(entry.text, forType: .string)
                             } label: {
-                                Image(systemName: "doc.on.doc")
+                                Label("コピー", systemImage: "doc.on.doc")
                             }
-                            .buttonStyle(.plain)
-                            .foregroundColor(.secondary)
+                            Button {
+                                history.toggleFavorite(id: entry.id)
+                            } label: {
+                                Label(entry.isFavorite ? "お気に入り解除" : "お気に入り",
+                                      systemImage: entry.isFavorite ? "star.slash" : "star.fill")
+                            }
+                            Divider()
+                            Button(role: .destructive) {
+                                history.delete(id: entry.id)
+                            } label: {
+                                Label("削除", systemImage: "trash")
+                            }
                         }
-                        .padding(.vertical, 2)
                     }
                 }
             }
+
             Divider()
+
+            // Bottom bar
             HStack {
-                Text("\(history.entries.count) 件")
+                Text("\(history.entries.count)件中 \(filteredEntries.count)件表示")
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
+                Menu("エクスポート") {
+                    Button("テキスト (.txt)") { exportFile(type: .text) }
+                    Button("CSV (.csv)") { exportFile(type: .csv) }
+                    Button("JSON (.json)") { exportFile(type: .json) }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(history.entries.isEmpty)
                 Button("すべてクリア") { history.clear() }
                     .foregroundColor(.red)
                     .buttonStyle(.link)
@@ -1022,5 +1359,31 @@ struct HistoryTab: View {
             }
             .padding(8)
         }
+    }
+
+    private enum ExportType { case text, csv, json }
+
+    private func exportFile(type: ExportType) {
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        switch type {
+        case .text:
+            panel.nameFieldStringValue = "koe-history.txt"
+            panel.allowedContentTypes = [.plainText]
+        case .csv:
+            panel.nameFieldStringValue = "koe-history.csv"
+            panel.allowedContentTypes = [.commaSeparatedText]
+        case .json:
+            panel.nameFieldStringValue = "koe-history.json"
+            panel.allowedContentTypes = [.json]
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let content: String
+        switch type {
+        case .text: content = history.exportAsText()
+        case .csv:  content = history.exportAsCSV()
+        case .json: content = history.exportAsJSON()
+        }
+        try? content.write(to: url, atomically: true, encoding: .utf8)
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import Speech
+import UniformTypeIdentifiers
 import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -9,6 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayWindow?
     private var settingsWC: SettingsWindowController?
     private var setupWindow: SetupWindow?
+    private var transcriptionWindow: TranscriptionWindow?
     private let recorder  = AudioRecorder()
     private var speech    = SpeechEngine()
     private let typer     = AutoTyper()
@@ -21,8 +23,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Silence-based auto-stop
     private let voiceThreshold: Float   = 0.12  // この音量以上で「発話中」
     private let silenceThreshold: Float = 0.07  // この音量以下で「無音」
-    private let silenceAutoStop: TimeInterval = 0.85  // 発話後N秒無音で自動停止
     private let maxRecordDuration: TimeInterval = 60
+    /// 適応的無音閾値: 短い発話ほど速く打ち切る
+    private var silenceAutoStop: TimeInterval {
+        guard let start = recordingStart else { return 0.85 }
+        let elapsed = Date().timeIntervalSince(start)
+        if elapsed < 2.0 { return 0.6 }   // 2秒以下: 0.6秒で打ち切り
+        if elapsed < 5.0 { return 0.7 }   // 5秒以下: 0.7秒
+        return 0.85                         // 5秒以上: 標準
+    }
     private var speechDetected = false
     private var silenceStart: Date?
 
@@ -34,8 +43,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var speculativeResult: String? = nil
     private var speculationID = 0
 
+    // Streaming preview
+    private var streamingTimer: Timer?
+    private var isStreamingInFlight = false
+
+    // 認識中フラグ（ESCでキャンセル用）
+    private var isRecognizing = false
+
     // 議事録用: 最後の録音ファイル
     private var lastAudioURL: URL?
+
+    // Quick Translation mode
+    private var isTranslateMode = false
+
+    // Shortcuts.app integration (URL scheme callback)
+    private var urlSchemeCompletion: ((String) -> Void)?
+
+    // Handoff
+    private var currentActivity: NSUserActivity?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -43,11 +68,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         reregisterHotkey()
         recorder.prepare()
 
+        // Register URL scheme handler for Shortcuts.app integration (koe://transcribe)
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleURLEvent(_:replyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+
+        // 8GB未満のMacではローカルLLMを自動無効化
+        MemoryMonitor.autoDisableLocalLLMIfNeeded()
+
         // インストール/アップデート後に必ずオンボーディングを表示
         let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let lastSeenVersion = UserDefaults.standard.string(forKey: "lastOnboardingVersion") ?? ""
         let isNewVersion = lastSeenVersion != currentVersion
-        let needsSetup = !ModelDownloader.shared.isModelAvailable || !AXIsProcessTrusted() || isNewVersion
+        let needsSetup = !ModelDownloader.shared.isModelAvailable || isNewVersion
 
         if needsSetup {
             UserDefaults.standard.set(currentVersion, forKey: "lastOnboardingVersion")
@@ -58,6 +94,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             finishLaunch()
+        }
+
+        // アクセシビリティ権限がない場合はバックグラウンドで許可を要求
+        if !AXIsProcessTrusted() {
+            let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(opts)
         }
     }
 
@@ -81,7 +123,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 組み込み whisper.cpp モデルのロード。モデルがなければダウンロード。
+    /// Intel Mac では whisper.cpp (Metal) が使えないため、Apple オンデバイス認識にフォールバック。
     private func loadEmbeddedWhisper() {
+        // Intel Mac: whisper.cpp (Metal GPU) は非対応 → オンデバイス認識にフォールバック
+        if !ArchUtil.isAppleSilicon {
+            let settings = AppSettings.shared
+            if settings.recognitionEngine == .whisperCpp {
+                klog("Intel Mac detected — switching from whisper.cpp to Apple on-device recognition")
+                settings.recognitionEngine = .appleOnDevice
+            }
+            // 通知でユーザーに知らせる
+            let content = UNMutableNotificationContent()
+            content.title = "Koe"
+            content.body = "Intel Mac ではクラウドまたはオンデバイス認識を使用します（whisper.cpp Metal は Apple Silicon 専用です）"
+            let request = UNNotificationRequest(identifier: "intel-fallback", content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+            return
+        }
+
         // 設定にパスがあればそちらを使う、なければデフォルトパス
         let settings = AppSettings.shared
         let modelPath: String
@@ -133,7 +192,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let engine = AppSettings.shared.recognitionEngine
         let badge = engine.isLocal ? "LOCAL" : "CLOUD"
-        let header = NSMenuItem(title: "Koe — \(AppSettings.shared.shortcutDisplayString) で録音 [\(badge)]", action: nil, keyEquivalent: "")
+        let langFlag = AppSettings.shared.languageFlag
+        let header = NSMenuItem(title: "Koe — \(AppSettings.shared.shortcutDisplayString) で録音 [\(badge)] [\(langFlag)]", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
@@ -141,6 +201,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ? "🔴 議事録停止 (\(MeetingMode.shared.entryCount)件)"
             : "⚫ 議事録開始"
         menu.addItem(withTitle: meetingTitle, action: #selector(toggleMeetingMode), keyEquivalent: "m")
+        menu.addItem(withTitle: "ファイルを文字起こし…", action: #selector(openFileTranscription), keyEquivalent: "t")
+
+        // 言語切替サブメニュー
+        let langMenu = NSMenu()
+        for lang in AppSettings.quickLanguages {
+            let item = NSMenuItem(title: "\(lang.flag) \(lang.name) (\(lang.code))", action: #selector(selectLanguage(_:)), keyEquivalent: "")
+            item.representedObject = lang.code
+            item.state = (AppSettings.shared.language == lang.code) ? .on : .off
+            langMenu.addItem(item)
+        }
+        let langItem = NSMenuItem(title: "言語: \(langFlag) \(AppSettings.shared.language)", action: nil, keyEquivalent: "")
+        langItem.submenu = langMenu
+        menu.addItem(langItem)
+
+        // LLMモード切替サブメニュー
+        let modeMenu = NSMenu()
+        for mode in LLMMode.allCases {
+            let item = NSMenuItem(title: mode.displayName, action: #selector(selectLLMMode(_:)), keyEquivalent: "")
+            item.representedObject = mode.rawValue
+            item.state = (AppSettings.shared.llmMode == mode) ? .on : .off
+            modeMenu.addItem(item)
+        }
+        let modeItem = NSMenuItem(title: "LLMモード: \(AppSettings.shared.llmMode.displayName)", action: nil, keyEquivalent: "")
+        modeItem.submenu = modeMenu
+        menu.addItem(modeItem)
+
+        // 翻訳ショートカット表示
+        let transDisplay = AppSettings.shared.translateShortcutDisplayString
+        let transItem = NSMenuItem(title: "翻訳: \(transDisplay)", action: nil, keyEquivalent: "")
+        transItem.isEnabled = false
+        menu.addItem(transItem)
+
         menu.addItem(.separator())
         menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: "アップデートを確認…", action: #selector(checkUpdate), keyEquivalent: "")
@@ -193,14 +285,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let targetMods = NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers)
         let isToggle = settings.recordingMode == .toggle
 
+        // Translation hotkey detection
+        let transCode = UInt16(settings.translateHotkeyCode)
+        let transMods = NSEvent.ModifierFlags(rawValue: settings.translateHotkeyModifiers)
+
         switch event.type {
         case .keyDown:
-            // ESC → キャンセル
-            if event.keyCode == 53, isRecording {
+            // ESC → キャンセル（録音中 or 認識中）
+            if event.keyCode == 53, (isRecording || isRecognizing) {
                 DispatchQueue.main.async { self.cancelRecording() }; return
             }
-            // Space → 録音延長 or 2回目で変換
-            if event.keyCode == 49, isRecording, !event.isARepeat {
+            // Space → 録音延長 or 2回目で変換（ただしSpaceがホットキーの場合は除外）
+            if event.keyCode == 49, targetCode != 49, isRecording, !event.isARepeat {
                 if spacePressed {
                     // 2回目のスペース → 変換
                     DispatchQueue.main.async { self.stopAndRecognize() }
@@ -213,6 +309,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return
             }
+
+            // Translation hotkey (toggle mode: press to start, press again to stop)
+            if event.keyCode == transCode, !event.isARepeat {
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if flags == transMods {
+                    DispatchQueue.main.async {
+                        if self.isRecording && self.isTranslateMode {
+                            self.stopAndRecognize()
+                        } else if !self.isRecording {
+                            self.isTranslateMode = true
+                            self.overlay?.setTranslateMode(true)
+                            klog("Translate mode: ON")
+                            self.startRecording()
+                        }
+                    }
+                    return
+                }
+            }
+
             guard event.keyCode == targetCode, !event.isARepeat else { return }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags == targetMods else { return }
@@ -223,11 +338,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { self.startRecording() }
             }
         case .keyUp:
-            // Space 離した → 変換
-            if event.keyCode == 49, isRecording, spaceHeld {
+            // Space 離した → 変換（ただしSpaceがホットキーの場合は除外）
+            if event.keyCode == 49, targetCode != 49, isRecording, spaceHeld {
                 spaceHeld = false
                 DispatchQueue.main.async { self.stopAndRecognize() }
                 return
+            }
+            // Translation hotkey release (hold mode): stop recording
+            if event.keyCode == transCode, isRecording, isTranslateMode {
+                // hold mode behavior for translate hotkey
+                let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                if !flags.contains(transMods) || event.keyCode == transCode {
+                    // Only auto-stop on key-up if main recording mode is hold
+                    if !isToggle {
+                        DispatchQueue.main.async { self.stopAndRecognize() }
+                        return
+                    }
+                }
             }
             guard !isToggle, event.keyCode == targetCode, isRecording else { return }
             DispatchQueue.main.async { self.stopAndRecognize() }
@@ -260,17 +387,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if overlay == nil { overlay = OverlayWindow() }
         overlay?.show(state: .recording)
         recorder.start()
+        isStreamingInFlight = false
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             let lvl = self.recorder.currentLevel()
             self.overlay?.updateLevel(lvl)
             self.updateSilenceDetection(level: lvl)
         }
+        startStreamingPreview()
     }
 
     private func stopAndRecognize() {
         levelTimer?.invalidate(); levelTimer = nil
+        streamingTimer?.invalidate(); streamingTimer = nil
         overlay?.updateLevel(0)
+        overlay?.clearStreamingText()
         klog("stopAndRecognize")
         isRecording = false
         setIcon(recording: false)
@@ -281,6 +412,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastAudioURL = audioURL
         overlay?.clearHint()
         overlay?.show(state: .recognizing)
+        isRecognizing = true
 
         let profile = AppSettings.shared.profile(for: activeAppBundleID)
 
@@ -290,6 +422,40 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             profilePrompt: profile?.prompt ?? ""
         )
         klog("Context prompt: '\(String(contextPrompt.prefix(100)))'")
+
+        // 議事録モード + 話者分離が有効な場合、speaker-aware transcription を使用
+        if MeetingMode.shared.isActive,
+           AppSettings.shared.diarizationEnabled,
+           WhisperContext.shared.isLoaded {
+            let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
+            let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+            WhisperContext.shared.transcribeWithSpeakers(url: audioURL, language: lang, prompt: contextPrompt) { [weak self] segments in
+                guard let self else { return }
+                self.isRecognizing = false
+                self.overlay?.hide()
+                if !segments.isEmpty {
+                    let fullText = segments.map { $0.text }.joined()
+                    klog("diarize result: \(segments.count) segments, \(Set(segments.map { $0.speaker }).count) speakers")
+                    HistoryStore.shared.add(fullText)
+                    MeetingMode.shared.appendSpeakerSegments(segments, audioURL: self.lastAudioURL)
+                    self.typer.type(fullText)
+                    CorrectionStore.shared.trackDelivery(original: fullText, appBundleID: self.activeAppBundleID)
+                    self.publishHandoffActivity(text: fullText)
+                    if AppSettings.shared.autoCopyToClipboard {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(fullText, forType: .string)
+                    }
+                    if AppSettings.shared.notifyOnComplete {
+                        self.sendNotification(text: fullText)
+                    }
+                }
+                self.rebuildMenu()
+                if AppSettings.shared.wakeWordEnabled {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+                }
+            }
+            return
+        }
 
         // 投機実行の結果がすでに届いていればそれを使う（whisper呼び出しをスキップ）
         if let cached = speculativeResult {
@@ -310,13 +476,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleRecognitionResult(_ raw: String, profile: AppProfile?) {
+        isRecognizing = false
         // Whisperが返す改行を除去（明示的に指示がない限り改行なし）
         let cleaned = raw.replacingOccurrences(of: "\n", with: " ")
                          .replacingOccurrences(of: "\r", with: "")
                          .trimmingCharacters(in: .whitespaces)
         let expanded = AppSettings.shared.expand(cleaned)
-        let instruction = profile?.llmInstruction ?? ""
-        LLMProcessor.shared.process(text: expanded, instruction: instruction) { [weak self] final in
+
+        // Agent mode: detect and execute voice commands instead of typing
+        if AppSettings.shared.agentModeEnabled, let command = AgentMode.shared.detectCommand(expanded) {
+            klog("Agent: detected command — \(command.description)")
+            overlay?.show(state: .recognizing)
+            AgentMode.shared.execute(command) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.overlay?.hide()
+                    klog("Agent result: '\(result)'")
+                    HistoryStore.shared.add("[\(command.description)] \(result)")
+                    self.sendNotification(text: result)
+                    self.rebuildMenu()
+                    if AppSettings.shared.wakeWordEnabled {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+                    }
+                }
+            }
+            return
+        }
+
+        // Quick Translation mode: force LLM to translate regardless of current mode
+        let instruction: String
+        if isTranslateMode {
+            let targetLang = AppSettings.shared.translateTargetLang
+            let langName = targetLang.hasPrefix("ja") ? "日本語" : (targetLang.hasPrefix("en") ? "English" : targetLang)
+            instruction = """
+            音声認識の結果を\(langName)に翻訳してください：
+            - 意味を正確に保つ
+            - 自然な表現に翻訳
+            - 翻訳後のテキストのみを出力（説明不要）
+            """
+            klog("Translate mode: forcing translation to \(targetLang)")
+            isTranslateMode = false
+            overlay?.setTranslateMode(false)
+        } else {
+            instruction = profile?.llmInstruction ?? ""
+        }
+        LLMProcessor.shared.process(text: expanded, instruction: instruction, appBundleID: activeAppBundleID) { [weak self] final in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.overlay?.hide()
@@ -325,6 +529,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     HistoryStore.shared.add(final)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
                     self.typer.type(final)
+                    CorrectionStore.shared.trackDelivery(original: final, appBundleID: self.activeAppBundleID)
+                    self.publishHandoffActivity(text: final)
                     if AppSettings.shared.autoCopyToClipboard {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(final, forType: .string)
@@ -388,6 +594,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Streaming Preview
+
+    /// 録音中に定期的に中間認識を実行してオーバーレイに表示する。
+    /// whisper.cpp のみ対応。1.5秒ごとに現在のバッファで推論する。
+    private func startStreamingPreview() {
+        guard AppSettings.shared.streamingPreviewEnabled,
+              AppSettings.shared.recognitionEngine == .whisperCpp,
+              WhisperContext.shared.isLoaded else { return }
+
+        let profile = AppSettings.shared.profile(for: activeAppBundleID)
+        let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
+        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+
+        streamingTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            guard let self, self.isRecording else { return }
+            // 前回のストリーミング推論がまだ進行中ならスキップ
+            guard !self.isStreamingInFlight else { return }
+            // 録音開始から1秒未満はスキップ（音声が短すぎる）
+            guard let start = self.recordingStart, Date().timeIntervalSince(start) >= 1.0 else { return }
+
+            guard let samples = self.recorder.currentSamples(), samples.count > 8000 else { return }
+
+            self.isStreamingInFlight = true
+            WhisperContext.shared.transcribeBuffer(samples: samples, language: lang) { [weak self] text in
+                guard let self, self.isRecording else {
+                    self?.isStreamingInFlight = false
+                    return
+                }
+                self.isStreamingInFlight = false
+                if let text, !text.isEmpty {
+                    self.overlay?.updateStreamingText(text)
+                }
+            }
+        }
+    }
+
     private func updateSilenceDetection(level: Float) {
         guard isRecording else { return }
 
@@ -428,10 +670,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cancelRecording() {
-        klog("cancelRecording")
+        klog("cancelRecording (recording=\(isRecording) recognizing=\(isRecognizing))")
         levelTimer?.invalidate(); levelTimer = nil
+        streamingTimer?.invalidate(); streamingTimer = nil
         overlay?.updateLevel(0)
+        overlay?.clearStreamingText()
         isRecording = false
+        isRecognizing = false
+        isTranslateMode = false
+        overlay?.setTranslateMode(false)
+        speculationID += 1  // 進行中の認識を無効化
         setIcon(recording: false)
         recorder.cancel()
         speech.cancel()
@@ -474,6 +722,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
+    @objc private func selectLanguage(_ sender: NSMenuItem) {
+        guard let code = sender.representedObject as? String else { return }
+        AppSettings.shared.language = code
+        klog("Language changed: \(code)")
+        rebuildMenu()
+    }
+
+    @objc private func selectLLMMode(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let mode = LLMMode(rawValue: rawValue) else { return }
+        AppSettings.shared.llmMode = mode
+        klog("LLM mode changed: \(mode.displayName)")
+        rebuildMenu()
+    }
+
+    @objc private func openFileTranscription() {
+        let panel = NSOpenPanel()
+        panel.title = "文字起こしするファイルを選択"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        if #available(macOS 12.0, *) {
+            panel.allowedContentTypes = [.audio, .movie]
+        } else {
+            panel.allowedFileTypes = FileTranscriber.supportedTypes
+        }
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            klog("FileTranscription: selected \(url.lastPathComponent)")
+            self?.transcriptionWindow = TranscriptionWindow()
+            self?.transcriptionWindow?.show(fileURL: url)
+        }
+    }
+
     @objc private func checkUpdate() {
         AutoUpdater.shared.checkForUpdates(silent: false)
     }
@@ -504,6 +785,61 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         alert.runModal()
     }
 
+    // MARK: - Handoff (Continuity)
+
+    private static let handoffActivityType = "com.yuki.koe.transcription"
+
+    /// 認識結果を Handoff で他のデバイスに共有する
+    private func publishHandoffActivity(text: String) {
+        let activity = NSUserActivity(activityType: Self.handoffActivityType)
+        activity.title = "Koe 音声入力"
+        activity.userInfo = ["text": text, "timestamp": Date().timeIntervalSince1970]
+        activity.isEligibleForHandoff = true
+        activity.isEligibleForSearch = true
+        activity.needsSave = true
+        currentActivity = activity
+        currentActivity?.becomeCurrent()
+        klog("Handoff: published '\(String(text.prefix(40)))'")
+    }
+
+    func application(_ application: NSApplication, continue userActivity: NSUserActivity,
+                     restorationHandler: @escaping ([NSUserActivityRestoring]) -> Void) -> Bool {
+        guard userActivity.activityType == Self.handoffActivityType,
+              let text = userActivity.userInfo?["text"] as? String else { return false }
+        klog("Handoff: received '\(String(text.prefix(40)))'")
+        // ペーストボードにコピーしてユーザーに通知
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        sendNotification(text: "Handoff: テキストをクリップボードにコピーしました")
+        return true
+    }
+
+    // MARK: - URL Scheme (Shortcuts.app integration)
+
+    @objc private func handleURLEvent(_ event: NSAppleEventDescriptor, replyEvent: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString) else { return }
+        klog("URL scheme: \(urlString)")
+
+        switch url.host {
+        case "transcribe":
+            // koe://transcribe — start recording, return transcribed text via pasteboard
+            guard !isRecording else { return }
+            DispatchQueue.main.async { self.startRecording() }
+        case "translate":
+            // koe://translate — start recording in translate mode
+            guard !isRecording else { return }
+            DispatchQueue.main.async {
+                self.isTranslateMode = true
+                self.overlay?.setTranslateMode(true)
+                klog("URL scheme: translate mode ON")
+                self.startRecording()
+            }
+        default:
+            klog("URL scheme: unknown host '\(url.host ?? "")'")
+        }
+    }
+
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
     }
@@ -511,5 +847,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     deinit {
         if let m = eventMonitor { NSEvent.removeMonitor(m) }
         levelTimer?.invalidate()
+        streamingTimer?.invalidate()
     }
 }

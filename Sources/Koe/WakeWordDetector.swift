@@ -13,8 +13,8 @@ class WakeWordDetector {
         guard AppSettings.shared.wakeWordEnabled, !isRunning else { return }
 
         let engine = WakeWordEngine.shared
-        guard !engine.templates.isEmpty else {
-            klog("WakeWordDetector: テンプレート未登録 — 設定 > AI でウェイクワードを録音してください")
+        guard engine.isReady else {
+            klog("WakeWordDetector: テンプレート不足 (have \(engine.templates.count), need \(WakeWordEngine.minTemplates)) — 設定 > AI で録音してください")
             return
         }
 

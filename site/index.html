@@ -641,24 +641,17 @@ footer a{color:#777}
 
   <div class="steps">
     <div class="step">
-      <h3>インストーラーを実行</h3>
-      <p><a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">Koe.pkg</a> をダウンロードしてダブルクリック。ガイドに従うだけ。</p>
+      <h3>アプリをダウンロード</h3>
+      <p><a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">Koe.pkg</a> をダウンロードしてダブルクリック。インストーラーが自動で完了します。</p>
     </div>
     <div class="step">
-      <h3>whisper.cpp を入れる</h3>
-      <p>ターミナルで下記を実行。Metal GPU が自動で有効化されます。</p>
+      <h3>初回起動で自動セットアップ</h3>
+      <p>音声認識モデル (Kotoba Whisper v2.0) が自動ダウンロード。whisper.cpp + Metal GPU もアプリに内蔵済み。</p>
     </div>
     <div class="step">
       <h3>権限を許可して完了</h3>
       <p>マイク・アクセシビリティ権限を許可。⌘⌥V を押せば即座に音声入力開始。</p>
     </div>
-  </div>
-
-  <div class="install-code">
-    <span class="comment"># Koe をインストール（モデルはアプリ内で自動ダウンロード）</span><br>
-    <span class="cmd">brew install whisper-cpp llama.cpp</span><br>
-    <span class="comment"># デフォルト: Kotoba Whisper v2.0（日本語特化）</span><br>
-    <span class="comment"># 設定画面から Large V3 Turbo 等にも切替可能</span>
   </div>
 </section>
 

@@ -69,6 +69,28 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         return max(0, min(1, (db + 55) / 55))
     }
 
+    /// 録音中の部分WAVファイルを読み取り、Float32 PCMサンプルとして返す。
+    /// ストリーミングプレビュー用。録音中でなければnilを返す。
+    func currentSamples() -> [Float]? {
+        guard let r = recorder, r.isRecording, let url = tempURL else { return nil }
+        guard let data = try? Data(contentsOf: url), data.count > 44 else { return nil }
+
+        let headerSize = 44
+        let audioData = data.subdata(in: headerSize..<data.count)
+        let sampleCount = audioData.count / 2  // 16-bit samples
+
+        guard sampleCount > 0 else { return nil }
+
+        var samples = [Float](repeating: 0, count: sampleCount)
+        audioData.withUnsafeBytes { raw in
+            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+            for i in 0..<sampleCount {
+                samples[i] = Float(ptr[i]) / 32768.0
+            }
+        }
+        return samples
+    }
+
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         klog("Encode error: \(error?.localizedDescription ?? "nil")")
     }

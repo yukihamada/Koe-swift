@@ -8,9 +8,11 @@ enum OverlayState {
 
 class OverlayWindow: NSPanel {
     private var stateModel = OverlayStateModel()
+    private var tipTimer: Timer?
+    private var tipIndex = 0
 
     init() {
-        let w: CGFloat = 200, h: CGFloat = 56
+        let w: CGFloat = 280, h: CGFloat = 56
         let screen = NSScreen.main ?? NSScreen.screens[0]
         let rect = CGRect(
             x: screen.frame.midX - w / 2,
@@ -35,9 +37,36 @@ class OverlayWindow: NSPanel {
         contentView = hosting
     }
 
+    func setTranslateMode(_ on: Bool) {
+        stateModel.isTranslateMode = on
+    }
+
     func show(state: OverlayState) {
         stateModel.state = state
         stateModel.visible = false
+        // 翻訳モード中はモード名を上書き
+        if stateModel.isTranslateMode && state == .recording {
+            stateModel.modeName = "翻訳中..."
+        } else {
+            // モード名を更新（none/correct以外の場合のみ表示）
+            let mode = AppSettings.shared.llmMode
+            let showMode = state == .recording && mode != .none && mode != .correct
+            stateModel.modeName = showMode ? mode.displayName : ""
+        }
+
+        // 認識中はヒントのローテーション開始
+        if state == .recognizing {
+            startTipRotation()
+        } else {
+            stopTipRotation()
+        }
+
+        // ウィンドウ高さを計算
+        let newH = calcHeight()
+        var f = frame
+        f.origin.y -= (newH - f.height)
+        f.size.height = newH
+        setFrame(f, display: false)
         orderFrontRegardless()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
@@ -46,7 +75,54 @@ class OverlayWindow: NSPanel {
         }
     }
 
+    private func calcHeight() -> CGFloat {
+        var h: CGFloat = 56
+        if !stateModel.modeName.isEmpty { h += 10 }
+        if !stateModel.streamingText.isEmpty { h += 22 }
+        if !stateModel.tipText.isEmpty { h += 22 }
+        if !stateModel.hint.isEmpty { h += 20 }
+        return h
+    }
+
+    private func startTipRotation() {
+        tipTimer?.invalidate()
+        let tips = OverlayStateModel.localizedTips()
+        tipIndex = Int.random(in: 0..<tips.count)
+        withAnimation(.easeInOut(duration: 0.3)) {
+            stateModel.tipText = tips[tipIndex]
+        }
+        adjustHeight()
+        tipTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let tips = OverlayStateModel.localizedTips()
+            self.tipIndex = (self.tipIndex + 1) % tips.count
+            withAnimation(.easeInOut(duration: 0.3)) {
+                self.stateModel.tipText = tips[self.tipIndex]
+            }
+        }
+    }
+
+    private func stopTipRotation() {
+        tipTimer?.invalidate()
+        tipTimer = nil
+        if !stateModel.tipText.isEmpty {
+            withAnimation(.easeOut(duration: 0.15)) { stateModel.tipText = "" }
+            adjustHeight()
+        }
+    }
+
+    private func adjustHeight() {
+        let newH = calcHeight()
+        var f = frame
+        if abs(f.height - newH) > 1 {
+            f.origin.y -= (newH - f.height)
+            f.size.height = newH
+            setFrame(f, display: true, animate: true)
+        }
+    }
+
     func hide() {
+        stopTipRotation()
         withAnimation(.easeIn(duration: 0.15)) { stateModel.visible = false }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { self.orderOut(nil) }
     }
@@ -56,22 +132,28 @@ class OverlayWindow: NSPanel {
     func showHint(_ text: String) {
         guard stateModel.hint != text else { return }
         withAnimation(.easeIn(duration: 0.3)) { stateModel.hint = text }
-        // ウィンドウを縦に伸ばす
-        var f = frame
-        let newH: CGFloat = 76
-        f.origin.y -= (newH - f.height)
-        f.size.height = newH
-        setFrame(f, display: true, animate: true)
+        adjustHeight()
     }
 
     func clearHint() {
         guard !stateModel.hint.isEmpty else { return }
         withAnimation(.easeOut(duration: 0.2)) { stateModel.hint = "" }
-        var f = frame
-        let newH: CGFloat = 56
-        f.origin.y += (f.height - newH)
-        f.size.height = newH
-        setFrame(f, display: true, animate: true)
+        adjustHeight()
+    }
+
+    /// ストリーミング認識のプレビューテキストを更新。
+    /// 末尾100文字にトランケートし、ウィンドウ高さを自動調整する。
+    func updateStreamingText(_ text: String) {
+        let truncated = text.count > 100 ? "..." + String(text.suffix(97)) : text
+        guard stateModel.streamingText != truncated else { return }
+        stateModel.streamingText = truncated
+        adjustHeight()
+    }
+
+    func clearStreamingText() {
+        guard !stateModel.streamingText.isEmpty else { return }
+        stateModel.streamingText = ""
+        adjustHeight()
     }
 }
 
@@ -80,7 +162,69 @@ class OverlayStateModel: ObservableObject {
     @Published var audioLevel: Float = 0
     @Published var visible: Bool = false
     @Published var hint: String = ""
+    @Published var modeName: String = ""
+    @Published var streamingText: String = ""
+    @Published var isTranslateMode: Bool = false
+    @Published var tipText: String = ""
     var engineBadge: String { AppSettings.shared.recognitionEngine.badgeText }
+
+    static func localizedTips() -> [String] {
+        let lang = AppSettings.shared.language
+        if lang.hasPrefix("en") {
+            return [
+                "💡 Hold ⌥⌘V to record, release to convert",
+                "💡 Press Space to extend recording",
+                "💡 Punctuation is added automatically",
+                "💡 Switch languages from the menu bar",
+                "💡 ⌘⌥T toggles translation mode",
+                "💡 Search & export history in Settings",
+                "💡 LLM modes: email, meeting notes, code...",
+                "💡 Transcribe audio/video files too",
+                "💡 Wake word for hands-free input",
+                "💡 Clipboard content used as context",
+            ]
+        } else if lang.hasPrefix("zh") {
+            return [
+                "💡 按住 ⌥⌘V 录音，松开即转换",
+                "💡 按 Space 延长录音",
+                "💡 标点符号自动添加",
+                "💡 从菜单栏切换语言",
+                "💡 ⌘⌥T 切换翻译模式",
+                "💡 在设置中搜索和导出历史",
+                "💡 LLM模式：邮件/会议纪要/代码…",
+                "💡 支持音视频文件转录",
+                "💡 唤醒词免手动输入",
+                "💡 剪贴板内容可作为上下文",
+            ]
+        } else if lang.hasPrefix("ko") {
+            return [
+                "💡 ⌥⌘V 길게 눌러 녹음, 놓으면 변환",
+                "💡 Space로 녹음 연장 가능",
+                "💡 문장부호 자동 추가",
+                "💡 메뉴바에서 언어 전환 가능",
+                "💡 ⌘⌥T로 번역 모드 전환",
+                "💡 설정에서 기록 검색 및 내보내기",
+                "💡 LLM 모드: 이메일/회의록/코드…",
+                "💡 오디오/비디오 파일 전사 지원",
+                "💡 웨이크워드로 핸즈프리 입력",
+                "💡 클립보드 내용을 컨텍스트로 활용",
+            ]
+        } else {
+            // Japanese (default)
+            return [
+                "💡 ⌥⌘V 長押しで録音、離すと変換",
+                "💡 Space で録音を延長できます",
+                "💡 句読点は自動で追加されます",
+                "💡 メニューバーから言語を切替可能",
+                "💡 ⌘⌥T で翻訳モードに切替",
+                "💡 履歴は設定画面から検索・エクスポート",
+                "💡 LLMモードでメール/議事録/コード向けに変換",
+                "💡 ファイルの文字起こしにも対応",
+                "💡 ウェイクワードで手ぶら音声入力",
+                "💡 クリップボードの内容をコンテキストに活用",
+            ]
+        }
+    }
 }
 
 // MARK: - Overlay View
@@ -114,17 +258,51 @@ struct OverlayView: View {
                     .background(badgeColor.opacity(0.15))
                     .cornerRadius(4)
             }
-            .padding(.horizontal, 14)
-            .frame(width: 200, height: 56)
+            .padding(.horizontal, 24)
+            .frame(height: model.modeName.isEmpty ? 56 : 46)
+
+            if !model.modeName.isEmpty && model.state == .recording {
+                Text(model.modeName)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+                    .frame(height: 14)
+            }
+
+            if !model.streamingText.isEmpty && model.state == .recording {
+                Text(model.streamingText)
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundColor(.white.opacity(0.4))
+                    .lineLimit(2)
+                    .truncationMode(.head)
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 18)
+                    .animation(.easeInOut(duration: 0.15), value: model.streamingText)
+            }
+
+            if !model.tipText.isEmpty && model.state == .recognizing {
+                Text(model.tipText)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white.opacity(0.4))
+                    .lineLimit(1)
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 18)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.3), value: model.tipText)
+                    .id(model.tipText)
+            }
 
             if !model.hint.isEmpty {
                 Text(model.hint)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(0.45))
-                    .frame(width: 200, height: 20)
+                    .padding(.horizontal, 20)
+                    .frame(height: 20)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        .frame(width: 280)
         .background(
             RoundedRectangle(cornerRadius: 28)
                 .fill(Color(white: 0.07, opacity: 0.93))
@@ -135,7 +313,10 @@ struct OverlayView: View {
     }
 
     private var dotColor: Color {
-        model.state == .recording
+        if model.isTranslateMode {
+            return Color(red: 0.30, green: 0.60, blue: 1.0)  // blue tint for translate
+        }
+        return model.state == .recording
             ? Color(red: 1.0, green: 0.27, blue: 0.30)
             : Color(red: 0.40, green: 0.74, blue: 1.0)
     }

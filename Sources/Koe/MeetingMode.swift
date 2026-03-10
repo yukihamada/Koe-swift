@@ -73,7 +73,7 @@ class MeetingMode: ObservableObject {
     }
 
     /// テキストを追記（音声URLがあれば音声も保存）
-    func append(text: String, audioURL: URL? = nil) {
+    func append(text: String, audioURL: URL? = nil, speaker: Int? = nil) {
         guard isActive else { return }
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm:ss"
@@ -95,7 +95,48 @@ class MeetingMode: ObservableObject {
             }
         }
 
-        let line = "[\(timeStr)] \(text)\(audioNote)\n"
+        let speakerLabel = speaker.map { " [話者\($0 + 1)]" } ?? ""
+        let line = "[\(timeStr)]\(speakerLabel) \(text)\(audioNote)\n"
         fileHandle?.write(Data(line.utf8))
+    }
+
+    /// 話者分離付きセグメントを一括追記
+    func appendSpeakerSegments(_ segments: [WhisperContext.SpeakerSegment], audioURL: URL? = nil) {
+        guard isActive, !segments.isEmpty else { return }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm:ss"
+        let timeStr = fmt.string(from: Date())
+
+        // 同じ話者の連続セグメントをマージ
+        var merged: [(speaker: Int, text: String)] = []
+        for seg in segments {
+            if let last = merged.last, last.speaker == seg.speaker {
+                merged[merged.count - 1].text += seg.text
+            } else {
+                merged.append((speaker: seg.speaker, text: seg.text))
+            }
+        }
+
+        // 音声ファイルをコピー保存
+        var audioNote = ""
+        if let src = audioURL, let dir = audioDir {
+            let fileName = String(format: "%03d_%@.wav", entryCount + 1, timeStr.replacingOccurrences(of: ":", with: ""))
+            let dest = dir.appendingPathComponent(fileName)
+            do {
+                try FileManager.default.copyItem(at: src, to: dest)
+                audioNote = " [audio: \(fileName)]"
+                klog("MeetingMode: saved audio \(fileName)")
+            } catch {
+                klog("MeetingMode: audio save failed \(error.localizedDescription)")
+            }
+        }
+
+        for entry in merged {
+            entryCount += 1
+            let line = "[\(timeStr)] [話者\(entry.speaker + 1)] \(entry.text)\(audioNote)\n"
+            fileHandle?.write(Data(line.utf8))
+            // audioNote は最初のエントリのみ
+            audioNote = ""
+        }
     }
 }

@@ -17,21 +17,32 @@ class LLMProcessor {
     private var unloadTimer: Timer?
     private let unloadDelay: TimeInterval = 30  // 30秒後にアンロード
 
-    func process(text: String, instruction: String, completion: @escaping (String) -> Void) {
+    func process(text: String, instruction: String, appBundleID: String = "", completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
         guard s.llmEnabled, !text.isEmpty else {
             completion(text); return
         }
 
-        // ユーザーカスタムプロンプト → アプリ別指示 → デフォルト
-        let customPrompt = s.llmCustomPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        let systemPrompt: String
+        // モードが「なし」の場合はLLM処理をスキップ（アプリ別指示がある場合を除く）
+        if s.llmMode == .none && instruction.isEmpty {
+            completion(text); return
+        }
+
+        // 優先順位: アプリ別指示 > カスタムモードのプロンプト > モード別指示 > デフォルト
+        var systemPrompt: String
         if !instruction.isEmpty {
             systemPrompt = instruction
-        } else if !customPrompt.isEmpty {
-            systemPrompt = customPrompt
+        } else if s.llmMode == .custom {
+            let customPrompt = s.llmCustomPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            systemPrompt = customPrompt.isEmpty ? Self.defaultInstruction : customPrompt
         } else {
-            systemPrompt = Self.defaultInstruction
+            let modeInstruction = s.llmMode.instruction
+            systemPrompt = modeInstruction.isEmpty ? Self.defaultInstruction : modeInstruction
+        }
+
+        // Super Mode: 画面コンテキストをシステムプロンプトに追加
+        if let context = ContextCollector.collectForLLM(appBundleID: appBundleID) {
+            systemPrompt = "コンテキスト: \(context)\n\n\(systemPrompt)"
         }
 
         // ローカルLLM
@@ -40,19 +51,22 @@ class LLMProcessor {
             return
         }
 
-        // リモートAPI
-        if !s.llmAPIKey.isEmpty {
-            processRemote(text: text, instruction: systemPrompt, completion: completion)
+        // リモートAPI（chatweb.aiはAPIキー不要、それ以外はAPIキー必須）
+        if !s.llmProvider.requiresAPIKey || !s.llmAPIKey.isEmpty {
+            if s.llmProvider == .anthropic {
+                processAnthropic(text: text, instruction: systemPrompt, completion: completion)
+            } else {
+                processRemote(text: text, instruction: systemPrompt, completion: completion)
+            }
             return
         }
 
         completion(text)
     }
 
-    // MARK: - Local (オンデマンド: ロード → 推論 → 遅延アンロード)
+    // MARK: - Local (通常モード: 常時ロード / メモリ省略モード: 使用時にロード→即解放)
 
     private func processLocalOnDemand(text: String, instruction: String, completion: @escaping (String) -> Void) {
-        // タイマーをキャンセル（連続使用時はアンロードしない）
         unloadTimer?.invalidate()
         unloadTimer = nil
 
@@ -60,7 +74,7 @@ class LLMProcessor {
 
         // 既にロード済みなら即実行
         if llm.isLoaded {
-            runAndScheduleUnload(text: text, instruction: instruction, completion: completion)
+            runLocalGeneration(text: text, instruction: instruction, completion: completion)
             return
         }
 
@@ -74,7 +88,7 @@ class LLMProcessor {
         klog("LLM: on-demand loading \(model.name)...")
         llm.loadModel { [weak self] ok in
             if ok {
-                self?.runAndScheduleUnload(text: text, instruction: instruction, completion: completion)
+                self?.runLocalGeneration(text: text, instruction: instruction, completion: completion)
             } else {
                 klog("LLM: on-demand load failed, using original")
                 completion(text)
@@ -82,7 +96,7 @@ class LLMProcessor {
         }
     }
 
-    private func runAndScheduleUnload(text: String, instruction: String, completion: @escaping (String) -> Void) {
+    private func runLocalGeneration(text: String, instruction: String, completion: @escaping (String) -> Void) {
         klog("LLM: local processing...")
         LlamaContext.shared.generate(system: instruction, user: text, maxTokens: 300) { [weak self] result in
             if let result, !result.isEmpty {
@@ -92,17 +106,19 @@ class LLMProcessor {
                 klog("LLM local: failed, using original")
                 completion(text)
             }
-            // 30秒後にアンロード（連続使用でなければメモリ解放）
-            self?.scheduleUnload()
+            // メモリ省略モード: LLM処理後すぐにアンロード（Whisperとメモリを共有）
+            if AppSettings.shared.llmMemorySaveMode {
+                self?.scheduleUnload()
+            }
         }
     }
 
     private func scheduleUnload() {
         unloadTimer?.invalidate()
-        unloadTimer = Timer.scheduledTimer(withTimeInterval: unloadDelay, repeats: false) { _ in
+        unloadTimer = Timer.scheduledTimer(withTimeInterval: 3, repeats: false) { _ in
             let llm = LlamaContext.shared
             if llm.isLoaded {
-                klog("LLM: auto-unloading after \(Int(self.unloadDelay))s idle")
+                klog("LLM: memory-save mode — unloading after use")
                 llm.unload()
             }
         }
@@ -112,8 +128,11 @@ class LLMProcessor {
 
     private func processRemote(text: String, instruction: String, completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
+        let baseURL = s.llmProvider == .custom ? s.llmBaseURL : s.llmProvider.baseURL
+        let model   = s.llmModel
+
         let body: [String: Any] = [
-            "model": s.llmModel,
+            "model": model,
             "messages": [
                 ["role": "system", "content": instruction],
                 ["role": "user", "content": text]
@@ -121,7 +140,7 @@ class LLMProcessor {
             "max_tokens": 1000,
             "stream": false
         ]
-        let urlStr = "\(s.llmBaseURL)/v1/chat/completions"
+        let urlStr = "\(baseURL)/v1/chat/completions"
         guard let url = URL(string: urlStr),
               url.scheme == "https" || url.host == "127.0.0.1" || url.host == "localhost",
               let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
@@ -130,7 +149,9 @@ class LLMProcessor {
         }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.setValue("Bearer \(s.llmAPIKey)", forHTTPHeaderField: "Authorization")
+        if !s.llmAPIKey.isEmpty {
+            req.setValue("Bearer \(s.llmAPIKey)", forHTTPHeaderField: "Authorization")
+        }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = bodyData
         req.timeoutInterval = 15
@@ -146,6 +167,47 @@ class LLMProcessor {
             }
             let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
             klog("LLM remote done: '\(result)'")
+            DispatchQueue.main.async { completion(result) }
+        }.resume()
+    }
+
+    // MARK: - Remote (Anthropic Messages API)
+
+    private func processAnthropic(text: String, instruction: String, completion: @escaping (String) -> Void) {
+        let s = AppSettings.shared
+        let model = s.llmModel
+        let body: [String: Any] = [
+            "model": model,
+            "max_tokens": 1000,
+            "system": instruction,
+            "messages": [
+                ["role": "user", "content": text]
+            ]
+        ]
+        let urlStr = "\(LLMProvider.anthropic.baseURL)/v1/messages"
+        guard let url = URL(string: urlStr),
+              let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            completion(text); return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue(s.llmAPIKey, forHTTPHeaderField: "x-api-key")
+        req.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = bodyData
+        req.timeoutInterval = 15
+        URLSession.shared.dataTask(with: req) { data, _, _ in
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let contentArray = json["content"] as? [[String: Any]],
+                  let firstBlock = contentArray.first,
+                  let content = firstBlock["text"] as? String else {
+                klog("LLM: Anthropic failed, using original")
+                DispatchQueue.main.async { completion(text) }
+                return
+            }
+            let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            klog("LLM Anthropic done: '\(result)'")
             DispatchQueue.main.async { completion(result) }
         }.resume()
     }

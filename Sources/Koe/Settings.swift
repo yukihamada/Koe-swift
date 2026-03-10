@@ -58,6 +58,134 @@ enum RecognitionEngine: String, CaseIterable {
     var badgeText: String { isLocal ? "LOCAL" : "CLOUD" }
 }
 
+enum LLMMode: String, CaseIterable, Codable {
+    case none      = "none"
+    case correct   = "correct"
+    case email     = "email"
+    case chat      = "chat"
+    case minutes   = "minutes"
+    case code      = "code"
+    case translate = "translate"
+    case custom    = "custom"
+
+    var displayName: String {
+        switch self {
+        case .none:      return "なし（LLM処理しない）"
+        case .correct:   return "修正（誤字・句読点）"
+        case .email:     return "メール（丁寧な文体）"
+        case .chat:      return "チャット（カジュアル）"
+        case .minutes:   return "議事録（箇条書き）"
+        case .code:      return "コード（コメント形式）"
+        case .translate: return "翻訳（日↔英）"
+        case .custom:    return "カスタム"
+        }
+    }
+
+    var instruction: String {
+        switch self {
+        case .none:
+            return ""
+        case .correct:
+            return """
+            音声認識の結果を修正してください。以下のルールに従ってください：
+            - 誤字・脱字を修正
+            - 適切な句読点（、。）を追加
+            - 明らかな認識ミスを文脈から推測して修正
+            - 元の意味を変えない
+            - 修正後のテキストのみを出力（説明不要）
+            """
+        case .email:
+            return """
+            音声認識の結果を丁寧なメール文体に変換してください：
+            - 敬語・丁寧語を適切に使用
+            - ビジネスメールにふさわしい文体に整える
+            - 句読点を正しく配置
+            - 挨拶文や結びの言葉は追加しない（本文のみ）
+            - 変換後のテキストのみを出力（説明不要）
+            """
+        case .chat:
+            return """
+            音声認識の結果をカジュアルなチャットメッセージに変換してください：
+            - 短く簡潔に
+            - 話し言葉のまま自然に
+            - 句読点は最小限
+            - 変換後のテキストのみを出力（説明不要）
+            """
+        case .minutes:
+            return """
+            音声認識の結果を議事録形式の箇条書きに変換してください：
+            - 要点を箇条書き（・）で整理
+            - 冗長な表現を省略
+            - 結論・決定事項・アクションアイテムを明確に
+            - 変換後のテキストのみを出力（説明不要）
+            """
+        case .code:
+            return """
+            音声認識の結果をコードコメントまたは変数名に変換してください：
+            - 日本語の説明は // コメント形式に
+            - 変数名・関数名の指示があれば camelCase で出力
+            - プログラミング用語を正確に
+            - 変換後のテキストのみを出力（説明不要）
+            """
+        case .translate:
+            return """
+            音声認識の結果を翻訳してください：
+            - 日本語の入力は自然な英語に翻訳
+            - 英語の入力は自然な日本語に翻訳
+            - 意味を正確に保つ
+            - 翻訳後のテキストのみを出力（説明不要）
+            """
+        case .custom:
+            return ""  // カスタムプロンプトを使用
+        }
+    }
+}
+
+enum LLMProvider: String, CaseIterable {
+    case chatweb   = "chatweb"     // chatweb.ai (default, free)
+    case openai    = "openai"      // OpenAI
+    case anthropic = "anthropic"   // Anthropic Claude
+    case groq      = "groq"        // Groq (fast)
+    case custom    = "custom"      // Custom endpoint
+
+    var displayName: String {
+        switch self {
+        case .chatweb:   return "chatweb.ai (無料)"
+        case .openai:    return "OpenAI"
+        case .anthropic: return "Anthropic Claude"
+        case .groq:      return "Groq (高速)"
+        case .custom:    return "カスタム"
+        }
+    }
+
+    var baseURL: String {
+        switch self {
+        case .chatweb:   return "https://api.chatweb.ai"
+        case .openai:    return "https://api.openai.com"
+        case .anthropic: return "https://api.anthropic.com"
+        case .groq:      return "https://api.groq.com/openai"
+        case .custom:    return ""
+        }
+    }
+
+    var defaultModel: String {
+        switch self {
+        case .chatweb:   return "nemotron"
+        case .openai:    return "gpt-4o-mini"
+        case .anthropic: return "claude-haiku-4-5-20251001"
+        case .groq:      return "llama-3.1-8b-instant"
+        case .custom:    return "auto"
+        }
+    }
+
+    var requiresAPIKey: Bool {
+        switch self {
+        case .chatweb: return false
+        default:       return true
+        }
+    }
+}
+
 enum RecordingMode: String, CaseIterable {
     case hold   = "hold"
     case toggle = "toggle"
@@ -66,6 +194,22 @@ enum RecordingMode: String, CaseIterable {
         case .hold:   return "ホールド（押している間）"
         case .toggle: return "トグル（1回で開始・もう1回で終了）"
         }
+    }
+}
+
+// MARK: - Architecture Detection
+
+enum ArchUtil {
+    /// Apple Silicon (arm64) かどうかを判定
+    static var isAppleSilicon: Bool {
+        var sysinfo = utsname()
+        uname(&sysinfo)
+        let machine = withUnsafePointer(to: &sysinfo.machine) {
+            $0.withMemoryRebound(to: CChar.self, capacity: 1) {
+                String(validatingUTF8: $0)
+            }
+        }
+        return machine?.contains("arm64") == true
     }
 }
 
@@ -79,8 +223,27 @@ class AppSettings: ObservableObject {
     @Published var shortcutModifiers: UInt { didSet { ud.set(Int(bitPattern: shortcutModifiers), forKey: "shortcutModifiers") } }
     @Published var recordingMode: RecordingMode { didSet { ud.set(recordingMode.rawValue, forKey: "recordingMode") } }
 
+    // Translation hotkey
+    @Published var translateHotkeyCode: Int   { didSet { ud.set(translateHotkeyCode, forKey: "translateHotkeyCode") } }
+    @Published var translateHotkeyModifiers: UInt { didSet { ud.set(Int(bitPattern: translateHotkeyModifiers), forKey: "translateHotkeyModifiers") } }
+    @Published var translateTargetLang: String { didSet { ud.set(translateTargetLang, forKey: "translateTargetLang") } }
+
     // Recognition
-    @Published var language: String          { didSet { ud.set(language,               forKey: "language") } }
+    @Published var language: String          { didSet { ud.set(language,               forKey: "language"); AppDelegate.shared?.reloadSpeechEngine() } }
+
+    /// 主要言語のフラグ・表示名マッピング（メニューバー・設定画面で共用）
+    static let quickLanguages: [(flag: String, name: String, code: String)] = [
+        ("🇯🇵", "日本語",   "ja-JP"),
+        ("🇺🇸", "English", "en-US"),
+        ("🇨🇳", "中文",     "zh-CN"),
+        ("🇰🇷", "한국어",   "ko-KR"),
+        ("🌐", "自動検出",  "auto"),
+    ]
+
+    /// 現在の言語に対応するフラグ絵文字を返す
+    var languageFlag: String {
+        AppSettings.quickLanguages.first { $0.code == language }?.flag ?? "🌐"
+    }
     @Published var recognitionEngine: RecognitionEngine { didSet { ud.set(recognitionEngine.rawValue, forKey: "recognitionEngine") } }
     @Published var whisperAPIKey: String     { didSet { ud.set(whisperAPIKey,           forKey: "whisperAPIKey") } }
     @Published var whisperCppBinaryPath: String { didSet { ud.set(whisperCppBinaryPath, forKey: "whisperCppBinaryPath") } }
@@ -89,10 +252,24 @@ class AppSettings: ObservableObject {
     // LLM
     @Published var llmEnabled: Bool   { didSet { ud.set(llmEnabled,  forKey: "llmEnabled") } }
     @Published var llmUseLocal: Bool  { didSet { ud.set(llmUseLocal, forKey: "llmUseLocal") } }
+    @Published var llmProvider: LLMProvider { didSet {
+        ud.set(llmProvider.rawValue, forKey: "llmProvider")
+        // プロバイダ変更時にベースURLとモデルをプリセットで上書き
+        if llmProvider != .custom {
+            llmBaseURL = llmProvider.baseURL
+            llmModel   = llmProvider.defaultModel
+        }
+    }}
     @Published var llmBaseURL: String { didSet { ud.set(llmBaseURL,  forKey: "llmBaseURL") } }
     @Published var llmAPIKey: String  { didSet { ud.set(llmAPIKey,   forKey: "llmAPIKey") } }
     @Published var llmModel: String   { didSet { ud.set(llmModel,    forKey: "llmModel") } }
     @Published var llmCustomPrompt: String { didSet { ud.set(llmCustomPrompt, forKey: "llmCustomPrompt") } }
+    @Published var llmMode: LLMMode { didSet { ud.set(llmMode.rawValue, forKey: "llmMode") } }
+    @Published var llmMemorySaveMode: Bool { didSet { ud.set(llmMemorySaveMode, forKey: "llmMemorySaveMode") } }
+    @Published var superModeEnabled: Bool { didSet { ud.set(superModeEnabled, forKey: "superModeEnabled") } }
+
+    // Agent mode (voice commands)
+    @Published var agentModeEnabled: Bool { didSet { ud.set(agentModeEnabled, forKey: "agentModeEnabled") } }
 
     // Login item (ログイン時に自動起動)
     @Published var launchAtLogin: Bool { didSet {
@@ -118,6 +295,12 @@ class AppSettings: ObservableObject {
         if floatingButtonEnabled { FloatingButton.shared.show() } else { FloatingButton.shared.hide() }
     }}
 
+    // Streaming preview (real-time transcription during recording)
+    @Published var streamingPreviewEnabled: Bool { didSet { ud.set(streamingPreviewEnabled, forKey: "streamingPreviewEnabled") } }
+
+    // Speaker diarization (tinydiarize)
+    @Published var diarizationEnabled: Bool { didSet { ud.set(diarizationEnabled, forKey: "diarizationEnabled") } }
+
     // Wake word
     @Published var wakeWordEnabled: Bool { didSet {
         ud.set(wakeWordEnabled, forKey: "wakeWordEnabled")
@@ -141,6 +324,17 @@ class AppSettings: ObservableObject {
         if mods.contains(.shift)   { parts.append("⇧") }
         if mods.contains(.command) { parts.append("⌘") }
         parts.append(keyCodeToString(shortcutKeyCode))
+        return parts.joined()
+    }
+
+    var translateShortcutDisplayString: String {
+        var parts: [String] = []
+        let mods = NSEvent.ModifierFlags(rawValue: translateHotkeyModifiers)
+        if mods.contains(.control) { parts.append("⌃") }
+        if mods.contains(.option)  { parts.append("⌥") }
+        if mods.contains(.shift)   { parts.append("⇧") }
+        if mods.contains(.command) { parts.append("⌘") }
+        parts.append(keyCodeToString(translateHotkeyCode))
         return parts.joined()
     }
 
@@ -169,7 +363,8 @@ class AppSettings: ObservableObject {
 
     private func keyCodeToString(_ code: Int) -> String {
         switch code {
-        case 0:  return "A";  case 9:  return "V"
+        case 0:  return "A";  case 9:  return "V"; case 17: return "T"
+        case 49: return "Space"
         case 96: return "F5"; case 97: return "F6"; case 98: return "F7"
         case 100: return "F8"; case 101: return "F9"; case 109: return "F10"
         default: return "Key(\(code))"
@@ -194,7 +389,18 @@ class AppSettings: ObservableObject {
         shortcutModifiers = savedMods.map { UInt(bitPattern: $0) }
             ?? (NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.option.rawValue)
         recordingMode     = RecordingMode(rawValue: ud.string(forKey: "recordingMode") ?? "") ?? .hold
-        language          = ud.string(forKey: "language") ?? "ja-JP"
+
+        // Translation hotkey defaults: Cmd+Option+T (keyCode 17 = T)
+        translateHotkeyCode = ud.object(forKey: "translateHotkeyCode") as? Int ?? 17
+        let savedTransMods  = ud.object(forKey: "translateHotkeyModifiers") as? Int
+        translateHotkeyModifiers = savedTransMods.map { UInt(bitPattern: $0) }
+            ?? (NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.option.rawValue)
+        // Default target language: "en" if current lang starts with "ja", otherwise "ja"
+        let savedLang = ud.string(forKey: "language") ?? "ja-JP"
+        let defaultTarget = savedLang.hasPrefix("ja") ? "en" : "ja"
+        translateTargetLang = ud.string(forKey: "translateTargetLang") ?? defaultTarget
+
+        language          = savedLang
         recognitionEngine = RecognitionEngine(rawValue: ud.string(forKey: "recognitionEngine") ?? "") ?? .whisperCpp
         whisperAPIKey        = ud.string(forKey: "whisperAPIKey") ?? ""
         whisperCppBinaryPath = ud.string(forKey: "whisperCppBinaryPath") ?? ""
@@ -209,10 +415,17 @@ class AppSettings: ObservableObject {
         floatingButtonEnabled = ud.bool(forKey: "floatingButtonEnabled")
         llmEnabled  = ud.object(forKey: "llmEnabled") as? Bool ?? true  // デフォルトON
         llmUseLocal = ud.object(forKey: "llmUseLocal") as? Bool ?? true  // デフォルトはローカル
+        llmProvider = LLMProvider(rawValue: ud.string(forKey: "llmProvider") ?? "") ?? .chatweb
         llmBaseURL  = ud.string(forKey: "llmBaseURL") ?? "https://api.chatweb.ai"
         llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""
         llmModel    = ud.string(forKey: "llmModel") ?? "auto"
         llmCustomPrompt = ud.string(forKey: "llmCustomPrompt") ?? ""
+        llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .correct
+        llmMemorySaveMode = ud.object(forKey: "llmMemorySaveMode") as? Bool ?? false  // デフォルトOFF（常時読み込み）
+        superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
+        agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF
+        streamingPreviewEnabled = ud.object(forKey: "streamingPreviewEnabled") as? Bool ?? true  // デフォルトON
+        diarizationEnabled = ud.object(forKey: "diarizationEnabled") as? Bool ?? false  // デフォルトOFF
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []
@@ -224,12 +437,36 @@ class AppSettings: ObservableObject {
         let terminalPrompt = "これは開発者のターミナル操作です。コマンド、ファイルパス、CLI、Git、シェルスクリプトの用語を正確に認識してください。"
         let codePrompt = "これはコードエディタでの作業です。プログラミング用語、変数名、関数名、Swift、Python、Rust、TypeScript の構文を正確に認識してください。"
         return [
+            // ターミナル
             AppProfile(bundleID: "com.mitchellh.ghostty",  appName: "Ghostty",   prompt: terminalPrompt, language: "ja-JP"),
             AppProfile(bundleID: "com.apple.Terminal",      appName: "ターミナル", prompt: terminalPrompt, language: "ja-JP"),
             AppProfile(bundleID: "com.googlecode.iterm2",   appName: "iTerm2",    prompt: terminalPrompt, language: "ja-JP"),
+            // コードエディタ
             AppProfile(bundleID: "com.microsoft.VSCode",    appName: "VS Code",   prompt: codePrompt,     language: "ja-JP"),
             AppProfile(bundleID: "com.apple.dt.Xcode",      appName: "Xcode",
                        prompt: "これは Xcode での Swift/SwiftUI 開発です。Swift、SwiftUI、UIKit、Xcode の用語を正確に認識してください。",
+                       language: "ja-JP"),
+            // ブラウザ
+            AppProfile(bundleID: "com.apple.Safari",        appName: "Safari",
+                       prompt: "ブラウザでの作業です。URL、ウェブサイト名、検索ワードを正確に認識してください。",
+                       language: "ja-JP"),
+            AppProfile(bundleID: "com.google.Chrome",       appName: "Chrome",
+                       prompt: "ブラウザでの作業です。URL、ウェブサイト名、検索ワードを正確に認識してください。",
+                       language: "ja-JP"),
+            // メール・チャット
+            AppProfile(bundleID: "com.apple.mail",          appName: "メール",
+                       prompt: "メール作成中です。敬語や丁寧な表現を優先してください。",
+                       language: "ja-JP",
+                       llmInstruction: "メールにふさわしい丁寧な文体に整えてください。敬語を適切に使い、句読点を補正してください。"),
+            AppProfile(bundleID: "com.tinyspeck.slackmacgap", appName: "Slack",
+                       prompt: "Slackでのチャットです。カジュアルな表現も許容してください。",
+                       language: "ja-JP"),
+            // ドキュメント
+            AppProfile(bundleID: "com.apple.iWork.Pages",   appName: "Pages",
+                       prompt: "文書作成中です。正確な日本語で認識してください。",
+                       language: "ja-JP"),
+            AppProfile(bundleID: "com.apple.Notes",         appName: "メモ",
+                       prompt: "メモの入力です。箇条書きやキーワードを正確に認識してください。",
                        language: "ja-JP"),
         ]
     }

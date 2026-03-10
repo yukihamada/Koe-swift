@@ -136,6 +136,9 @@ int whisper_full_parallel(struct whisper_context *ctx, struct whisper_full_param
 // Results
 int whisper_full_n_segments(struct whisper_context *ctx);
 const char *whisper_full_get_segment_text(struct whisper_context *ctx, int i_segment);
+int64_t whisper_full_get_segment_t0(struct whisper_context *ctx, int i_segment);
+int64_t whisper_full_get_segment_t1(struct whisper_context *ctx, int i_segment);
+bool whisper_full_get_segment_speaker_turn_next(struct whisper_context *ctx, int i_segment);
 
 // Language
 int whisper_lang_id(const char *lang);

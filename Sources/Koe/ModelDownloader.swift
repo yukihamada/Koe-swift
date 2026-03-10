@@ -87,7 +87,9 @@ class ModelDownloader {
     }
 
     var isModelAvailable: Bool {
-        FileManager.default.fileExists(atPath: modelPath)
+        // Intel Mac では whisper.cpp モデルは不要（使えない）ので常に true を返す
+        if !ArchUtil.isAppleSilicon { return true }
+        return FileManager.default.fileExists(atPath: modelPath)
     }
 
     /// 指定モデルがダウンロード済みか
@@ -112,7 +114,14 @@ class ModelDownloader {
     private var progressLabel: NSTextField?
 
     /// モデルが存在するか確認し、なければダウンロードしてからコールバック。
+    /// Intel Mac では whisper.cpp が動作しないためダウンロードをスキップ。
     func ensureModel(completion: @escaping (Bool) -> Void) {
+        // Intel Mac: モデル不要
+        if !ArchUtil.isAppleSilicon {
+            completion(true)
+            return
+        }
+
         if isModelAvailable {
             completion(true)
             return

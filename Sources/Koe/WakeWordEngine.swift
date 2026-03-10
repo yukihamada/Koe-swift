@@ -194,7 +194,10 @@ class WakeWordEngine {
 
     func start() {
         guard !isRunning else { return }
-        guard !templates.isEmpty else { klog("WakeWordEngine: no templates"); return }
+        guard isReady else {
+            klog("WakeWordEngine: need \(Self.minTemplates) templates (have \(templates.count))")
+            return
+        }
         isRunning = true
         audioBuf = []
         lastCheck = Date()
@@ -284,6 +287,13 @@ class WakeWordEngine {
 
     // MARK: - Template recording
 
+    /// テンプレートが使用可能か（最低録音回数を満たしているか）
+    static let minTemplates = 3
+    var isReady: Bool { templates.count >= Self.minTemplates }
+
+    /// 無音チェック用の最低RMS閾値（テンプレート登録時）
+    private let templateMinRMS: Float = 0.01
+
     func recordTemplate(duration: Double = 1.5, completion: @escaping (Bool) -> Void) {
         let engine = AVAudioEngine()
         let node = engine.inputNode
@@ -318,13 +328,25 @@ class WakeWordEngine {
         DispatchQueue.global().async {
             _ = sema.wait(timeout: .now() + duration + 1)
             engine.stop(); node.removeTap(onBus: 0)
-            let frames = self.extractMFCC(from: Array(collected.prefix(needed)))
+
+            let samples = Array(collected.prefix(needed))
+
+            // 無音チェック: RMSが閾値以下なら拒否（無音テンプレートは誤検出の原因）
+            var rms: Float = 0
+            vDSP_rmsqv(samples, 1, &rms, vDSP_Length(samples.count))
+            if rms < self.templateMinRMS {
+                klog("WakeWordEngine: rejected — too quiet (RMS=\(String(format:"%.4f", rms)))")
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+
+            let frames = self.extractMFCC(from: samples)
             guard frames.count >= 5 else {
                 DispatchQueue.main.async { completion(false) }; return
             }
             self.templates.append(frames)
             self.saveTemplates()
-            klog("WakeWordEngine: template added (\(self.templates.count) total, \(frames.count) frames)")
+            klog("WakeWordEngine: template added (\(self.templates.count) total, \(frames.count) frames, RMS=\(String(format:"%.4f", rms)))")
             DispatchQueue.main.async { completion(true) }
         }
     }

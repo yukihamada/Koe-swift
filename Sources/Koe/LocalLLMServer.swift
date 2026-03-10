@@ -24,14 +24,16 @@ final class LlamaContext {
     }
 
     static let availableModels: [LLMModel] = [
+        // 超軽量（8GB Mac向け）
         LLMModel(
             id: "qwen3-0.6b-q8",
             name: "Qwen3 0.6B (Q8_0)",
-            description: "最軽量・即応。メモリ16GB以下に最適",
+            description: "最軽量・即応。メモリ8-16GBに最適",
             sizeMB: 750,
             url: "https://huggingface.co/ggml-org/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q8_0.gguf",
             fileName: "Qwen3-0.6B-Q8_0.gguf"
         ),
+        // 軽量（16GB Mac向け）
         LLMModel(
             id: "qwen3-1.7b-q4",
             name: "Qwen3 1.7B (Q4_K_M)",
@@ -40,6 +42,15 @@ final class LlamaContext {
             url: "https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
             fileName: "Qwen3-1.7B-Q4_K_M.gguf"
         ),
+        LLMModel(
+            id: "gemma2-2b-jpn-q4",
+            name: "Gemma 2 2B 日本語 (Q4_K_M)",
+            description: "Google製・日本語対応・超軽量",
+            sizeMB: 1600,
+            url: "https://huggingface.co/bartowski/gemma-2-2b-jpn-it-GGUF/resolve/main/gemma-2-2b-jpn-it-Q4_K_M.gguf",
+            fileName: "gemma-2-2b-jpn-it-Q4_K_M.gguf"
+        ),
+        // 中量（16-32GB Mac向け）
         LLMModel(
             id: "qwen3-1.7b-q8",
             name: "Qwen3 1.7B (Q8_0)",
@@ -51,10 +62,27 @@ final class LlamaContext {
         LLMModel(
             id: "qwen3.5-4b-q4",
             name: "Qwen3.5 4B (Q4_K_M)",
-            description: "高性能。メモリ32GB以上推奨",
+            description: "高性能バランス型。メモリ32GB推奨",
             sizeMB: 2740,
             url: "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
             fileName: "Qwen3.5-4B-Q4_K_M.gguf"
+        ),
+        // 大型（32GB+ Mac向け）
+        LLMModel(
+            id: "qwen2.5-7b-q4",
+            name: "Qwen2.5 7B Instruct (Q4_K_M)",
+            description: "多言語高精度。メモリ32GB以上推奨",
+            sizeMB: 4680,
+            url: "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF/resolve/main/qwen2.5-7b-instruct-q4_k_m.gguf",
+            fileName: "qwen2.5-7b-instruct-q4_k_m.gguf"
+        ),
+        LLMModel(
+            id: "llama3-swallow-8b-q4",
+            name: "Llama 3.1 Swallow 8B (Q4_K_M)",
+            description: "日本語特化・高品質。メモリ32GB以上推奨",
+            sizeMB: 4920,
+            url: "https://huggingface.co/mmnga/Llama-3.1-Swallow-8B-Instruct-v0.3-Q4_K_M-GGUF/resolve/main/Llama-3.1-Swallow-8B-Instruct-v0.3-Q4_K_M.gguf",
+            fileName: "Llama-3.1-Swallow-8B-Instruct-v0.3-Q4_K_M.gguf"
         ),
     ]
 

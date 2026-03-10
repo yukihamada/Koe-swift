@@ -23,6 +23,7 @@ class SetupWindow: NSObject {
 
     private var currentStep = 0
     private var selectedModel: WhisperModel = ModelDownloader.defaultModel
+    private var showLLMStep: Bool = false  // Apple Silicon + >=8GB RAM
 
     func show(completion: @escaping () -> Void) {
         self.completion = completion
@@ -76,20 +77,33 @@ class SetupWindow: NSObject {
         onboardingView.addSubview(appName)
 
         // Tagline
-        let tagline = NSTextField(labelWithString: "Mac で最も速い日本語音声入力")
+        let taglineText = ArchUtil.isAppleSilicon
+            ? "Mac で最も速い日本語音声入力"
+            : "Mac で快適な日本語音声入力"
+        let tagline = NSTextField(labelWithString: taglineText)
         tagline.font = .systemFont(ofSize: 16)
         tagline.textColor = .secondaryLabelColor
         tagline.alignment = .center
         tagline.frame = NSRect(x: 0, y: 360, width: w, height: 22)
         onboardingView.addSubview(tagline)
 
-        // Feature cards
-        let features: [(String, String, String)] = [
-            ("bolt.fill", "0.5秒以内に認識", "whisper.cpp + Metal GPU で超高速変換"),
-            ("lock.shield.fill", "完全ローカル処理", "音声データは一切クラウドへ送信しません"),
-            ("mic.fill", "ハンズフリー対応", "ウェイクワード「ヘイこえ」で起動"),
-            ("app.badge.fill", "アプリ別最適化", "アプリごとにプロンプトや言語を切替"),
-        ]
+        // Feature cards (Intel Mac では whisper.cpp Metal が使えないので表示を変える)
+        let features: [(String, String, String)]
+        if ArchUtil.isAppleSilicon {
+            features = [
+                ("bolt.fill", "0.5秒以内に認識", "whisper.cpp + Metal GPU で超高速変換"),
+                ("lock.shield.fill", "完全ローカル処理", "音声データは一切クラウドへ送信しません"),
+                ("mic.fill", "ハンズフリー対応", "ウェイクワード「ヘイこえ」で起動"),
+                ("app.badge.fill", "アプリ別最適化", "アプリごとにプロンプトや言語を切替"),
+            ]
+        } else {
+            features = [
+                ("icloud.fill", "Apple 音声認識", "Intel Mac ではオンデバイス / クラウド認識を使用"),
+                ("globe", "OpenAI Whisper API 対応", "API キーを設定すれば高精度な認識も可能"),
+                ("mic.fill", "ハンズフリー対応", "ウェイクワード「ヘイこえ」で起動"),
+                ("app.badge.fill", "アプリ別最適化", "アプリごとにプロンプトや言語を切替"),
+            ]
+        }
 
         for (i, feature) in features.enumerated() {
             let y = CGFloat(260 - i * 65)
@@ -174,7 +188,11 @@ class SetupWindow: NSObject {
         title.frame = NSRect(x: 85, y: 468, width: 300, height: 32)
         setupView.addSubview(title)
 
-        let subtitle = NSTextField(labelWithString: "3ステップで完了します")
+        // LLMステップを表示するか判定 (Apple Silicon + 8GB以上)
+        showLLMStep = ArchUtil.isAppleSilicon && MemoryMonitor.totalMemoryMB >= 8000
+
+        let stepCount = showLLMStep ? 4 : 3
+        let subtitle = NSTextField(labelWithString: "\(stepCount)ステップで完了します")
         subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
         subtitle.frame = NSRect(x: 85, y: 448, width: 300, height: 18)
@@ -187,7 +205,9 @@ class SetupWindow: NSObject {
         setupView.addSubview(divider)
 
         // Steps
-        let steps = ["音声認識モデル", "マイク権限", "アクセシビリティ権限", "完了"]
+        var steps = ["音声認識モデル"]
+        if showLLMStep { steps.append("AI後処理モデル") }
+        steps.append(contentsOf: ["マイク権限", "アクセシビリティ権限", "完了"])
         for (i, step) in steps.enumerated() {
             let y = 380 - i * 42
 
@@ -317,11 +337,32 @@ class SetupWindow: NSObject {
         }
     }
 
+    /// 次のステップへ進む（LLMステップの有無で分岐）
+    private func advanceAfterWhisperModel() {
+        if showLLMStep {
+            runStepLLM()
+        } else {
+            runStep2_Microphone()
+        }
+    }
+
     // MARK: - Step 1: Model Download
 
     private func runStep1_Model() {
         setStep(0)
         actionButton.isHidden = true
+
+        // Intel Mac: whisper.cpp モデルは不要 → スキップ
+        if !ArchUtil.isAppleSilicon {
+            statusLabel.stringValue = "Intel Mac — モデルダウンロード不要"
+            detailLabel.stringValue = "Apple オンデバイス認識を使用します"
+            modelPopup.isEnabled = false
+            modelPopup.isHidden = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.advanceAfterWhisperModel()
+            }
+            return
+        }
 
         if ModelDownloader.shared.isDownloaded(selectedModel) {
             ModelDownloader.shared.selectModel(selectedModel)
@@ -329,7 +370,7 @@ class SetupWindow: NSObject {
             detailLabel.stringValue = selectedModel.name
             modelPopup.isEnabled = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.runStep2_Microphone()
+                self.advanceAfterWhisperModel()
             }
             return
         }
@@ -372,7 +413,7 @@ class SetupWindow: NSObject {
                     self.statusLabel.stringValue = "モデルダウンロード完了"
                     self.detailLabel.stringValue = model.name
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        self.runStep2_Microphone()
+                        self.advanceAfterWhisperModel()
                     }
                 } catch {
                     self.statusLabel.stringValue = "保存に失敗: \(error.localizedDescription)"
@@ -395,10 +436,115 @@ class SetupWindow: NSObject {
         task.resume()
     }
 
+    // MARK: - Step LLM: Local AI Model (Apple Silicon + >=8GB only)
+
+    private func runStepLLM() {
+        setStep(1)  // LLMステップは常にindex 1（showLLMStep=true時のみ呼ばれる）
+        modelPopup.isHidden = true
+
+        let llama = LlamaContext.shared
+        guard let recommended = MemoryMonitor.recommendedLLMModel(),
+              let model = LlamaContext.availableModels.first(where: { $0.id == recommended }) else {
+            // 推奨モデルなし → スキップ
+            statusLabel.stringValue = "AI後処理モデル — スキップ"
+            detailLabel.stringValue = ""
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.runStep2_Microphone()
+            }
+            return
+        }
+
+        // 既にダウンロード済み
+        if llama.isDownloaded(model) {
+            statusLabel.stringValue = "AI後処理モデルは既にダウンロード済み"
+            detailLabel.stringValue = "\(model.name) — 完全オフラインAI後処理が可能"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.runStep2_Microphone()
+            }
+            return
+        }
+
+        // ダウンロードを提案
+        statusLabel.stringValue = "ローカルAI後処理モデル"
+        detailLabel.stringValue = "\(model.name) (\(model.sizeMB)MB)\n完全オフラインAI後処理が可能になります"
+        detailLabel.maximumNumberOfLines = 2
+        progressBar.isHidden = true
+
+        actionButton.title = "ダウンロード"
+        actionButton.isHidden = false
+        actionButton.wantsLayer = true
+        actionButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        actionButton.contentTintColor = .white
+        actionButton.layer?.cornerRadius = 8
+
+        // スキップボタンを追加
+        let w = contentView.bounds.width
+        let skipBtn = NSButton(frame: NSRect(x: w - 280, y: 30, width: 120, height: 36))
+        skipBtn.bezelStyle = .rounded
+        skipBtn.title = "スキップ"
+        skipBtn.font = .systemFont(ofSize: 13)
+        skipBtn.tag = 999  // 識別用
+        skipBtn.target = self
+        skipBtn.action = #selector(onSkipLLM)
+        setupView.addSubview(skipBtn)
+
+        // actionButton のアクションを一時差し替え
+        actionButton.action = #selector(onDownloadLLM)
+    }
+
+    @objc private func onSkipLLM() {
+        // スキップボタンを削除
+        setupView.subviews.first { $0.tag == 999 }?.removeFromSuperview()
+        actionButton.action = #selector(onAction)
+        actionButton.isHidden = true
+        statusLabel.stringValue = "AI後処理モデル — スキップ"
+        detailLabel.stringValue = "設定からいつでもダウンロードできます"
+        detailLabel.maximumNumberOfLines = 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.runStep2_Microphone()
+        }
+    }
+
+    @objc private func onDownloadLLM() {
+        // スキップボタンを削除
+        setupView.subviews.first { $0.tag == 999 }?.removeFromSuperview()
+        actionButton.isHidden = true
+
+        guard let recommended = MemoryMonitor.recommendedLLMModel(),
+              let model = LlamaContext.availableModels.first(where: { $0.id == recommended }) else {
+            runStep2_Microphone(); return
+        }
+
+        statusLabel.stringValue = "AI後処理モデルをダウンロード中..."
+        detailLabel.stringValue = "\(model.name) (\(model.sizeMB)MB)"
+        detailLabel.maximumNumberOfLines = 1
+        progressBar.isHidden = false
+        progressBar.doubleValue = 0
+
+        LlamaContext.shared.downloadModel(model, progress: { [weak self] pct, detail in
+            self?.progressBar.doubleValue = pct
+            self?.detailLabel.stringValue = detail
+        }) { [weak self] success in
+            guard let self else { return }
+            self.progressBar.isHidden = true
+            if success {
+                self.statusLabel.stringValue = "AI後処理モデル ダウンロード完了"
+                self.detailLabel.stringValue = model.name
+            } else {
+                self.statusLabel.stringValue = "ダウンロード失敗（後から設定で再試行可能）"
+            }
+            self.actionButton.action = #selector(self.onAction)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self.runStep2_Microphone()
+            }
+        }
+    }
+
     // MARK: - Step 2: Microphone
 
     private func runStep2_Microphone() {
-        setStep(1)
+        let micStep = showLLMStep ? 2 : 1
+        setStep(micStep)
         statusLabel.stringValue = "マイクへのアクセスを許可してください"
         detailLabel.stringValue = "音声入力に必要です"
         actionButton.isHidden = true
@@ -424,7 +570,8 @@ class SetupWindow: NSObject {
     // MARK: - Step 3: Accessibility
 
     private func runStep3_Accessibility() {
-        setStep(2)
+        let accStep = showLLMStep ? 3 : 2
+        setStep(accStep)
         let trusted = AXIsProcessTrusted()
         if trusted {
             statusLabel.stringValue = "アクセシビリティ権限 OK"
@@ -461,7 +608,8 @@ class SetupWindow: NSObject {
     // MARK: - Step 4: Done
 
     private func runStep4_Done() {
-        setStep(3)
+        let doneStep = showLLMStep ? 4 : 3
+        setStep(doneStep)
 
         statusLabel.stringValue = "セットアップ完了！"
         detailLabel.stringValue = ""
@@ -480,14 +628,18 @@ class SetupWindow: NSObject {
     }
 
     @objc private func onAction() {
+        let micStep = showLLMStep ? 2 : 1
+        let accStep = showLLMStep ? 3 : 2
+        let doneStep = showLLMStep ? 4 : 3
+
         switch currentStep {
         case 0:
             runStep1_Model()
-        case 1:
+        case micStep:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-        case 2:
+        case accStep:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-        case 3:
+        case doneStep:
             window.close()
             completion?()
         default:

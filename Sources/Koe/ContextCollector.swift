@@ -43,6 +43,51 @@ struct ContextCollector {
         return trimmed
     }
 
+    // MARK: - Super Mode (LLM用リッチコンテキスト)
+
+    /// LLM処理に渡すリッチなコンテキスト情報を収集（whisper promptとは別）
+    /// Super Mode有効時にアプリ名・選択テキスト・クリップボードキーワードを含む
+    static func collectForLLM(appBundleID: String) -> String? {
+        guard AppSettings.shared.superModeEnabled else { return nil }
+
+        var parts: [String] = []
+
+        // アプリ名
+        if let app = NSWorkspace.shared.frontmostApplication {
+            let name = app.localizedName ?? appBundleID
+            parts.append("ユーザーは \(name) を使用中。")
+        }
+
+        // 選択テキスト（Accessibility API）
+        if let selected = selectedText(), !selected.isEmpty {
+            let trimmed = String(selected.prefix(500))
+            parts.append("選択中のテキスト: \(trimmed)")
+        }
+
+        // クリップボードのキーワード
+        if let keywords = japaneseKeywords(from: clipboardText()) {
+            parts.append("クリップボード: \(keywords)")
+        }
+
+        guard !parts.isEmpty else { return nil }
+        return parts.joined(separator: " ")
+    }
+
+    // MARK: - Selected Text (Accessibility API)
+
+    /// AXUIElement APIでアクティブアプリの選択テキストを取得
+    private static func selectedText() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var focusedElement: AnyObject?
+        guard AXUIElementCopyAttributeValue(axApp, kAXFocusedUIElementAttribute as CFString, &focusedElement) == .success else { return nil }
+        var selectedText: AnyObject?
+        // focusedElement is always AXUIElement when CopyAttributeValue succeeds
+        let axElement = focusedElement as! AXUIElement
+        guard AXUIElementCopyAttributeValue(axElement, kAXSelectedTextAttribute as CFString, &selectedText) == .success else { return nil }
+        return selectedText as? String
+    }
+
     // MARK: - App Hint
 
     /// アプリのバンドルIDからドメイン固有のヒントワードを返す

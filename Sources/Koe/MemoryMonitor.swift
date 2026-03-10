@@ -95,4 +95,15 @@ enum MemoryMonitor {
         }
         return nil
     }
+
+    /// 8GB未満のMacではローカルLLMを自動無効化
+    /// アプリ起動時に一度呼ぶ
+    static func autoDisableLocalLLMIfNeeded() {
+        guard totalMemoryMB < 8000 else { return }
+        let settings = AppSettings.shared
+        if settings.llmUseLocal {
+            settings.llmUseLocal = false
+            klog("Memory: totalMemory=\(totalMemoryMB)MB (<8GB) — local LLM auto-disabled")
+        }
+    }
 }

@@ -115,8 +115,12 @@ for mlib in "$WHISPER_LIB"/ggml*.metallib "$WHISPER_LIB"/../share/whisper-cpp/*.
     fi
 done
 
-# Sign everything with Developer ID Application cert + hardened runtime + timestamp
+# Sign everything — use Developer ID if available, else ad-hoc
 SIGN_ID="Developer ID Application: Yuki Hamada (5BV85JW8US)"
+if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
+    SIGN_ID="-"
+    echo "⚠ Developer ID not found, using ad-hoc signing"
+fi
 ENTITLEMENTS="entitlements.plist"
 
 # Create entitlements if not exists
@@ -139,16 +143,27 @@ cat > "$ENTITLEMENTS" << 'ENTXML'
 ENTXML
 fi
 
+# Signing flags — ad-hoc can't use --timestamp
+SIGN_FLAGS="--force --sign $SIGN_ID --options runtime"
+if [ "$SIGN_ID" != "-" ]; then
+    SIGN_FLAGS="$SIGN_FLAGS --timestamp"
+fi
+
 # Sign dylibs first (inside-out signing)
 for lib in "$FRAMEWORKS"/*.dylib; do
-    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$lib"
+    eval codesign $SIGN_FLAGS "$lib"
 done
 
 # Sign the main binary and app bundle
-codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
-    --entitlements "$ENTITLEMENTS" --deep "$APP"
+eval codesign $SIGN_FLAGS --entitlements "$ENTITLEMENTS" --deep "$APP"
 
 echo "✓ Built and signed $APP (with embedded whisper.cpp)"
+
+if [ "$1" = "--no-launch" ] || [ -n "$CI" ]; then
+    echo "Build complete (no launch)"
+    exit 0
+fi
+
 echo "→ Launching..."
 pkill -9 Koe 2>/dev/null
 sleep 0.5

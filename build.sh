@@ -15,15 +15,18 @@ if [ -f "AppIcon.icns" ]; then
     cp AppIcon.icns "$APP/Contents/Resources/"
 fi
 
+# Homebrew prefix (Apple Silicon: /opt/homebrew, Intel: /usr/local)
+BREW_PREFIX=$(brew --prefix 2>/dev/null || echo "/opt/homebrew")
+
 # whisper.cpp library paths (libinternal preferred, fallback to lib)
-WHISPER_LIB="/opt/homebrew/opt/whisper-cpp/libinternal"
+WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/libinternal"
 if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
-    WHISPER_LIB="/opt/homebrew/opt/whisper-cpp/lib"
+    WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/lib"
 fi
 if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
-    WHISPER_LIB="/opt/homebrew/lib"
+    WHISPER_LIB="$BREW_PREFIX/lib"
 fi
-GGML_INCLUDE="/opt/homebrew/include"
+GGML_INCLUDE="$BREW_PREFIX/include"
 
 # Verify whisper dylib exists
 if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
@@ -33,9 +36,9 @@ if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
 fi
 
 # llama.cpp library paths
-LLAMA_LIB="/opt/homebrew/lib"
+LLAMA_LIB="$BREW_PREFIX/lib"
 if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then
-    LLAMA_LIB="/opt/homebrew/opt/llama.cpp/lib"
+    LLAMA_LIB="$BREW_PREFIX/opt/llama.cpp/lib"
 fi
 
 # Verify llama dylib exists
@@ -43,6 +46,14 @@ if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then
     echo "⚠ libllama.dylib not found at $LLAMA_LIB"
     echo "  Install: brew install llama.cpp"
     exit 1
+fi
+
+# Detect architecture for target
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+    SWIFT_TARGET="x86_64-apple-macos13.0"
+else
+    SWIFT_TARGET="arm64-apple-macos13.0"
 fi
 
 swiftc Sources/Koe/*.swift \
@@ -60,9 +71,11 @@ swiftc Sources/Koe/*.swift \
     -framework SwiftUI \
     -framework Metal \
     -framework Accelerate \
+    -framework AudioToolbox \
+    -framework CoreAudio \
     -framework UserNotifications \
     -framework ServiceManagement \
-    -target arm64-apple-macos13.0 \
+    -target "$SWIFT_TARGET" \
     -O \
     -o "$APP/Contents/MacOS/Koe"
 
@@ -143,19 +156,21 @@ cat > "$ENTITLEMENTS" << 'ENTXML'
 ENTXML
 fi
 
-# Signing flags — ad-hoc can't use --timestamp
-SIGN_FLAGS="--force --sign $SIGN_ID --options runtime"
-if [ "$SIGN_ID" != "-" ]; then
-    SIGN_FLAGS="$SIGN_FLAGS --timestamp"
-fi
-
 # Sign dylibs first (inside-out signing)
 for lib in "$FRAMEWORKS"/*.dylib; do
-    eval codesign $SIGN_FLAGS "$lib"
+    if [ "$SIGN_ID" = "-" ]; then
+        codesign --force --sign - --options runtime "$lib"
+    else
+        codesign --force --sign "$SIGN_ID" --options runtime --timestamp "$lib"
+    fi
 done
 
 # Sign the main binary and app bundle
-eval codesign $SIGN_FLAGS --entitlements "$ENTITLEMENTS" --deep "$APP"
+if [ "$SIGN_ID" = "-" ]; then
+    codesign --force --sign - --options runtime --entitlements "$ENTITLEMENTS" --deep "$APP"
+else
+    codesign --force --sign "$SIGN_ID" --options runtime --timestamp --entitlements "$ENTITLEMENTS" --deep "$APP"
+fi
 
 echo "✓ Built and signed $APP (with embedded whisper.cpp)"
 

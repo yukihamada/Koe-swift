@@ -17,7 +17,7 @@
 <meta property="og:url" content="https://koe.elio.love/">
 <meta property="og:site_name" content="Koe">
 <meta property="og:locale" content="ja_JP">
-<meta property="og:image" content="https://koe.elio.love/og.svg">
+<meta property="og:image" content="https://koe.elio.love/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 
@@ -25,7 +25,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Koe (声) — Mac で最も速い日本語音声入力">
 <meta name="twitter:description" content="whisper.cpp + Metal GPU。完全ローカル、0.5秒変換、月額0円。">
-<meta name="twitter:image" content="https://koe.elio.love/og.svg">
+<meta name="twitter:image" content="https://koe.elio.love/og.png">
 
 <!-- Favicon (inline SVG as data URI) -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0a0a'/%3E%3Cg transform='translate(16,16)'%3E%3Crect x='-1' y='-9' width='2' height='18' rx='1' fill='url(%23g)'/%3E%3Crect x='-5' y='-6' width='2' height='12' rx='1' fill='url(%23g)' opacity='.8'/%3E%3Crect x='3' y='-7' width='2' height='14' rx='1' fill='url(%23g)' opacity='.85'/%3E%3Crect x='-9' y='-4' width='2' height='8' rx='1' fill='url(%23g)' opacity='.6'/%3E%3Crect x='7' y='-5' width='2' height='10' rx='1' fill='url(%23g)' opacity='.65'/%3E%3C/g%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32'%3E%3Cstop stop-color='%23ff3b30'/%3E%3Cstop offset='1' stop-color='%23ff9500'/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E">
@@ -44,7 +44,7 @@
   "description": "Mac で最も速い日本語音声入力アプリ。whisper.cpp + Metal GPU で完全ローカル処理。",
   "url": "https://koe.elio.love",
   "downloadUrl": "https://github.com/yukihamada/Koe-swift/releases/latest",
-  "operatingSystem": "macOS 13+",
+  "operatingSystem": "macOS 13+ (Apple Silicon & Intel)",
   "applicationCategory": "UtilitiesApplication",
   "offers": {
     "@type": "Offer",
@@ -60,12 +60,12 @@
   "softwareVersion": "2.0.0",
   "datePublished": "2026-03-09",
   "inLanguage": ["ja", "en"],
-  "screenshot": "https://koe.elio.love/og.svg",
+  "screenshot": "https://koe.elio.love/og.png",
   "featureList": [
     "whisper.cpp + Metal GPU で0.5秒以内に音声認識",
     "完全ローカル処理 — クラウド不要",
     "アプリ別プロンプト最適化",
-    "ウェイクワード (MFCC+DTW 自社エンジン)",
+    "ウェイクワード Beta (MFCC+DTW 自社エンジン)",
     "投機的実行でレイテンシ削減",
     "議事録モード",
     "テキスト展開辞書",
@@ -100,7 +100,12 @@ a:hover{text-decoration:underline}
 .dl-btn{display:inline-flex;align-items:center;gap:10px;background:var(--grad);color:#fff;font-size:17px;font-weight:600;padding:16px 36px;border-radius:14px;border:none;cursor:pointer;transition:transform .15s,box-shadow .15s}
 .dl-btn:hover{transform:translateY(-2px);box-shadow:0 8px 30px rgba(255,59,48,.3);text-decoration:none;color:#fff}
 .dl-btn svg{width:20px;height:20px}
+.dl-buttons{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-bottom:8px}
+.dl-btn-secondary{background:#222!important;border:1px solid #444}
+.dl-btn-secondary:hover{box-shadow:0 8px 30px rgba(255,255,255,.08)!important}
 .dl-sub{font-size:13px;color:#555;margin-top:12px}
+.dl-compare{display:flex;gap:20px;justify-content:center;max-width:640px;margin:16px auto 0;flex-wrap:wrap}
+.dl-compare-item{flex:1;min-width:240px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:13px;color:var(--muted);line-height:1.6}
 
 /* Stats */
 .stats{display:flex;justify-content:center;gap:48px;padding:40px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:80px}
@@ -148,8 +153,20 @@ section{padding:60px 0}
 .cross{color:#555}
 
 /* Footer */
-footer{border-top:1px solid var(--border);padding:40px 0;text-align:center;color:#555;font-size:13px}
+footer{border-top:1px solid var(--border);padding:48px 0;color:#555;font-size:13px}
 footer a{color:#777}
+.footer-inner{display:flex;gap:48px;align-items:flex-start;flex-wrap:wrap}
+.footer-elio{flex:1;min-width:260px;display:flex;gap:16px;align-items:flex-start}
+.footer-elio-icon{width:56px;height:56px;border-radius:14px;flex-shrink:0;overflow:hidden;background:#111;border:1px solid #2a2a2a}
+.footer-elio-icon img{width:100%;height:100%;object-fit:cover}
+.footer-elio-info h4{font-size:15px;font-weight:600;color:#ccc;margin-bottom:4px}
+.footer-elio-info p{font-size:13px;color:#666;line-height:1.5;margin-bottom:8px}
+.footer-elio-links{display:flex;gap:10px;flex-wrap:wrap}
+.footer-elio-links a{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:#999;background:#1a1a1a;border:1px solid #2a2a2a;border-radius:6px;padding:4px 10px;transition:background .2s}
+.footer-elio-links a:hover{background:#222;color:#ccc;text-decoration:none}
+.footer-elio-links a svg{width:14px;height:14px;fill:currentColor}
+.footer-meta{text-align:right;flex-shrink:0}
+@media(max-width:768px){.footer-inner{flex-direction:column;gap:24px}.footer-meta{text-align:left}}
 
 /* Install section */
 .install-code{background:#111;border:1px solid var(--border);border-radius:12px;padding:20px 24px;font-family:'SF Mono',monospace;font-size:14px;color:#ccc;margin-top:24px;position:relative;overflow-x:auto}
@@ -220,6 +237,17 @@ footer a{color:#777}
 .mock-toggle.on::after{left:18px}
 .mock-select{background:#333;border:1px solid #444;border-radius:6px;padding:3px 8px;color:#ccc;font-size:12px}
 
+/* Social bar */
+.social-bar{display:flex;justify-content:center;gap:16px;flex-wrap:wrap;padding:24px 0;align-items:center}
+.social-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;color:#ccc;background:#1a1a1a;border:1px solid #2a2a2a;transition:background .2s,border-color .2s,transform .15s;cursor:pointer;text-decoration:none}
+.social-btn:hover{background:#222;border-color:#444;transform:translateY(-1px);text-decoration:none;color:#fff}
+.social-btn svg{width:16px;height:16px;fill:currentColor;flex-shrink:0}
+.social-btn .star-count{color:var(--accent);font-weight:700}
+
+/* Language toggle */
+.lang-toggle{position:fixed;top:16px;right:16px;z-index:9999;background:rgba(30,30,30,.85);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid #333;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;color:#aaa;cursor:pointer;transition:background .2s,color .2s;letter-spacing:.5px;user-select:none}
+.lang-toggle:hover{background:rgba(50,50,50,.9);color:#ddd}
+
 /* Responsive */
 @media(max-width:768px){
   .hero h1{font-size:36px}
@@ -235,6 +263,9 @@ footer a{color:#777}
 </style>
 </head>
 <body>
+
+<!-- Language Toggle -->
+<button class="lang-toggle" id="langToggle" onclick="toggleLang()">EN</button>
 
 <div class="container">
 
@@ -256,42 +287,72 @@ footer a{color:#777}
       <defs><linearGradient id="g" x1="0" y1="0" x2="120" y2="120"><stop stop-color="#ff3b30"/><stop offset="1" stop-color="#ff9500"/></linearGradient></defs>
     </svg>
   </div>
-  <h1><span>Koe</span> (声)</h1>
-  <p class="tagline">Mac で最も速い日本語音声入力</p>
-  <p class="sub">whisper.cpp + Metal GPU — 完全ローカル処理・クラウド不要・プライバシー最優先</p>
-  <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">
-    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-    DMG をダウンロード
-  </a>
-  <p class="dl-sub">macOS 13+ / Apple Silicon (M1以降) / 無料・オープンソース<br>
-  <span style="color:#666">DMG を開いて Koe.app を Applications にドラッグするだけ</span></p>
+  <h1><span>Koe</span> <span data-i18n="hero_title_suffix">(声)</span></h1>
+  <p class="tagline" data-i18n="hero_tagline">Mac で最も速い日本語音声入力</p>
+  <p class="sub" data-i18n="hero_sub">whisper.cpp + Metal GPU — 完全ローカル処理・クラウド不要・プライバシー最優先</p>
+  <div class="dl-buttons">
+    <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      <span data-i18n="dl_dmg">DMG をダウンロード</span>
+    </a>
+    <a class="dl-btn dl-btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      <span data-i18n="dl_pkg">PKG をダウンロード</span>
+    </a>
+  </div>
+  <p class="dl-sub" data-i18n="dl_sub">macOS 13+ / Apple Silicon & Intel 対応 / 無料・オープンソース</p>
+  <div class="dl-compare">
+    <div class="dl-compare-item" data-i18n="dl_compare_dmg">
+      <strong>DMG 版</strong> — ドラッグ&ドロップでインストール。自分で Applications に配置。アンインストールはゴミ箱に入れるだけ。
+    </div>
+    <div class="dl-compare-item" data-i18n="dl_compare_pkg">
+      <strong>PKG 版</strong> — ダブルクリックで自動インストール。Applications に自動配置。初心者におすすめ。
+    </div>
+  </div>
 </div>
 
 <!-- Stats -->
 <div class="stats">
   <div class="stat">
-    <div class="stat-val">&lt; 0.5秒</div>
-    <div class="stat-label">音声認識速度</div>
+    <div class="stat-val" data-i18n="stat_speed_val">&lt; 0.5秒</div>
+    <div class="stat-label" data-i18n="stat_speed_label">音声認識速度</div>
   </div>
   <div class="stat">
     <div class="stat-val">100%</div>
-    <div class="stat-label">ローカル処理</div>
+    <div class="stat-label" data-i18n="stat_local_label">ローカル処理</div>
   </div>
   <div class="stat">
-    <div class="stat-val">0円</div>
-    <div class="stat-label">月額料金</div>
+    <div class="stat-val" data-i18n="stat_cost_val">0円</div>
+    <div class="stat-label" data-i18n="stat_cost_label">月額料金</div>
   </div>
   <div class="stat">
     <div class="stat-val">60秒+</div>
-    <div class="stat-label">連続録音</div>
+    <div class="stat-label" data-i18n="stat_rec_label">連続録音</div>
   </div>
+</div>
+
+<!-- Social -->
+<div class="social-bar">
+  <a class="social-btn" href="https://github.com/yukihamada/Koe-swift" target="_blank" title="GitHub">
+    <svg viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+    <span>Star</span>
+    <span class="star-count" id="starCount">—</span>
+  </a>
+  <a class="social-btn" href="https://x.com/intent/tweet?text=Mac%E3%81%A7%E6%9C%80%E3%82%82%E9%80%9F%E3%81%84%E6%97%A5%E6%9C%AC%E8%AA%9E%E9%9F%B3%E5%A3%B0%E5%85%A5%E5%8A%9B%E3%82%A2%E3%83%97%E3%83%AA%E3%80%8CKoe%E3%80%8D%E3%80%82whisper.cpp%20%2B%20Metal%20GPU%E3%81%A7%E5%AE%8C%E5%85%A8%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%AB%E3%80%81%E7%84%A1%E6%96%99%E3%83%BB%E3%82%AA%E3%83%BC%E3%83%97%E3%83%B3%E3%82%BD%E3%83%BC%E3%82%B9%E3%80%82&url=https%3A%2F%2Fkoe.elio.love" target="_blank" title="Share on X">
+    <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+    <span data-i18n="share_x">X でシェア</span>
+  </a>
+  <a class="social-btn" href="https://social-plugins.line.me/lineit/share?url=https%3A%2F%2Fkoe.elio.love" target="_blank" title="Share on LINE">
+    <svg viewBox="0 0 24 24"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
+    <span data-i18n="share_line">LINE でシェア</span>
+  </a>
 </div>
 
 <!-- UI Showcase -->
 <section>
-  <div class="section-title">インターフェース</div>
-  <h2 class="section-heading">シンプルで邪魔にならないUI</h2>
-  <p class="section-desc">画面に溶け込むミニマルなオーバーレイ。作業の流れを一切止めません。</p>
+  <div class="section-title" data-i18n="ui_section_title">インターフェース</div>
+  <h2 class="section-heading" data-i18n="ui_section_heading">シンプルで邪魔にならないUI</h2>
+  <p class="section-desc" data-i18n="ui_section_desc">画面に溶け込むミニマルなオーバーレイ。作業の流れを一切止めません。</p>
 
   <div class="ui-showcase">
 
@@ -310,14 +371,14 @@ footer a{color:#777}
               </div>
               <div class="mock-rec-text">0:03</div>
             </div>
-            <div style="font-size:11px;color:#555;text-align:center;line-height:1.6">
+            <div style="font-size:11px;color:#555;text-align:center;line-height:1.6" data-i18n="ui_rec_desc">
               話している間、波形がリアルタイムに動く<br>
               話し終わると自動停止
             </div>
           </div>
         </div>
       </div>
-      <div class="ui-mock-label">録音中のオーバーレイ</div>
+      <div class="ui-mock-label" data-i18n="ui_rec_label">録音中のオーバーレイ</div>
     </div>
 
     <!-- Recognizing + result -->
@@ -331,17 +392,17 @@ footer a{color:#777}
                 <div class="mock-recog-dot"></div>
                 <div class="mock-recog-dot"></div>
               </div>
-              <div class="mock-rec-text">認識中…</div>
+              <div class="mock-rec-text" data-i18n="ui_recognizing">認識中…</div>
             </div>
             <div style="background:#1a1a1a;border:1px solid #2a2a2a;border-radius:12px;padding:12px 16px;max-width:280px">
-              <div style="font-size:12px;color:#ff9500;margin-bottom:4px;font-weight:500">認識結果</div>
-              <div style="font-size:14px;color:#e0e0e0;line-height:1.5">今日のミーティングの議事録を作成してください</div>
+              <div style="font-size:12px;color:#ff9500;margin-bottom:4px;font-weight:500" data-i18n="ui_result_title">認識結果</div>
+              <div style="font-size:14px;color:#e0e0e0;line-height:1.5" data-i18n="ui_result_text">今日のミーティングの議事録を作成してください</div>
               <div style="font-size:10px;color:#444;margin-top:6px">0.42秒 — whisper.cpp (Metal)</div>
             </div>
           </div>
         </div>
       </div>
-      <div class="ui-mock-label">認識 → テキスト変換</div>
+      <div class="ui-mock-label" data-i18n="ui_recog_label">認識 → テキスト変換</div>
     </div>
 
     <!-- Settings window -->
@@ -351,41 +412,41 @@ footer a{color:#777}
           <div class="ui-mock-dot r"></div>
           <div class="ui-mock-dot y"></div>
           <div class="ui-mock-dot g"></div>
-          <span style="font-size:12px;color:#888;margin-left:auto;margin-right:auto">Koe 設定</span>
+          <span style="font-size:12px;color:#888;margin-left:auto;margin-right:auto" data-i18n="ui_settings_title">Koe 設定</span>
         </div>
         <div class="ui-mock-body" style="padding:16px;align-items:stretch;justify-content:flex-start;min-height:180px">
           <div class="mock-settings">
             <div class="mock-tabs">
-              <div class="mock-tab active">一般</div>
-              <div class="mock-tab">アプリ</div>
+              <div class="mock-tab active" data-i18n="ui_tab_general">一般</div>
+              <div class="mock-tab" data-i18n="ui_tab_apps">アプリ</div>
               <div class="mock-tab">AI</div>
-              <div class="mock-tab">辞書</div>
-              <div class="mock-tab">履歴</div>
+              <div class="mock-tab" data-i18n="ui_tab_dict">辞書</div>
+              <div class="mock-tab" data-i18n="ui_tab_history">履歴</div>
             </div>
             <div class="mock-setting-row">
-              <span class="label">ショートカット</span>
+              <span class="label" data-i18n="ui_setting_shortcut">ショートカット</span>
               <span class="mock-select">⌘⌥V</span>
             </div>
             <div class="mock-setting-row">
-              <span class="label">録音モード</span>
-              <span class="mock-select">ホールド</span>
+              <span class="label" data-i18n="ui_setting_recmode">録音モード</span>
+              <span class="mock-select" data-i18n="ui_setting_hold">ホールド</span>
             </div>
             <div class="mock-setting-row">
-              <span class="label">認識エンジン</span>
+              <span class="label" data-i18n="ui_setting_engine">認識エンジン</span>
               <span class="mock-select">whisper.cpp</span>
             </div>
             <div class="mock-setting-row">
-              <span class="label">フローティングボタン</span>
+              <span class="label" data-i18n="ui_setting_floatbtn">フローティングボタン</span>
               <div class="mock-toggle on"></div>
             </div>
             <div class="mock-setting-row">
-              <span class="label">ウェイクワード</span>
+              <span class="label" data-i18n="ui_setting_wakeword">ウェイクワード</span>
               <div class="mock-toggle"></div>
             </div>
           </div>
         </div>
       </div>
-      <div class="ui-mock-label">設定画面</div>
+      <div class="ui-mock-label" data-i18n="ui_settings_label">設定画面</div>
     </div>
 
   </div>
@@ -400,17 +461,17 @@ footer a{color:#777}
             <div class="mock-float-btn">
               <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
             </div>
-            <div style="font-size:10px;color:#555;margin-top:8px">待機</div>
+            <div style="font-size:10px;color:#555;margin-top:8px" data-i18n="ui_standby">待機</div>
           </div>
           <div style="text-align:center">
             <div class="mock-float-btn rec">
               <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>
             </div>
-            <div style="font-size:10px;color:#555;margin-top:8px">録音中</div>
+            <div style="font-size:10px;color:#555;margin-top:8px" data-i18n="ui_recording">録音中</div>
           </div>
         </div>
       </div>
-      <div class="ui-mock-label">フローティングボタン</div>
+      <div class="ui-mock-label" data-i18n="ui_floatbtn_label">フローティングボタン</div>
     </div>
 
     <!-- Menu bar -->
@@ -419,40 +480,40 @@ footer a{color:#777}
         <div class="ui-mock-body" style="padding:16px;align-items:stretch;justify-content:flex-start;min-height:120px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="#ccc"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
-            <span style="font-size:12px;color:#888">メニューバー</span>
+            <span style="font-size:12px;color:#888" data-i18n="ui_menubar_title">メニューバー</span>
           </div>
           <div class="mock-menubar">
-            <div class="mock-menu-item disabled">Koe — ⌘⌥V で録音</div>
+            <div class="mock-menu-item disabled" data-i18n="ui_menu_record">Koe — ⌘⌥V で録音</div>
             <div class="mock-menu-sep"></div>
-            <div class="mock-menu-item hover">⚫ 議事録開始 <span style="color:#666">⌘M</span></div>
+            <div class="mock-menu-item hover" data-i18n="ui_menu_minutes">⚫ 議事録開始 <span style="color:#666">⌘M</span></div>
             <div class="mock-menu-sep"></div>
-            <div class="mock-menu-item">設定… <span style="color:#666">⌘,</span></div>
+            <div class="mock-menu-item" data-i18n="ui_menu_settings">設定… <span style="color:#666">⌘,</span></div>
             <div class="mock-menu-sep"></div>
-            <div class="mock-menu-item">終了 <span style="color:#666">⌘Q</span></div>
+            <div class="mock-menu-item" data-i18n="ui_menu_quit">終了 <span style="color:#666">⌘Q</span></div>
           </div>
         </div>
       </div>
-      <div class="ui-mock-label">ステータスバーメニュー</div>
+      <div class="ui-mock-label" data-i18n="ui_menubar_label">ステータスバーメニュー</div>
     </div>
 
     <!-- App-specific profile -->
     <div>
       <div class="ui-mock" style="width:280px">
         <div class="ui-mock-body" style="padding:16px;align-items:stretch;justify-content:flex-start;min-height:120px">
-          <div style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:10px">アプリ別プロファイル</div>
+          <div style="font-size:12px;color:var(--accent);font-weight:600;margin-bottom:10px" data-i18n="ui_appprofile_title">アプリ別プロファイル</div>
           <div style="display:flex;flex-direction:column;gap:6px">
             <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1e1e1e;border-radius:8px;border:1px solid #2a2a2a">
               <span style="font-size:16px">⬛</span>
               <div>
                 <div style="font-size:12px;color:#ddd;font-weight:500">Ghostty</div>
-                <div style="font-size:10px;color:#666">CLI・Git・シェル用語</div>
+                <div style="font-size:10px;color:#666" data-i18n="ui_app_ghostty">CLI・Git・シェル用語</div>
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1e1e1e;border-radius:8px;border:1px solid #2a2a2a">
               <span style="font-size:16px">🔵</span>
               <div>
                 <div style="font-size:12px;color:#ddd;font-weight:500">VS Code</div>
-                <div style="font-size:10px;color:#666">プログラミング用語</div>
+                <div style="font-size:10px;color:#666" data-i18n="ui_app_vscode">プログラミング用語</div>
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#1e1e1e;border-radius:8px;border:1px solid #2a2a2a">
@@ -465,7 +526,7 @@ footer a{color:#777}
           </div>
         </div>
       </div>
-      <div class="ui-mock-label">アプリごとに最適化</div>
+      <div class="ui-mock-label" data-i18n="ui_appprofile_label">アプリごとに最適化</div>
     </div>
 
   </div>
@@ -473,52 +534,52 @@ footer a{color:#777}
 
 <!-- Japanese Strength -->
 <section>
-  <div class="section-title">日本語特化</div>
-  <h2 class="section-heading">日本語音声入力のために設計</h2>
-  <p class="section-desc">macOS標準の音声入力では満足できない。Koe は日本語の認識精度と速度を徹底的に追求しました。</p>
+  <div class="section-title" data-i18n="jp_section_title">日本語特化</div>
+  <h2 class="section-heading" data-i18n="jp_section_heading">日本語音声入力のために設計</h2>
+  <p class="section-desc" data-i18n="jp_section_desc">macOS標準の音声入力では満足できない。Koe は日本語の認識精度と速度を徹底的に追求しました。</p>
 
   <div class="jp-section">
     <div class="jp-grid">
       <div class="jp-item">
         <div class="icon">🎯</div>
         <div>
-          <h4>アプリ別プロンプト最適化</h4>
-          <p>ターミナルでは「git commit」「kubectl」、Xcodeでは「SwiftUI」「@State」など、使用中のアプリに合わせてWhisperへのヒントを自動切替。専門用語の認識精度が飛躍的に向上。</p>
+          <h4 data-i18n="jp_feat1_title">アプリ別プロンプト最適化</h4>
+          <p data-i18n="jp_feat1_desc">ターミナルでは「git commit」「kubectl」、Xcodeでは「SwiftUI」「@State」など、使用中のアプリに合わせてWhisperへのヒントを自動切替。専門用語の認識精度が飛躍的に向上。</p>
         </div>
       </div>
       <div class="jp-item">
         <div class="icon">⚡</div>
         <div>
-          <h4>投機的実行 (Speculative Execution)</h4>
-          <p>話し終わった瞬間にWhisperへ送信開始。0.85秒の無音確認を待たず、結果を先取りキャッシュ。体感レイテンシ500ms削減。</p>
+          <h4 data-i18n="jp_feat2_title">投機的実行 (Speculative Execution)</h4>
+          <p data-i18n="jp_feat2_desc">話し終わった瞬間にWhisperへ送信開始。0.85秒の無音確認を待たず、結果を先取りキャッシュ。体感レイテンシ500ms削減。</p>
         </div>
       </div>
       <div class="jp-item">
         <div class="icon">🗾</div>
         <div>
-          <h4>Kotoba Whisper v2.0 (デフォルト)</h4>
-          <p>日本語特化のKotoba Whisperモデルをデフォルト採用。Large V3 Turbo等も選択可能。5つのモデルからアプリ内で切替。Metal GPUで高速変換。</p>
+          <h4 data-i18n="jp_feat3_title">Kotoba Whisper v2.0 (デフォルト)</h4>
+          <p data-i18n="jp_feat3_desc">日本語特化のKotoba Whisperモデルをデフォルト採用。Large V3 Turbo等も選択可能。5つのモデルからアプリ内で切替。Metal GPUで高速変換。</p>
         </div>
       </div>
       <div class="jp-item">
         <div class="icon">📝</div>
         <div>
-          <h4>テキスト展開辞書</h4>
-          <p>「メアド」→ メールアドレスに自動展開。「じゅうしょ」→ 住所に変換。よく使うフレーズをO(1)高速ルックアップ。</p>
+          <h4 data-i18n="jp_feat4_title">テキスト展開辞書</h4>
+          <p data-i18n="jp_feat4_desc">「メアド」→ メールアドレスに自動展開。「じゅうしょ」→ 住所に変換。よく使うフレーズをO(1)高速ルックアップ。</p>
         </div>
       </div>
       <div class="jp-item">
         <div class="icon">🤖</div>
         <div>
-          <h4>LLM後処理 (ローカル / クラウド)</h4>
-          <p>認識結果をLLMで自動修正。llama.cpp (Qwen3) でローカル実行可能。句読点の補正、敬語への変換、コードフォーマットなど、アプリごとに異なる指示を設定可能。</p>
+          <h4 data-i18n="jp_feat5_title">LLM後処理 (ローカル / クラウド)</h4>
+          <p data-i18n="jp_feat5_desc">認識結果をLLMで自動修正。llama.cpp (Qwen3) でローカル実行可能。句読点の補正、敬語への変換、コードフォーマットなど、アプリごとに異なる指示を設定可能。</p>
         </div>
       </div>
       <div class="jp-item">
         <div class="icon">🗣️</div>
         <div>
-          <h4>ウェイクワード (ハンズフリー)</h4>
-          <p>「ヘイこえ」で録音開始。MFCC+DTW自社エンジンで外部依存ゼロ。テンプレート登録で自分の声に最適化。</p>
+          <h4 data-i18n="jp_feat6_title">ウェイクワード (ハンズフリー) <span style="font-size:11px;color:#ff9500;font-weight:600;background:rgba(255,149,0,.15);padding:2px 6px;border-radius:4px;margin-left:4px">Beta</span></h4>
+          <p data-i18n="jp_feat6_desc">「ヘイこえ」で録音開始。MFCC+DTW自社エンジンで外部依存ゼロ。テンプレート登録で自分の声に最適化。<br><span style="font-size:12px;color:#888">※ 有効中はマイクを常時監視するため、macOS のマイクインジケータ(オレンジ)が点灯し続けます。設定でON/OFF切替可能。</span></p>
         </div>
       </div>
     </div>
@@ -527,48 +588,48 @@ footer a{color:#777}
 
 <!-- Features -->
 <section>
-  <div class="section-title">機能</div>
-  <h2 class="section-heading">開発者のための音声入力</h2>
-  <p class="section-desc">キーボードから手を離さずに、思考の速度でテキスト入力。</p>
+  <div class="section-title" data-i18n="feat_section_title">機能</div>
+  <h2 class="section-heading" data-i18n="feat_section_heading">開発者のための音声入力</h2>
+  <p class="section-desc" data-i18n="feat_section_desc">キーボードから手を離さずに、思考の速度でテキスト入力。</p>
 
   <div class="features">
     <div class="feat">
       <div class="feat-icon">⌨️</div>
-      <h3>グローバルホットキー</h3>
-      <p>⌘⌥V でどのアプリからでも即起動。ホールド / トグルモード選択可。ESCでキャンセル。</p>
+      <h3 data-i18n="feat1_title">グローバルホットキー</h3>
+      <p data-i18n="feat1_desc">⌘⌥V でどのアプリからでも即起動。ホールド / トグルモード選択可。ESCでキャンセル。</p>
     </div>
     <div class="feat">
       <div class="feat-icon">🔇</div>
-      <h3>無音自動停止</h3>
-      <p>話し終わると0.85秒で自動的に認識開始。長い発話はSpace長押しで延長。</p>
+      <h3 data-i18n="feat2_title">無音自動停止</h3>
+      <p data-i18n="feat2_desc">話し終わると0.85秒で自動的に認識開始。長い発話はSpace長押しで延長。</p>
     </div>
     <div class="feat">
       <div class="feat-icon">🖥️</div>
-      <h3>アプリ別設定</h3>
-      <p>Terminal、VS Code、Xcode…アプリごとに言語・プロンプト・LLM指示を自動切替。</p>
+      <h3 data-i18n="feat3_title">アプリ別設定</h3>
+      <p data-i18n="feat3_desc">Terminal、VS Code、Xcode…アプリごとに言語・プロンプト・LLM指示を自動切替。</p>
     </div>
     <div class="feat">
       <div class="feat-icon">📋</div>
-      <h3>議事録モード</h3>
-      <p>会議中の発話をタイムスタンプ付きで自動記録。デスクトップにテキストファイル出力。</p>
+      <h3 data-i18n="feat4_title">議事録モード</h3>
+      <p data-i18n="feat4_desc">会議中の発話をタイムスタンプ付きで自動記録。デスクトップにテキストファイル出力。</p>
     </div>
     <div class="feat">
       <div class="feat-icon">🔒</div>
-      <h3>完全プライベート</h3>
-      <p>音声データは一切外部送信なし。全処理がMac上で完結。機密情報も安心。</p>
+      <h3 data-i18n="feat5_title">完全プライベート</h3>
+      <p data-i18n="feat5_desc">音声データは一切外部送信なし。全処理がMac上で完結。機密情報も安心。</p>
     </div>
     <div class="feat">
       <div class="feat-icon">🎙️</div>
-      <h3>フローティングボタン</h3>
-      <p>画面上のマイクボタンをワンクリックで録音。ドラッグで好きな位置に配置。</p>
+      <h3 data-i18n="feat6_title">フローティングボタン</h3>
+      <p data-i18n="feat6_desc">画面上のマイクボタンをワンクリックで録音。ドラッグで好きな位置に配置。</p>
     </div>
   </div>
 </section>
 
 <!-- Comparison -->
 <section>
-  <div class="section-title">比較</div>
-  <h2 class="section-heading">なぜ Koe を選ぶのか</h2>
+  <div class="section-title" data-i18n="cmp_section_title">比較</div>
+  <h2 class="section-heading" data-i18n="cmp_section_heading">なぜ Koe を選ぶのか</h2>
   <p class="section-desc"></p>
 
   <table class="compare">
@@ -576,58 +637,58 @@ footer a{color:#777}
       <tr>
         <th></th>
         <th>Koe</th>
-        <th>macOS標準</th>
-        <th>クラウドSTT</th>
+        <th data-i18n="cmp_macos">macOS標準</th>
+        <th data-i18n="cmp_cloud">クラウドSTT</th>
       </tr>
     </thead>
     <tbody>
       <tr class="hl">
-        <td>日本語精度</td>
-        <td><span class="check">◎ Kotoba v2.0 / large-v3</span></td>
-        <td>△ やや低い</td>
-        <td>○ 高い</td>
+        <td data-i18n="cmp_accuracy">日本語精度</td>
+        <td><span class="check" data-i18n="cmp_accuracy_koe">◎ Kotoba v2.0 / large-v3</span></td>
+        <td data-i18n="cmp_accuracy_macos">△ やや低い</td>
+        <td data-i18n="cmp_accuracy_cloud">○ 高い</td>
       </tr>
       <tr class="hl">
-        <td>速度</td>
+        <td data-i18n="cmp_speed">速度</td>
         <td><span class="check">◎ &lt;0.5秒 (Metal)</span></td>
-        <td>△ 1-3秒</td>
-        <td>△ ネットワーク依存</td>
+        <td data-i18n="cmp_speed_macos">△ 1-3秒</td>
+        <td data-i18n="cmp_speed_cloud">△ ネットワーク依存</td>
       </tr>
       <tr class="hl">
-        <td>プライバシー</td>
-        <td><span class="check">◎ 完全ローカル</span></td>
-        <td>○ 一部ローカル</td>
-        <td><span class="cross">✕ クラウド送信</span></td>
+        <td data-i18n="cmp_privacy">プライバシー</td>
+        <td><span class="check" data-i18n="cmp_privacy_koe">◎ 完全ローカル</span></td>
+        <td data-i18n="cmp_privacy_macos">○ 一部ローカル</td>
+        <td><span class="cross" data-i18n="cmp_privacy_cloud">✕ クラウド送信</span></td>
       </tr>
       <tr class="hl">
-        <td>月額費用</td>
-        <td><span class="check">◎ 無料</span></td>
-        <td>○ 無料</td>
-        <td><span class="cross">✕ 従量課金</span></td>
+        <td data-i18n="cmp_cost">月額費用</td>
+        <td><span class="check" data-i18n="cmp_cost_koe">◎ 無料</span></td>
+        <td data-i18n="cmp_cost_macos">○ 無料</td>
+        <td><span class="cross" data-i18n="cmp_cost_cloud">✕ 従量課金</span></td>
       </tr>
       <tr class="hl">
-        <td>アプリ別最適化</td>
-        <td><span class="check">◎ プロンプト切替</span></td>
-        <td><span class="cross">✕ なし</span></td>
-        <td><span class="cross">✕ なし</span></td>
+        <td data-i18n="cmp_appopt">アプリ別最適化</td>
+        <td><span class="check" data-i18n="cmp_appopt_koe">◎ プロンプト切替</span></td>
+        <td><span class="cross" data-i18n="cmp_none">✕ なし</span></td>
+        <td><span class="cross" data-i18n="cmp_none">✕ なし</span></td>
       </tr>
       <tr class="hl">
-        <td>ウェイクワード</td>
-        <td><span class="check">◎ カスタム可</span></td>
-        <td><span class="cross">✕ なし</span></td>
-        <td><span class="cross">✕ なし</span></td>
+        <td data-i18n="cmp_wakeword">ウェイクワード <span style="font-size:10px;color:#ff9500">Beta</span></td>
+        <td><span class="check" data-i18n="cmp_wakeword_koe">◎ カスタム可</span></td>
+        <td><span class="cross" data-i18n="cmp_none">✕ なし</span></td>
+        <td><span class="cross" data-i18n="cmp_none">✕ なし</span></td>
       </tr>
       <tr class="hl">
-        <td>専門用語対応</td>
-        <td><span class="check">◎ プロンプト指定</span></td>
-        <td><span class="cross">✕ 不可</span></td>
-        <td>△ 一部対応</td>
+        <td data-i18n="cmp_terminology">専門用語対応</td>
+        <td><span class="check" data-i18n="cmp_terminology_koe">◎ プロンプト指定</span></td>
+        <td><span class="cross" data-i18n="cmp_terminology_macos">✕ 不可</span></td>
+        <td data-i18n="cmp_terminology_cloud">△ 一部対応</td>
       </tr>
       <tr class="hl">
-        <td>LLM後処理</td>
-        <td><span class="check">◎ 内蔵</span></td>
-        <td><span class="cross">✕ なし</span></td>
-        <td><span class="cross">✕ なし</span></td>
+        <td data-i18n="cmp_llm">LLM後処理</td>
+        <td><span class="check" data-i18n="cmp_llm_koe">◎ 内蔵</span></td>
+        <td><span class="cross" data-i18n="cmp_none">✕ なし</span></td>
+        <td><span class="cross" data-i18n="cmp_none">✕ なし</span></td>
       </tr>
     </tbody>
   </table>
@@ -635,47 +696,410 @@ footer a{color:#777}
 
 <!-- How to install -->
 <section>
-  <div class="section-title">インストール</div>
-  <h2 class="section-heading">3分でセットアップ</h2>
+  <div class="section-title" data-i18n="install_section_title">インストール</div>
+  <h2 class="section-heading" data-i18n="install_section_heading">3分でセットアップ</h2>
   <p class="section-desc"></p>
 
   <div class="steps">
     <div class="step">
-      <h3>アプリをダウンロード</h3>
-      <p><a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">Koe-Installer.dmg</a> をダウンロードして開く。Koe.app を Applications にドラッグ。</p>
+      <h3 data-i18n="install_step1_title">インストーラーを実行</h3>
+      <p data-i18n="install_step1_desc"><a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">Koe.pkg</a> をダウンロードしてダブルクリック。ガイドに従うだけ。<br><span style="font-size:12px;color:#555">上級者は <a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">DMG版</a> も利用可能</span></p>
     </div>
     <div class="step">
-      <h3>初回起動で自動セットアップ</h3>
-      <p>音声認識モデル (Kotoba Whisper v2.0) が自動ダウンロード。whisper.cpp + Metal GPU もアプリに内蔵済み。</p>
+      <h3 data-i18n="install_step2_title">初回起動で自動セットアップ</h3>
+      <p data-i18n="install_step2_desc">whisper.cpp + Metal GPU はアプリに内蔵済み。音声認識モデル (Kotoba Whisper v2.0) が初回起動時に自動ダウンロード。</p>
     </div>
     <div class="step">
-      <h3>権限を許可して完了</h3>
-      <p>マイク・アクセシビリティ権限を許可。⌘⌥V を押せば即座に音声入力開始。</p>
+      <h3 data-i18n="install_step3_title">権限を許可して完了</h3>
+      <p data-i18n="install_step3_desc">マイク・アクセシビリティ権限を許可。⌘⌥V を押せば即座に音声入力開始。</p>
     </div>
   </div>
+
+  <p style="text-align:center;margin-top:24px;font-size:13px;color:#555" data-i18n="install_detail">詳しいセットアップ手順は <a href="https://github.com/yukihamada/Koe-swift#インストール" target="_blank">GitHub README</a> をご覧ください</p>
 </section>
 
 <!-- OSS -->
 <section style="text-align:center;padding:80px 0">
-  <div class="section-title">オープンソース</div>
-  <h2 class="section-heading">100% 無料・MIT License</h2>
-  <p style="color:var(--muted);font-size:16px;margin-bottom:32px">コードはすべて公開。フォーク・改変・商用利用自由。</p>
+  <div class="section-title" data-i18n="oss_section_title">オープンソース</div>
+  <h2 class="section-heading" data-i18n="oss_section_heading">100% 無料・MIT License</h2>
+  <p style="color:var(--muted);font-size:16px;margin-bottom:32px" data-i18n="oss_desc">コードはすべて公開。フォーク・改変・商用利用自由。</p>
+  <div class="dl-buttons" style="margin-bottom:24px">
+    <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      <span data-i18n="dl_pkg">PKG をダウンロード</span>
+    </a>
+    <a class="dl-btn dl-btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      <span data-i18n="dl_dmg">DMG をダウンロード</span>
+    </a>
+  </div>
   <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift" target="_blank" style="background:#24292e">
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
-    GitHub で見る
+    <span data-i18n="github_view">GitHub で見る</span>
   </a>
+  <div class="social-bar" style="margin-top:32px">
+    <a class="social-btn" href="https://github.com/yukihamada/Koe-swift" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      <span>Star</span>
+      <span class="star-count" id="starCount2">—</span>
+    </a>
+    <a class="social-btn" href="https://x.com/intent/tweet?text=Mac%E3%81%A7%E6%9C%80%E3%82%82%E9%80%9F%E3%81%84%E6%97%A5%E6%9C%AC%E8%AA%9E%E9%9F%B3%E5%A3%B0%E5%85%A5%E5%8A%9B%E3%82%A2%E3%83%97%E3%83%AA%E3%80%8CKoe%E3%80%8D%E3%80%82whisper.cpp%20%2B%20Metal%20GPU%E3%81%A7%E5%AE%8C%E5%85%A8%E3%83%AD%E3%83%BC%E3%82%AB%E3%83%AB%E3%80%81%E7%84%A1%E6%96%99%E3%83%BB%E3%82%AA%E3%83%BC%E3%83%97%E3%83%B3%E3%82%BD%E3%83%BC%E3%82%B9%E3%80%82&url=https%3A%2F%2Fkoe.elio.love" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+      <span data-i18n="share_x">X でシェア</span>
+    </a>
+    <a class="social-btn" href="https://social-plugins.line.me/lineit/share?url=https%3A%2F%2Fkoe.elio.love" target="_blank">
+      <svg viewBox="0 0 24 24"><path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63h2.386c.346 0 .627.285.627.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.63-.63.346 0 .628.285.628.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.282.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/></svg>
+      <span data-i18n="share_line">LINE でシェア</span>
+    </a>
+  </div>
 </section>
 
 </div>
 
 <footer>
   <div class="container">
-    <p>Koe (声) &mdash; Built with Swift + whisper.cpp<br>
-    <a href="https://github.com/yukihamada/Koe-swift" target="_blank">GitHub</a> &middot;
-    <a href="https://github.com/yukihamada/Koe-swift/issues" target="_blank">Issues</a> &middot;
-    MIT License</p>
+    <div class="footer-inner">
+      <div class="footer-elio">
+        <div class="footer-elio-icon">
+          <img src="/elio-icon.png" alt="Elio" width="56" height="56">
+        </div>
+        <div class="footer-elio-info">
+          <h4>Elio — Your secret-keeping second brain</h4>
+          <p data-i18n="footer_elio_desc">完全オフラインで動くiOS AIチャットアプリ。30以上のモデル内蔵、プライバシー最優先。Koe の開発元が作っています。</p>
+          <div class="footer-elio-links">
+            <a href="https://apps.apple.com/app/elio-chat/id6757635481" target="_blank">
+              <svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+              App Store
+            </a>
+            <a href="https://elio.love" target="_blank">
+              <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+              elio.love
+            </a>
+            <a href="https://github.com/yukihamada/elio" target="_blank">
+              <svg viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+              GitHub
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="footer-meta">
+        <p>Koe (声) &mdash; Built with Swift + whisper.cpp<br>
+        <a href="https://github.com/yukihamada/Koe-swift" target="_blank">GitHub</a> &middot;
+        <a href="https://github.com/yukihamada/Koe-swift/issues" target="_blank">Issues</a> &middot;
+        MIT License</p>
+        <p style="margin-top:12px"><a href="https://enablerhq.com/" target="_blank" style="color:#999">enablerhq.com</a></p>
+      </div>
+    </div>
   </div>
 </footer>
+
+<script>
+(function(){
+  var T = {
+    ja: {
+      hero_title_suffix: '(声)',
+      hero_tagline: 'Mac で最も速い日本語音声入力',
+      hero_sub: 'whisper.cpp + Metal GPU — 完全ローカル処理・クラウド不要・プライバシー最優先',
+      dl_dmg: 'DMG をダウンロード',
+      dl_pkg: 'PKG をダウンロード',
+      dl_sub: 'macOS 13+ / Apple Silicon & Intel 対応 / 無料・オープンソース',
+      dl_compare_dmg: '<strong>DMG 版</strong> — ドラッグ&ドロップでインストール。自分で Applications に配置。アンインストールはゴミ箱に入れるだけ。',
+      dl_compare_pkg: '<strong>PKG 版</strong> — ダブルクリックで自動インストール。Applications に自動配置。初心者におすすめ。',
+      stat_speed_val: '< 0.5秒',
+      stat_speed_label: '音声認識速度',
+      stat_local_label: 'ローカル処理',
+      stat_cost_val: '0円',
+      stat_cost_label: '月額料金',
+      stat_rec_label: '連続録音',
+      ui_section_title: 'インターフェース',
+      ui_section_heading: 'シンプルで邪魔にならないUI',
+      ui_section_desc: '画面に溶け込むミニマルなオーバーレイ。作業の流れを一切止めません。',
+      ui_rec_desc: '話している間、波形がリアルタイムに動く<br>話し終わると自動停止',
+      ui_rec_label: '録音中のオーバーレイ',
+      ui_recognizing: '認識中…',
+      ui_result_title: '認識結果',
+      ui_result_text: '今日のミーティングの議事録を作成してください',
+      ui_recog_label: '認識 → テキスト変換',
+      ui_settings_title: 'Koe 設定',
+      ui_tab_general: '一般',
+      ui_tab_apps: 'アプリ',
+      ui_tab_dict: '辞書',
+      ui_tab_history: '履歴',
+      ui_setting_shortcut: 'ショートカット',
+      ui_setting_recmode: '録音モード',
+      ui_setting_hold: 'ホールド',
+      ui_setting_engine: '認識エンジン',
+      ui_setting_floatbtn: 'フローティングボタン',
+      ui_setting_wakeword: 'ウェイクワード',
+      ui_settings_label: '設定画面',
+      ui_standby: '待機',
+      ui_recording: '録音中',
+      ui_floatbtn_label: 'フローティングボタン',
+      ui_menubar_title: 'メニューバー',
+      ui_menu_record: 'Koe — ⌘⌥V で録音',
+      ui_menu_minutes: '⚫ 議事録開始 <span style="color:#666">⌘M</span>',
+      ui_menu_settings: '設定… <span style="color:#666">⌘,</span>',
+      ui_menu_quit: '終了 <span style="color:#666">⌘Q</span>',
+      ui_menubar_label: 'ステータスバーメニュー',
+      ui_appprofile_title: 'アプリ別プロファイル',
+      ui_app_ghostty: 'CLI・Git・シェル用語',
+      ui_app_vscode: 'プログラミング用語',
+      ui_appprofile_label: 'アプリごとに最適化',
+      jp_section_title: '日本語特化',
+      jp_section_heading: '日本語音声入力のために設計',
+      jp_section_desc: 'macOS標準の音声入力では満足できない。Koe は日本語の認識精度と速度を徹底的に追求しました。',
+      jp_feat1_title: 'アプリ別プロンプト最適化',
+      jp_feat1_desc: 'ターミナルでは「git commit」「kubectl」、Xcodeでは「SwiftUI」「@State」など、使用中のアプリに合わせてWhisperへのヒントを自動切替。専門用語の認識精度が飛躍的に向上。',
+      jp_feat2_title: '投機的実行 (Speculative Execution)',
+      jp_feat2_desc: '話し終わった瞬間にWhisperへ送信開始。0.85秒の無音確認を待たず、結果を先取りキャッシュ。体感レイテンシ500ms削減。',
+      jp_feat3_title: 'Kotoba Whisper v2.0 (デフォルト)',
+      jp_feat3_desc: '日本語特化のKotoba Whisperモデルをデフォルト採用。Large V3 Turbo等も選択可能。5つのモデルからアプリ内で切替。Metal GPUで高速変換。',
+      jp_feat4_title: 'テキスト展開辞書',
+      jp_feat4_desc: '「メアド」→ メールアドレスに自動展開。「じゅうしょ」→ 住所に変換。よく使うフレーズをO(1)高速ルックアップ。',
+      jp_feat5_title: 'LLM後処理 (ローカル / クラウド)',
+      jp_feat5_desc: '認識結果をLLMで自動修正。llama.cpp (Qwen3) でローカル実行可能。句読点の補正、敬語への変換、コードフォーマットなど、アプリごとに異なる指示を設定可能。',
+      jp_feat6_title: 'ウェイクワード (ハンズフリー) <span style="font-size:11px;color:#ff9500;font-weight:600;background:rgba(255,149,0,.15);padding:2px 6px;border-radius:4px;margin-left:4px">Beta</span>',
+      jp_feat6_desc: '「ヘイこえ」で録音開始。MFCC+DTW自社エンジンで外部依存ゼロ。テンプレート登録で自分の声に最適化。<br><span style="font-size:12px;color:#888">※ 有効中はマイクを常時監視するため、macOS のマイクインジケータ(オレンジ)が点灯し続けます。設定でON/OFF切替可能。</span>',
+      feat_section_title: '機能',
+      feat_section_heading: '開発者のための音声入力',
+      feat_section_desc: 'キーボードから手を離さずに、思考の速度でテキスト入力。',
+      feat1_title: 'グローバルホットキー',
+      feat1_desc: '⌘⌥V でどのアプリからでも即起動。ホールド / トグルモード選択可。ESCでキャンセル。',
+      feat2_title: '無音自動停止',
+      feat2_desc: '話し終わると0.85秒で自動的に認識開始。長い発話はSpace長押しで延長。',
+      feat3_title: 'アプリ別設定',
+      feat3_desc: 'Terminal、VS Code、Xcode…アプリごとに言語・プロンプト・LLM指示を自動切替。',
+      feat4_title: '議事録モード',
+      feat4_desc: '会議中の発話をタイムスタンプ付きで自動記録。デスクトップにテキストファイル出力。',
+      feat5_title: '完全プライベート',
+      feat5_desc: '音声データは一切外部送信なし。全処理がMac上で完結。機密情報も安心。',
+      feat6_title: 'フローティングボタン',
+      feat6_desc: '画面上のマイクボタンをワンクリックで録音。ドラッグで好きな位置に配置。',
+      cmp_section_title: '比較',
+      cmp_section_heading: 'なぜ Koe を選ぶのか',
+      cmp_macos: 'macOS標準',
+      cmp_cloud: 'クラウドSTT',
+      cmp_accuracy: '日本語精度',
+      cmp_accuracy_koe: '◎ Kotoba v2.0 / large-v3',
+      cmp_accuracy_macos: '△ やや低い',
+      cmp_accuracy_cloud: '○ 高い',
+      cmp_speed: '速度',
+      cmp_speed_macos: '△ 1-3秒',
+      cmp_speed_cloud: '△ ネットワーク依存',
+      cmp_privacy: 'プライバシー',
+      cmp_privacy_koe: '◎ 完全ローカル',
+      cmp_privacy_macos: '○ 一部ローカル',
+      cmp_privacy_cloud: '✕ クラウド送信',
+      cmp_cost: '月額費用',
+      cmp_cost_koe: '◎ 無料',
+      cmp_cost_macos: '○ 無料',
+      cmp_cost_cloud: '✕ 従量課金',
+      cmp_appopt: 'アプリ別最適化',
+      cmp_appopt_koe: '◎ プロンプト切替',
+      cmp_none: '✕ なし',
+      cmp_wakeword: 'ウェイクワード <span style="font-size:10px;color:#ff9500">Beta</span>',
+      cmp_wakeword_koe: '◎ カスタム可',
+      cmp_terminology: '専門用語対応',
+      cmp_terminology_koe: '◎ プロンプト指定',
+      cmp_terminology_macos: '✕ 不可',
+      cmp_terminology_cloud: '△ 一部対応',
+      cmp_llm: 'LLM後処理',
+      cmp_llm_koe: '◎ 内蔵',
+      install_section_title: 'インストール',
+      install_section_heading: '3分でセットアップ',
+      install_step1_title: 'インストーラーを実行',
+      install_step1_desc: '<a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">Koe.pkg</a> をダウンロードしてダブルクリック。ガイドに従うだけ。<br><span style="font-size:12px;color:#555">上級者は <a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">DMG版</a> も利用可能</span>',
+      install_step2_title: '初回起動で自動セットアップ',
+      install_step2_desc: 'whisper.cpp + Metal GPU はアプリに内蔵済み。音声認識モデル (Kotoba Whisper v2.0) が初回起動時に自動ダウンロード。',
+      install_step3_title: '権限を許可して完了',
+      install_step3_desc: 'マイク・アクセシビリティ権限を許可。⌘⌥V を押せば即座に音声入力開始。',
+      install_detail: '詳しいセットアップ手順は <a href="https://github.com/yukihamada/Koe-swift#インストール" target="_blank">GitHub README</a> をご覧ください',
+      oss_section_title: 'オープンソース',
+      oss_section_heading: '100% 無料・MIT License',
+      oss_desc: 'コードはすべて公開。フォーク・改変・商用利用自由。',
+      github_view: 'GitHub で見る',
+      share_x: 'X でシェア',
+      share_line: 'LINE でシェア',
+      footer_elio_desc: '完全オフラインで動くiOS AIチャットアプリ。30以上のモデル内蔵、プライバシー最優先。Koe の開発元が作っています。'
+    },
+    en: {
+      hero_title_suffix: '(Voice)',
+      hero_tagline: 'The fastest Japanese voice input for Mac',
+      hero_sub: 'whisper.cpp + Metal GPU — Fully local, no cloud, privacy first',
+      dl_dmg: 'Download DMG',
+      dl_pkg: 'Download PKG',
+      dl_sub: 'macOS 13+ / Apple Silicon & Intel / Free & Open Source',
+      dl_compare_dmg: '<strong>DMG</strong> — Drag & drop to install. Place in Applications yourself. Uninstall by moving to Trash.',
+      dl_compare_pkg: '<strong>PKG</strong> — Double-click to auto-install. Automatically placed in Applications. Recommended for beginners.',
+      stat_speed_val: '< 0.5s',
+      stat_speed_label: 'Recognition Speed',
+      stat_local_label: 'Local Processing',
+      stat_cost_val: '$0',
+      stat_cost_label: 'Monthly Cost',
+      stat_rec_label: 'Continuous Recording',
+      ui_section_title: 'Interface',
+      ui_section_heading: 'Simple, non-intrusive UI',
+      ui_section_desc: 'A minimal overlay that blends into your screen. Never interrupts your workflow.',
+      ui_rec_desc: 'Waveform animates in real-time while speaking<br>Auto-stops when you finish',
+      ui_rec_label: 'Recording Overlay',
+      ui_recognizing: 'Recognizing...',
+      ui_result_title: 'Result',
+      ui_result_text: 'Please create the meeting minutes for today',
+      ui_recog_label: 'Recognition → Text',
+      ui_settings_title: 'Koe Settings',
+      ui_tab_general: 'General',
+      ui_tab_apps: 'Apps',
+      ui_tab_dict: 'Dictionary',
+      ui_tab_history: 'History',
+      ui_setting_shortcut: 'Shortcut',
+      ui_setting_recmode: 'Recording Mode',
+      ui_setting_hold: 'Hold',
+      ui_setting_engine: 'Engine',
+      ui_setting_floatbtn: 'Floating Button',
+      ui_setting_wakeword: 'Wake Word',
+      ui_settings_label: 'Settings',
+      ui_standby: 'Standby',
+      ui_recording: 'Recording',
+      ui_floatbtn_label: 'Floating Button',
+      ui_menubar_title: 'Menu Bar',
+      ui_menu_record: 'Koe — Press ⌘⌥V to record',
+      ui_menu_minutes: '⚫ Start Minutes <span style="color:#666">⌘M</span>',
+      ui_menu_settings: 'Settings... <span style="color:#666">⌘,</span>',
+      ui_menu_quit: 'Quit <span style="color:#666">⌘Q</span>',
+      ui_menubar_label: 'Status Bar Menu',
+      ui_appprofile_title: 'Per-App Profiles',
+      ui_app_ghostty: 'CLI, Git & shell terms',
+      ui_app_vscode: 'Programming terms',
+      ui_appprofile_label: 'Optimized per app',
+      jp_section_title: 'Japanese-Optimized',
+      jp_section_heading: 'Designed for Japanese voice input',
+      jp_section_desc: 'Not satisfied with macOS built-in dictation? Koe relentlessly pursues Japanese recognition accuracy and speed.',
+      jp_feat1_title: 'Per-App Prompt Optimization',
+      jp_feat1_desc: 'Auto-switches Whisper hints based on the active app: "git commit" and "kubectl" in Terminal, "SwiftUI" and "@State" in Xcode. Dramatically improves technical term recognition.',
+      jp_feat2_title: 'Speculative Execution',
+      jp_feat2_desc: 'Starts sending to Whisper the moment you stop speaking. Pre-caches results without waiting for the 0.85s silence confirmation. Reduces perceived latency by 500ms.',
+      jp_feat3_title: 'Kotoba Whisper v2.0 (Default)',
+      jp_feat3_desc: 'Ships with the Japanese-optimized Kotoba Whisper model by default. Also supports Large V3 Turbo and more. Switch between 5 models in-app. Fast conversion via Metal GPU.',
+      jp_feat4_title: 'Text Expansion Dictionary',
+      jp_feat4_desc: 'Auto-expand abbreviations to full phrases. Frequently used phrases with O(1) fast lookup.',
+      jp_feat5_title: 'LLM Post-Processing (Local / Cloud)',
+      jp_feat5_desc: 'Auto-correct recognition results with LLM. Run locally via llama.cpp (Qwen3). Punctuation correction, politeness conversion, code formatting — configurable per app.',
+      jp_feat6_title: 'Wake Word (Hands-free) <span style="font-size:11px;color:#ff9500;font-weight:600;background:rgba(255,149,0,.15);padding:2px 6px;border-radius:4px;margin-left:4px">Beta</span>',
+      jp_feat6_desc: 'Say "Hey Koe" to start recording. Custom MFCC+DTW engine with zero external dependencies. Register templates to optimize for your voice.<br><span style="font-size:12px;color:#888">* While active, the mic is continuously monitored and macOS shows the orange mic indicator. Can be toggled in Settings.</span>',
+      feat_section_title: 'Features',
+      feat_section_heading: 'Voice input for developers',
+      feat_section_desc: 'Type at the speed of thought without leaving your keyboard.',
+      feat1_title: 'Global Hotkey',
+      feat1_desc: 'Instantly activate from any app with ⌘⌥V. Hold or toggle mode. ESC to cancel.',
+      feat2_title: 'Auto-Stop on Silence',
+      feat2_desc: 'Automatically starts recognition after 0.85s of silence. Hold Space to extend for longer speech.',
+      feat3_title: 'Per-App Settings',
+      feat3_desc: 'Terminal, VS Code, Xcode... auto-switch language, prompt, and LLM instructions per app.',
+      feat4_title: 'Meeting Minutes Mode',
+      feat4_desc: 'Automatically record speech with timestamps during meetings. Exports as text file to Desktop.',
+      feat5_title: 'Completely Private',
+      feat5_desc: 'No audio data ever leaves your Mac. All processing is 100% local. Safe for confidential information.',
+      feat6_title: 'Floating Button',
+      feat6_desc: 'One-click recording from an on-screen mic button. Drag to position anywhere you like.',
+      cmp_section_title: 'Comparison',
+      cmp_section_heading: 'Why choose Koe',
+      cmp_macos: 'macOS Built-in',
+      cmp_cloud: 'Cloud STT',
+      cmp_accuracy: 'Japanese Accuracy',
+      cmp_accuracy_koe: '◎ Kotoba v2.0 / large-v3',
+      cmp_accuracy_macos: '△ Somewhat low',
+      cmp_accuracy_cloud: '○ High',
+      cmp_speed: 'Speed',
+      cmp_speed_macos: '△ 1-3s',
+      cmp_speed_cloud: '△ Network dependent',
+      cmp_privacy: 'Privacy',
+      cmp_privacy_koe: '◎ Fully local',
+      cmp_privacy_macos: '○ Partially local',
+      cmp_privacy_cloud: '✕ Sent to cloud',
+      cmp_cost: 'Monthly Cost',
+      cmp_cost_koe: '◎ Free',
+      cmp_cost_macos: '○ Free',
+      cmp_cost_cloud: '✕ Pay-per-use',
+      cmp_appopt: 'Per-App Optimization',
+      cmp_appopt_koe: '◎ Prompt switching',
+      cmp_none: '✕ None',
+      cmp_wakeword: 'Wake Word <span style="font-size:10px;color:#ff9500">Beta</span>',
+      cmp_wakeword_koe: '◎ Customizable',
+      cmp_terminology: 'Technical Terms',
+      cmp_terminology_koe: '◎ Via prompt',
+      cmp_terminology_macos: '✕ Not supported',
+      cmp_terminology_cloud: '△ Partial',
+      cmp_llm: 'LLM Post-Processing',
+      cmp_llm_koe: '◎ Built-in',
+      install_section_title: 'Install',
+      install_section_heading: 'Set up in 3 minutes',
+      install_step1_title: 'Run the installer',
+      install_step1_desc: 'Download <a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">Koe.pkg</a> and double-click. Just follow the guide.<br><span style="font-size:12px;color:#555">Advanced users can also use the <a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">DMG version</a></span>',
+      install_step2_title: 'Auto-setup on first launch',
+      install_step2_desc: 'whisper.cpp + Metal GPU is bundled in the app. The speech recognition model (Kotoba Whisper v2.0) downloads automatically on first launch.',
+      install_step3_title: 'Grant permissions and done',
+      install_step3_desc: 'Allow Microphone & Accessibility permissions. Press ⌘⌥V to start voice input immediately.',
+      install_detail: 'For detailed setup instructions, see the <a href="https://github.com/yukihamada/Koe-swift#インストール" target="_blank">GitHub README</a>',
+      oss_section_title: 'Open Source',
+      oss_section_heading: '100% Free — MIT License',
+      oss_desc: 'All code is public. Fork, modify, and use commercially — no restrictions.',
+      github_view: 'View on GitHub',
+      share_x: 'Share on X',
+      share_line: 'Share on LINE',
+      footer_elio_desc: 'A fully offline iOS AI chat app with 30+ built-in models. Privacy first. Made by the creators of Koe.'
+    }
+  };
+
+  function applyLang(lang) {
+    var strings = T[lang];
+    if (!strings) return;
+    document.documentElement.lang = lang;
+    var els = document.querySelectorAll('[data-i18n]');
+    for (var i = 0; i < els.length; i++) {
+      var key = els[i].getAttribute('data-i18n');
+      if (strings[key] !== undefined) {
+        els[i].innerHTML = strings[key];
+      }
+    }
+    var btn = document.getElementById('langToggle');
+    if (btn) btn.textContent = lang === 'ja' ? 'EN' : 'JP';
+    localStorage.setItem('koe-lang', lang);
+  }
+
+  function detectLang() {
+    var nav = (navigator.language || navigator.userLanguage || '').toLowerCase();
+    return nav.startsWith('ja') ? 'ja' : 'en';
+  }
+
+  window.toggleLang = function() {
+    var current = document.documentElement.lang || 'ja';
+    var next = current === 'ja' ? 'en' : 'ja';
+    localStorage.setItem('koe-lang-manual', next);
+    applyLang(next);
+  };
+
+  var manual = localStorage.getItem('koe-lang-manual');
+  var lang = manual === 'ja' || manual === 'en' ? manual : detectLang();
+  applyLang(lang);
+})();
+
+// Fetch GitHub star count
+fetch('https://api.github.com/repos/yukihamada/Koe-swift')
+  .then(function(r){return r.json()})
+  .then(function(d){
+    if(d.stargazers_count!=null){
+      var c=d.stargazers_count;
+      var s=c>=1000?(c/1000).toFixed(1)+'k':c.toString();
+      var el1=document.getElementById('starCount');
+      var el2=document.getElementById('starCount2');
+      if(el1)el1.textContent=s;
+      if(el2)el2.textContent=s;
+    }
+  }).catch(function(){});
+
+// Anonymous pageview (no cookies, no PII)
+try{fetch('/api/event',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({t:'pageview',p:location.pathname,r:document.referrer}),keepalive:true})}catch(e){}
+</script>
 
 </body>
 </html>

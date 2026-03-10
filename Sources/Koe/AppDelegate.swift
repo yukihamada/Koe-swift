@@ -68,6 +68,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         reregisterHotkey()
         recorder.prepare()
 
+        // マイク指向性を前方に設定 (ビームフォーミング)
+        MicrophoneConfig.setFrontFacing()
+
         // Register URL scheme handler for Shortcuts.app integration (koe://transcribe)
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -193,7 +196,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let engine = AppSettings.shared.recognitionEngine
         let badge = engine.isLocal ? "LOCAL" : "CLOUD"
         let langFlag = AppSettings.shared.languageFlag
-        let header = NSMenuItem(title: "Koe — \(AppSettings.shared.shortcutDisplayString) で録音 [\(badge)] [\(langFlag)]", action: nil, keyEquivalent: "")
+        let wakeLabel = AppSettings.shared.wakeWordEnabled ? " [WakeWord Beta]" : ""
+        let header = NSMenuItem(title: "Koe — \(AppSettings.shared.shortcutDisplayString) で録音 [\(badge)] [\(langFlag)]\(wakeLabel)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
@@ -416,6 +420,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let audioURL = recorder.stop() else {
             overlay?.hide(); return
         }
+
+        // 音声がなければスキップ（無音録音を認識エンジンに渡さない）
+        if let wavSamples = WhisperContext.loadWAVPublic(url: audioURL),
+           !AudioDSP.hasVoice(wavSamples) {
+            klog("stopAndRecognize: no voice detected, skipping recognition")
+            overlay?.hide()
+            if AppSettings.shared.wakeWordEnabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+            }
+            return
+        }
+
         lastAudioURL = audioURL
         overlay?.clearHint()
         overlay?.show(state: .recognizing)

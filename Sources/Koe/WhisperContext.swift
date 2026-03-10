@@ -114,8 +114,18 @@ final class WhisperContext {
 
             let start = CFAbsoluteTimeGetCurrent()
 
+            // DSP前処理: 音量正規化 + プリエンファシス(高域強調)
+            let processed = AudioDSP.process(samples)
+
+            // 音声がなければスキップ (無音録音をWhisperに渡さない)
+            guard AudioDSP.hasVoice(processed) else {
+                klog("WhisperContext: no voice detected, skipping")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
             // Run inference
-            let result = samples.withUnsafeBufferPointer { buf -> String? in
+            let result = processed.withUnsafeBufferPointer { buf -> String? in
                 guard let ptr = buf.baseAddress else { return nil }
                 let ret = whisper_full(ctx, params, ptr, Int32(samples.count))
                 guard ret == 0 else {
@@ -169,9 +179,12 @@ final class WhisperContext {
             let promptCStr = prompt.isEmpty ? nil : (prompt as NSString).utf8String
             params.initial_prompt = promptCStr
 
-            let result = samples.withUnsafeBufferPointer { buf -> String? in
+            // DSP前処理
+            let processed = AudioDSP.process(samples)
+
+            let result = processed.withUnsafeBufferPointer { buf -> String? in
                 guard let ptr = buf.baseAddress else { return nil }
-                let ret = whisper_full(ctx, params, ptr, Int32(samples.count))
+                let ret = whisper_full(ctx, params, ptr, Int32(processed.count))
                 guard ret == 0 else { return nil }
 
                 let nSegments = whisper_full_n_segments(ctx)
@@ -312,6 +325,9 @@ final class WhisperContext {
     }
 
     // MARK: - WAV → Float32 PCM
+
+    /// 外部から WAV ロードだけ使う場合（音声有無チェック用）
+    static func loadWAVPublic(url: URL) -> [Float]? { loadWAV(url: url) }
 
     /// 16kHz mono 16bit WAV → [Float] (-1.0 ~ 1.0)、前後の無音をトリミング
     static func loadWAV(url: URL) -> [Float]? {

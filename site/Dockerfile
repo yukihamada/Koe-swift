@@ -4,7 +4,9 @@ COPY Cargo.toml Cargo.lock* ./
 COPY src/ src/
 COPY index.html .
 COPY og.svg .
+COPY og.png .
 COPY install.sh .
+COPY elio-icon.png .
 RUN cargo build --release
 
 FROM debian:bookworm-slim

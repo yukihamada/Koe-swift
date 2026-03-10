@@ -2,46 +2,46 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key>
-    <string>com.yuki.koe</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>CFBundleName</key>
-    <string>Koe</string>
-    <key>CFBundleDisplayName</key>
-    <string>Koe — 声で入力</string>
-    <key>CFBundleVersion</key>
-    <string>9</string>
-    <key>CFBundleShortVersionString</key>
-    <string>1.7.0</string>
-    <key>NSHumanReadableCopyright</key>
-    <string>© 2026 Koe</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>音声入力のためにマイクを使用します</string>
-    <key>NSSpeechRecognitionUsageDescription</key>
-    <string>音声をテキストに変換するために音声認識を使用します</string>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>LSMinimumSystemVersion</key>
-    <string>13.0</string>
-    <key>NSUserActivityTypes</key>
-    <array>
-        <string>com.yuki.koe.transcription</string>
-    </array>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleURLName</key>
-            <string>com.yuki.koe</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>koe</string>
-            </array>
-        </dict>
-    </array>
+	<key>CFBundleDisplayName</key>
+	<string>Koe — 声で入力</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.yuki.koe</string>
+	<key>CFBundleName</key>
+	<string>Koe</string>
+	<key>CFBundleShortVersionString</key>
+	<string>2.1.0</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.yuki.koe</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>koe</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>11</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Koe</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>音声入力のためにマイクを使用します</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>音声をテキストに変換するために音声認識を使用します</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.yuki.koe.transcription</string>
+	</array>
 </dict>
 </plist>

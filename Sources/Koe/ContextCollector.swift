@@ -14,6 +14,9 @@ struct ContextCollector {
         let settings = AppSettings.shared
         var parts: [String] = []
 
+        // 0. システムコンテキスト: Macから音声入力していることをモデルに伝える
+        parts.append("macOS音声入力")
+
         // 1. アプリプロファイルのプロンプト（常に含む — ユーザーが明示的に設定したもの）
         if !profilePrompt.isEmpty {
             parts.append(profilePrompt)
@@ -51,6 +54,9 @@ struct ContextCollector {
         guard AppSettings.shared.superModeEnabled else { return nil }
 
         var parts: [String] = []
+
+        // システムコンテキスト
+        parts.append("ユーザーはMacから音声入力でテキストを入力しています。")
 
         // アプリ名
         if let app = NSWorkspace.shared.frontmostApplication {
@@ -95,20 +101,43 @@ struct ContextCollector {
     private static func appHint(bundleID: String) -> String? {
         // 主要アプリのドメインヒント（日本語キーワード）
         let hints: [String: String] = [
-            "com.apple.mail": "メール 件名 宛先",
-            "com.apple.Notes": "メモ ノート",
-            "com.microsoft.Word": "文書 ドキュメント",
-            "com.microsoft.Excel": "表 データ 数値",
-            "com.microsoft.Powerpoint": "スライド プレゼン",
+            // メール
+            "com.apple.mail": "メール 件名 宛先 返信",
+            "com.microsoft.Outlook": "メール 件名 宛先 返信",
+            "com.google.Gmail": "メール 件名 宛先",
+            // ドキュメント
+            "com.apple.Notes": "メモ ノート 箇条書き",
+            "com.apple.Pages": "文書 ドキュメント 見出し",
+            "com.microsoft.Word": "文書 ドキュメント 段落",
+            "com.microsoft.Excel": "表 データ 数値 関数",
+            "com.microsoft.Powerpoint": "スライド プレゼン 図表",
+            "com.google.Chrome.app.Docs": "文書 ドキュメント",
+            // チャット・メッセージ
             "com.apple.iChat": "メッセージ チャット",
-            "com.tinyspeck.slackmacgap": "メッセージ チャット",
-            "jp.naver.line.mac": "メッセージ チャット",
-            "com.apple.Safari": "検索 ウェブ",
-            "com.google.Chrome": "検索 ウェブ",
+            "com.tinyspeck.slackmacgap": "メッセージ チャット チャンネル",
+            "jp.naver.line.mac": "メッセージ チャット スタンプ",
+            "com.microsoft.teams2": "会議 チャット 画面共有",
+            "us.zoom.xos": "会議 ミーティング 画面共有",
+            "com.hnc.Discord": "チャット サーバー チャンネル",
+            // ブラウザ
+            "com.apple.Safari": "検索 ウェブ サイト",
+            "com.google.Chrome": "検索 ウェブ サイト",
+            "company.thebrowser.Browser": "検索 ウェブ タブ",
+            // 開発
             "com.apple.finder": "ファイル フォルダ",
-            "com.apple.Terminal": "コマンド ターミナル",
-            "com.apple.dt.Xcode": "コード プログラミング",
-            "com.microsoft.VSCode": "コード プログラミング",
+            "com.apple.Terminal": "コマンド ターミナル シェル",
+            "com.mitchellh.ghostty": "コマンド ターミナル git",
+            "com.apple.dt.Xcode": "コード SwiftUI ビルド",
+            "com.microsoft.VSCode": "コード プログラミング デバッグ",
+            "dev.zed.Zed": "コード エディタ プログラミング",
+            "com.jetbrains.intellij": "コード Java プログラミング",
+            // クリエイティブ
+            "com.figma.Desktop": "デザイン レイアウト コンポーネント",
+            "com.adobe.Photoshop": "画像 レイヤー フィルター",
+            "com.apple.FinalCut": "動画 編集 タイムライン",
+            // Notion / Obsidian
+            "notion.id": "ノート ページ データベース",
+            "md.obsidian": "ノート マークダウン リンク",
         ]
         return hints[bundleID]
     }

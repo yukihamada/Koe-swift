@@ -143,6 +143,16 @@ else
   echo "⚠ Unsigned $PKG (Developer ID Installer 証明書なし)"
 fi
 
+# --- Notarize ---
+if xcrun notarytool history --keychain-profile "notary" >/dev/null 2>&1; then
+  echo "==> Notarizing $PKG..."
+  xcrun notarytool submit "$PKG" --keychain-profile "notary" --wait
+  xcrun stapler staple "$PKG"
+  echo "✓ Notarized $PKG"
+else
+  echo "⚠ Skipping notarization (run: xcrun notarytool store-credentials \"notary\")"
+fi
+
 echo ""
 echo "✓ Created $PKG ($(du -h "$PKG" | cut -f1))"
 echo "  → ダブルクリックでインストール"

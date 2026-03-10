@@ -19,7 +19,7 @@ VIAddVersionKey "FileVersion" "1.0.0"
 VIAddVersionKey "LegalCopyright" "Copyright 2026 Yuki Hamada"
 
 ; ── UI ──
-!define MUI_ICON "..\assets\koe.ico"
+; !define MUI_ICON "..\assets\koe.ico"  ; TODO: add icon file
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Koe — 超高速音声入力"
 !define MUI_WELCOMEPAGE_TEXT "Koe をインストールします。$\r$\n$\r$\nCtrl+Alt+V で どこでも音声入力。$\r$\nwhisper.cpp + GPU で 0.5秒以下のレイテンシ。$\r$\n$\r$\n20言語対応 · 完全プライベート · クラウド不要"

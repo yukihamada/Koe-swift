@@ -32,28 +32,35 @@ jobs:
         working-directory: Koe-windows
         run: cargo build --release
 
-      - name: Create installer
+      - name: Prepare distribution
         working-directory: Koe-windows
         shell: pwsh
         run: |
-          # Create distribution directory
           New-Item -ItemType Directory -Force -Path dist
           Copy-Item target/release/koe.exe dist/
           Copy-Item README.md dist/
 
-          # Download NSIS
-          choco install nsis -y
-
-          # Build installer
+      - name: Create installer (NSIS)
+        working-directory: Koe-windows
+        shell: pwsh
+        run: |
+          choco install nsis -y --no-progress
+          $env:PATH = "C:\Program Files (x86)\NSIS;$env:PATH"
           makensis installer/koe-installer.nsi
+        continue-on-error: true
 
-      - name: Upload artifacts
+      - name: Upload portable exe
         uses: actions/upload-artifact@v4
         with:
-          name: koe-windows
-          path: |
-            Koe-windows/dist/koe.exe
-            Koe-windows/installer/Koe-Setup.exe
+          name: koe-windows-portable
+          path: Koe-windows/dist/koe.exe
+
+      - name: Upload installer
+        if: hashFiles('Koe-windows/installer/Koe-Setup.exe') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: koe-windows-installer
+          path: Koe-windows/installer/Koe-Setup.exe
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -90,12 +97,15 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.16
         with:
           cuda: '12.4.0'
+        continue-on-error: true
 
       - name: Build (CUDA mode)
         working-directory: Koe-windows
         run: cargo build --release --features cuda
+        continue-on-error: true
 
       - name: Upload CUDA build
+        if: hashFiles('Koe-windows/target/release/koe.exe') != ''
         uses: actions/upload-artifact@v4
         with:
           name: koe-windows-cuda

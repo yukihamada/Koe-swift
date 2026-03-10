@@ -13,41 +13,97 @@ class LLMProcessor {
     - 修正後のテキストのみを出力（説明不要）
     """
 
+    /// アンロードまでの待機時間（秒）
+    private var unloadTimer: Timer?
+    private let unloadDelay: TimeInterval = 30  // 30秒後にアンロード
+
     func process(text: String, instruction: String, completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
         guard s.llmEnabled, !text.isEmpty else {
             completion(text); return
         }
 
-        let systemPrompt = instruction.isEmpty ? Self.defaultInstruction : instruction
+        // ユーザーカスタムプロンプト → アプリ別指示 → デフォルト
+        let customPrompt = s.llmCustomPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let systemPrompt: String
+        if !instruction.isEmpty {
+            systemPrompt = instruction
+        } else if !customPrompt.isEmpty {
+            systemPrompt = customPrompt
+        } else {
+            systemPrompt = Self.defaultInstruction
+        }
 
-        // ローカルLLMが有効で、モデルがロード済みなら使用
-        if s.llmUseLocal && LlamaContext.shared.isLoaded {
-            processLocal(text: text, instruction: systemPrompt, completion: completion)
+        // ローカルLLM
+        if s.llmUseLocal {
+            processLocalOnDemand(text: text, instruction: systemPrompt, completion: completion)
             return
         }
 
-        // リモートAPI（従来の動作）
+        // リモートAPI
         if !s.llmAPIKey.isEmpty {
             processRemote(text: text, instruction: systemPrompt, completion: completion)
             return
         }
 
-        // どちらも使えない場合はそのまま返す
         completion(text)
     }
 
-    // MARK: - Local (llama.cpp in-process)
+    // MARK: - Local (オンデマンド: ロード → 推論 → 遅延アンロード)
 
-    private func processLocal(text: String, instruction: String, completion: @escaping (String) -> Void) {
+    private func processLocalOnDemand(text: String, instruction: String, completion: @escaping (String) -> Void) {
+        // タイマーをキャンセル（連続使用時はアンロードしない）
+        unloadTimer?.invalidate()
+        unloadTimer = nil
+
+        let llm = LlamaContext.shared
+
+        // 既にロード済みなら即実行
+        if llm.isLoaded {
+            runAndScheduleUnload(text: text, instruction: instruction, completion: completion)
+            return
+        }
+
+        // モデルファイルがあるか確認
+        guard let model = llm.selectedModel, llm.isDownloaded(model) else {
+            klog("LLM: no local model downloaded, skipping")
+            completion(text); return
+        }
+
+        // オンデマンドでロード
+        klog("LLM: on-demand loading \(model.name)...")
+        llm.loadModel { [weak self] ok in
+            if ok {
+                self?.runAndScheduleUnload(text: text, instruction: instruction, completion: completion)
+            } else {
+                klog("LLM: on-demand load failed, using original")
+                completion(text)
+            }
+        }
+    }
+
+    private func runAndScheduleUnload(text: String, instruction: String, completion: @escaping (String) -> Void) {
         klog("LLM: local processing...")
-        LlamaContext.shared.generate(system: instruction, user: text, maxTokens: 300) { result in
+        LlamaContext.shared.generate(system: instruction, user: text, maxTokens: 300) { [weak self] result in
             if let result, !result.isEmpty {
                 klog("LLM local done: '\(result.prefix(80))'")
                 completion(result)
             } else {
                 klog("LLM local: failed, using original")
                 completion(text)
+            }
+            // 30秒後にアンロード（連続使用でなければメモリ解放）
+            self?.scheduleUnload()
+        }
+    }
+
+    private func scheduleUnload() {
+        unloadTimer?.invalidate()
+        unloadTimer = Timer.scheduledTimer(withTimeInterval: unloadDelay, repeats: false) { _ in
+            let llm = LlamaContext.shared
+            if llm.isLoaded {
+                klog("LLM: auto-unloading after \(Int(self.unloadDelay))s idle")
+                llm.unload()
             }
         }
     }

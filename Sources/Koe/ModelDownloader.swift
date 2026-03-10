@@ -179,16 +179,17 @@ class ModelDownloader {
             }
         }
 
-        let observer = task.progress.observe(\.fractionCompleted, options: [.new]) { [weak self] (progress: Progress, _: NSKeyValueObservedChange<Double>) in
+        let expectedMB = model.sizeMB
+        let observer = task.progress.observe(\.completedUnitCount, options: [.new]) { [weak self] (prog: Progress, _: NSKeyValueObservedChange<Int64>) in
             DispatchQueue.main.async {
-                self?.progressIndicator?.doubleValue = progress.fractionCompleted * 100
-                let mb = Double(progress.completedUnitCount) / 1_000_000
-                let total = Double(progress.totalUnitCount) / 1_000_000
-                if total > 0 {
-                    self?.progressLabel?.stringValue = String(format: "%.0f / %.0f MB", mb, total)
-                } else {
-                    self?.progressLabel?.stringValue = String(format: "%.0f MB", mb)
-                }
+                let doneMB = Double(prog.completedUnitCount) / 1_000_000
+                let totalMB = prog.totalUnitCount > 0 ? Double(prog.totalUnitCount) / 1_000_000 : Double(expectedMB)
+                let pct = prog.totalUnitCount > 0
+                    ? prog.fractionCompleted * 100
+                    : Double(prog.completedUnitCount) / Double(Int64(expectedMB) * 1_000_000) * 100
+                let remainMB = totalMB - doneMB
+                self?.progressIndicator?.doubleValue = min(pct, 100)
+                self?.progressLabel?.stringValue = String(format: "%.0f / %.0f MB (残り %.0f MB)", doneMB, totalMB, max(0, remainMB))
             }
         }
         objc_setAssociatedObject(task, "progressObserver", observer, .OBJC_ASSOCIATION_RETAIN)

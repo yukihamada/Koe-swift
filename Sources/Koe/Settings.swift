@@ -92,6 +92,7 @@ class AppSettings: ObservableObject {
     @Published var llmBaseURL: String { didSet { ud.set(llmBaseURL,  forKey: "llmBaseURL") } }
     @Published var llmAPIKey: String  { didSet { ud.set(llmAPIKey,   forKey: "llmAPIKey") } }
     @Published var llmModel: String   { didSet { ud.set(llmModel,    forKey: "llmModel") } }
+    @Published var llmCustomPrompt: String { didSet { ud.set(llmCustomPrompt, forKey: "llmCustomPrompt") } }
 
     // Login item (ログイン時に自動起動)
     @Published var launchAtLogin: Bool { didSet {
@@ -211,6 +212,7 @@ class AppSettings: ObservableObject {
         llmBaseURL  = ud.string(forKey: "llmBaseURL") ?? "https://api.chatweb.ai"
         llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""
         llmModel    = ud.string(forKey: "llmModel") ?? "auto"
+        llmCustomPrompt = ud.string(forKey: "llmCustomPrompt") ?? ""
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []

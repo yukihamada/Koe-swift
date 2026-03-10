@@ -330,12 +330,17 @@ final class LlamaContext {
             }
         }
 
-        let observer = task.progress.observe(\.fractionCompleted) { prog, _ in
+        let expectedBytes = Int64(model.sizeMB) * 1_000_000
+        let observer = task.progress.observe(\.completedUnitCount) { prog, _ in
             DispatchQueue.main.async {
-                let mb = Double(prog.completedUnitCount) / 1_000_000
-                let total = Double(prog.totalUnitCount) / 1_000_000
-                let detail = total > 0 ? String(format: "%.0f / %.0f MB", mb, total) : String(format: "%.0f MB", mb)
-                progress(prog.fractionCompleted * 100, detail)
+                let doneMB = Double(prog.completedUnitCount) / 1_000_000
+                let totalMB = prog.totalUnitCount > 0 ? Double(prog.totalUnitCount) / 1_000_000 : Double(model.sizeMB)
+                let pct = prog.totalUnitCount > 0
+                    ? prog.fractionCompleted * 100
+                    : Double(prog.completedUnitCount) / Double(expectedBytes) * 100
+                let remainMB = totalMB - doneMB
+                let detail = String(format: "%.0f / %.0f MB (残り %.0f MB)", doneMB, totalMB, max(0, remainMB))
+                progress(min(pct, 100), detail)
             }
         }
         objc_setAssociatedObject(task, "obs", observer, .OBJC_ASSOCIATION_RETAIN)

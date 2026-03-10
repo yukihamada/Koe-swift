@@ -481,7 +481,26 @@ struct AITab: View {
                         HStack { Text("モデル"); TextField("auto", text: $s.llmModel).textFieldStyle(.roundedBorder) }
                     }
 
-                    Text("アプリタブで対象アプリごとに後処理の指示を設定できます").font(.caption).foregroundColor(.secondary)
+                    // 後処理プロンプト編集
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("後処理プロンプト（空欄 = デフォルト）")
+                            .font(.caption).foregroundColor(.secondary)
+                        TextEditor(text: $s.llmCustomPrompt)
+                            .font(.system(size: 11))
+                            .frame(height: 70)
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.secondary.opacity(0.2)))
+                        if s.llmCustomPrompt.isEmpty {
+                            Text("デフォルト: 誤字修正・句読点追加・認識ミス補正")
+                                .font(.caption2).foregroundColor(.secondary)
+                        }
+                        Button("デフォルトに戻す") {
+                            s.llmCustomPrompt = ""
+                        }
+                        .buttonStyle(.link)
+                        .font(.caption2)
+                        .disabled(s.llmCustomPrompt.isEmpty)
+                    }
+                    Text("アプリタブで対象アプリごとに個別の指示も設定できます").font(.caption).foregroundColor(.secondary)
                 }
             } header: { Text("LLM後処理") }
 
@@ -778,16 +797,21 @@ struct LocalLLMSettingsView: View {
 
             // Status
             HStack(spacing: 6) {
-                Image(systemName: llm.isLoaded ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundColor(llm.isLoaded ? .green : .red)
                 if llm.isLoaded {
-                    Text("ローカルLLM: \(llm.selectedModel?.name ?? "不明") — Metal GPU")
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                    Text("ロード中: \(llm.selectedModel?.name ?? "") — Metal GPU")
                         .font(.caption)
                 } else if loading {
+                    ProgressView().controlSize(.small)
                     Text("モデルをロード中...")
                         .font(.caption).foregroundColor(.orange)
+                } else if let model = llm.selectedModel, llm.isDownloaded(model) {
+                    Image(systemName: "circle.fill").foregroundColor(.blue).font(.system(size: 6))
+                    Text("待機中: \(model.name)（使用時に自動ロード → 30秒後に自動解放）")
+                        .font(.caption).foregroundColor(.secondary)
                 } else {
-                    Text("モデル未ロード")
+                    Image(systemName: "xmark.circle.fill").foregroundColor(.red)
+                    Text("モデル未ダウンロード")
                         .font(.caption).foregroundColor(.secondary)
                 }
             }

@@ -80,6 +80,7 @@ class OverlayStateModel: ObservableObject {
     @Published var audioLevel: Float = 0
     @Published var visible: Bool = false
     @Published var hint: String = ""
+    var engineBadge: String { AppSettings.shared.recognitionEngine.badgeText }
 }
 
 // MARK: - Overlay View
@@ -99,14 +100,21 @@ struct OverlayView: View {
                 Group {
                     if model.state == .recording {
                         WaveformView(level: model.audioLevel)
-                            .frame(width: 110, height: 26)
+                            .frame(width: 90, height: 26)
                     } else {
                         ThreeDotsView()
-                            .frame(width: 110, height: 26)
+                            .frame(width: 90, height: 26)
                     }
                 }
+
+                Text(model.engineBadge)
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(badgeColor.opacity(0.8))
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(badgeColor.opacity(0.15))
+                    .cornerRadius(4)
             }
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 14)
             .frame(width: 200, height: 56)
 
             if !model.hint.isEmpty {
@@ -130,6 +138,12 @@ struct OverlayView: View {
         model.state == .recording
             ? Color(red: 1.0, green: 0.27, blue: 0.30)
             : Color(red: 0.40, green: 0.74, blue: 1.0)
+    }
+
+    private var badgeColor: Color {
+        AppSettings.shared.recognitionEngine.isLocal
+            ? Color(red: 0.3, green: 0.85, blue: 0.5)
+            : Color(red: 0.5, green: 0.7, blue: 1.0)
     }
 }
 

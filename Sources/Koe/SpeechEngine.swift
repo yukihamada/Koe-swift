@@ -38,10 +38,29 @@ class SpeechEngine {
     private func recognizeWhisperCpp(url: URL, prompt: String, languageOverride: String,
                                       onDone: @escaping (String) -> Void) {
         let rawLang = languageOverride.isEmpty ? AppSettings.shared.language : languageOverride
-        // "auto" means let whisper auto-detect; otherwise extract the primary language code
         let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
 
-        // サーバーが起きていれば HTTP で叩く（モデルがメモリに常駐 → 高速）
+        // 組み込みモデルが読み込み済みなら C API 直接呼び出し（最速パス）
+        if WhisperContext.shared.isLoaded {
+            klog("whisper: using embedded C API")
+            WhisperContext.shared.transcribe(url: url, language: lang, prompt: prompt) { text in
+                if let text, !text.isEmpty {
+                    klog("whisper embedded done: '\(text)'")
+                    onDone(text)
+                } else {
+                    klog("whisper embedded failed, trying server fallback")
+                    self.whisperServerFallback(url: url, lang: lang, prompt: prompt, onDone: onDone)
+                }
+            }
+            return
+        }
+
+        // 組み込みモデル未ロードならサーバー/subprocess にフォールバック
+        whisperServerFallback(url: url, lang: lang, prompt: prompt, onDone: onDone)
+    }
+
+    private func whisperServerFallback(url: URL, lang: String, prompt: String,
+                                       onDone: @escaping (String) -> Void) {
         if WhisperServer.shared.isAlive() {
             klog("whisper: using server")
             WhisperServer.shared.transcribe(url: url, language: lang, prompt: prompt) { text in
@@ -49,14 +68,11 @@ class SpeechEngine {
                     klog("whisper server done: '\(text)'")
                     DispatchQueue.main.async { onDone(text) }
                 } else {
-                    // サーバーが失敗したら subprocess にフォールバック
                     self.whisperSubprocess(url: url, lang: lang, prompt: prompt, onDone: onDone)
                 }
             }
             return
         }
-
-        // サーバーが未起動なら subprocess
         whisperSubprocess(url: url, lang: lang, prompt: prompt, onDone: onDone)
     }
 

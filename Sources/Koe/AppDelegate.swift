@@ -1,5 +1,6 @@
 import AppKit
 import Speech
+import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var shared: AppDelegate?
@@ -7,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var overlay: OverlayWindow?
     private var settingsWC: SettingsWindowController?
+    private var setupWindow: SetupWindow?
     private let recorder  = AudioRecorder()
     private var speech    = SpeechEngine()
     private let typer     = AutoTyper()
@@ -32,22 +34,84 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var speculativeResult: String? = nil
     private var speculationID = 0
 
+    // 議事録用: 最後の録音ファイル
+    private var lastAudioURL: URL?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
         setupMenu()
-        speech.requestPermissions()
-        checkAccessibility()
         reregisterHotkey()
         recorder.prepare()
-        WhisperServer.shared.start()
+
+        // インストール/アップデート後に必ずオンボーディングを表示
+        let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        let lastSeenVersion = UserDefaults.standard.string(forKey: "lastOnboardingVersion") ?? ""
+        let isNewVersion = lastSeenVersion != currentVersion
+        let needsSetup = !ModelDownloader.shared.isModelAvailable || !AXIsProcessTrusted() || isNewVersion
+
+        if needsSetup {
+            UserDefaults.standard.set(currentVersion, forKey: "lastOnboardingVersion")
+            setupWindow = SetupWindow()
+            setupWindow?.show { [weak self] in
+                self?.setupWindow = nil
+                self?.finishLaunch()
+            }
+        } else {
+            finishLaunch()
+        }
+    }
+
+    private func finishLaunch() {
+        speech.requestPermissions()
+        loadEmbeddedWhisper()
 
         WakeWordDetector.shared.onDetected = { [weak self] in self?.startRecording() }
         if AppSettings.shared.wakeWordEnabled { WakeWordDetector.shared.start() }
         if AppSettings.shared.floatingButtonEnabled { FloatingButton.shared.show() }
 
+        // ログイン時自動起動を設定に従って登録
+        if AppSettings.shared.launchAtLogin {
+            LoginItemManager.setEnabled(true)
+        }
+
         // 起動後3秒でアップデート確認（サイレント）
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             AutoUpdater.shared.checkForUpdates(silent: true)
+        }
+    }
+
+    /// 組み込み whisper.cpp モデルのロード。モデルがなければダウンロード。
+    private func loadEmbeddedWhisper() {
+        // 設定にパスがあればそちらを使う、なければデフォルトパス
+        let settings = AppSettings.shared
+        let modelPath: String
+        if !settings.whisperCppModelPath.isEmpty,
+           FileManager.default.fileExists(atPath: settings.whisperCppModelPath) {
+            modelPath = settings.whisperCppModelPath
+        } else if ModelDownloader.shared.isModelAvailable {
+            modelPath = ModelDownloader.shared.modelPath
+            // 設定にも保存しておく
+            settings.whisperCppModelPath = modelPath
+        } else {
+            // モデルが無い → ダウンロード提案（バックグラウンドでサーバーも起動）
+            WhisperServer.shared.start()
+            ModelDownloader.shared.ensureModel { [weak self] ok in
+                guard ok else { return }
+                settings.whisperCppModelPath = ModelDownloader.shared.modelPath
+                self?.loadEmbeddedWhisper()  // 再帰して読み込み
+            }
+            return
+        }
+
+        klog("Loading embedded whisper model: \(modelPath)")
+        WhisperContext.shared.loadModel(path: modelPath) { ok in
+            if ok {
+                klog("Embedded whisper ready — HTTP server not needed")
+                // サーバーは不要になったので起動しない
+            } else {
+                klog("Embedded whisper failed, falling back to server")
+                WhisperServer.shared.start()
+            }
         }
     }
 
@@ -60,13 +124,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.button?.toolTip = "Koe — 声で入力"
         setIcon(recording: false)
         rebuildMenu()
     }
 
     private func rebuildMenu() {
         let menu = NSMenu()
-        let header = NSMenuItem(title: "Koe — \(AppSettings.shared.shortcutDisplayString) で録音", action: nil, keyEquivalent: "")
+        let engine = AppSettings.shared.recognitionEngine
+        let badge = engine.isLocal ? "LOCAL" : "CLOUD"
+        let header = NSMenuItem(title: "Koe — \(AppSettings.shared.shortcutDisplayString) で録音 [\(badge)]", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
@@ -77,6 +144,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: "アップデートを確認…", action: #selector(checkUpdate), keyEquivalent: "")
+        menu.addItem(withTitle: "Koe について", action: #selector(showAbout), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "終了", action: #selector(quit), keyEquivalent: "q")
         statusItem.menu = menu
@@ -210,10 +278,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let audioURL = recorder.stop() else {
             overlay?.hide(); return
         }
+        lastAudioURL = audioURL
         overlay?.clearHint()
         overlay?.show(state: .recognizing)
 
         let profile = AppSettings.shared.profile(for: activeAppBundleID)
+
+        // コンテキスト収集（アプリ名・ウィンドウ・クリップボード・選択テキスト）
+        let contextPrompt = ContextCollector.collect(
+            appBundleID: activeAppBundleID,
+            profilePrompt: profile?.prompt ?? ""
+        )
+        klog("Context prompt: '\(String(contextPrompt.prefix(100)))'")
 
         // 投機実行の結果がすでに届いていればそれを使う（whisper呼び出しをスキップ）
         if let cached = speculativeResult {
@@ -226,7 +302,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 投機実行が進行中なら完了まで待つ（上書きコールバック方式）
         let myID = speculationID
         speech.recognize(url: audioURL,
-                         prompt: profile?.prompt ?? "",
+                         prompt: contextPrompt,
                          languageOverride: profile?.language ?? "") { [weak self] raw in
             guard let self, self.speculationID == myID else { return }
             self.handleRecognitionResult(raw, profile: profile)
@@ -247,8 +323,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 klog("final: '\(final)'")
                 if !final.isEmpty {
                     HistoryStore.shared.add(final)
-                    MeetingMode.shared.append(text: final)
+                    MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
                     self.typer.type(final)
+                    if AppSettings.shared.autoCopyToClipboard {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(final, forType: .string)
+                    }
+                    if AppSettings.shared.notifyOnComplete {
+                        self.sendNotification(text: final)
+                    }
                 }
                 self.rebuildMenu()
                 if AppSettings.shared.wakeWordEnabled {
@@ -262,20 +345,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startSpeculation() {
         guard AppSettings.shared.recognitionEngine == .whisperCpp,
-              WhisperServer.shared.isAlive(),
               let srcURL = recorder.tempURL else { return }
-        let specURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("com.yuki.koe/spec.wav")
-        try? FileManager.default.removeItem(at: specURL)
-        guard (try? FileManager.default.copyItem(at: srcURL, to: specURL)) != nil else { return }
 
         let myID = speculationID
         let profile = AppSettings.shared.profile(for: activeAppBundleID)
         let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
         let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "ja")
+
+        // コンテキスト収集（投機実行にも同じコンテキストを使用）
+        let contextPrompt = ContextCollector.collect(
+            appBundleID: activeAppBundleID,
+            profilePrompt: profile?.prompt ?? ""
+        )
         klog("Speculation: firing (id=\(myID))")
 
-        WhisperServer.shared.transcribe(url: specURL, language: lang, prompt: profile?.prompt ?? "") { [weak self] text in
+        // 組み込み whisper が使えるなら直接呼び出し
+        if WhisperContext.shared.isLoaded {
+            let specURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("com.yuki.koe/spec.wav")
+            try? FileManager.default.removeItem(at: specURL)
+            guard (try? FileManager.default.copyItem(at: srcURL, to: specURL)) != nil else { return }
+
+            WhisperContext.shared.transcribe(url: specURL, language: lang, prompt: contextPrompt) { [weak self] text in
+                guard let self, self.speculationID == myID, let text, !text.isEmpty else { return }
+                klog("Speculation: result ready '\(text)'")
+                self.speculativeResult = text
+            }
+            return
+        }
+
+        // フォールバック: HTTP サーバー経由
+        guard WhisperServer.shared.isAlive() else { return }
+        let specURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("com.yuki.koe/spec.wav")
+        try? FileManager.default.removeItem(at: specURL)
+        guard (try? FileManager.default.copyItem(at: srcURL, to: specURL)) != nil else { return }
+
+        WhisperServer.shared.transcribe(url: specURL, language: lang, prompt: contextPrompt) { [weak self] text in
             guard let self, self.speculationID == myID, let text, !text.isEmpty else { return }
             klog("Speculation: result ready '\(text)'")
             DispatchQueue.main.async { self.speculativeResult = text }
@@ -335,6 +441,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Notification
+
+    private func sendNotification(text: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Koe"
+        content.body = String(text.prefix(100))
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    }
+
     // MARK: - Speech engine reload (on language change)
 
     func reloadSpeechEngine() {
@@ -360,6 +476,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func checkUpdate() {
         AutoUpdater.shared.checkForUpdates(silent: false)
+    }
+
+    @objc private func showAbout() {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let engine = AppSettings.shared.recognitionEngine
+        let model = ModelDownloader.shared.currentModel.name
+        let alert = NSAlert()
+        alert.messageText = "声 Koe"
+        alert.informativeText = """
+        Mac で最も速い日本語音声入力
+
+        バージョン \(version) (Build \(build))
+        エンジン: \(engine.displayName)
+        モデル: \(model)
+
+        whisper.cpp + Metal GPU
+        完全ローカル処理
+
+        © 2026 Yuki Hamada
+        """
+        alert.alertStyle = .informational
+        if let icon = NSImage(named: "AppIcon") ?? NSImage(named: NSImage.applicationIconName) {
+            alert.icon = icon
+        }
+        alert.runModal()
     }
 
     @objc private func quit() {

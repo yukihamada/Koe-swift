@@ -49,6 +49,13 @@ enum RecognitionEngine: String, CaseIterable {
         case .whisper:       return "OpenAI Whisper API"
         }
     }
+    var isLocal: Bool {
+        switch self {
+        case .whisperCpp, .appleOnDevice: return true
+        case .appleCloud, .whisper:       return false
+        }
+    }
+    var badgeText: String { isLocal ? "LOCAL" : "CLOUD" }
 }
 
 enum RecordingMode: String, CaseIterable {
@@ -84,6 +91,24 @@ class AppSettings: ObservableObject {
     @Published var llmBaseURL: String { didSet { ud.set(llmBaseURL,  forKey: "llmBaseURL") } }
     @Published var llmAPIKey: String  { didSet { ud.set(llmAPIKey,   forKey: "llmAPIKey") } }
     @Published var llmModel: String   { didSet { ud.set(llmModel,    forKey: "llmModel") } }
+
+    // Login item (ログイン時に自動起動)
+    @Published var launchAtLogin: Bool { didSet {
+        ud.set(launchAtLogin, forKey: "launchAtLogin")
+        LoginItemManager.setEnabled(launchAtLogin)
+    }}
+
+    // Context-aware recognition
+    @Published var contextAwareEnabled: Bool { didSet { ud.set(contextAwareEnabled, forKey: "contextAwareEnabled") } }
+    @Published var contextUseClipboard: Bool { didSet { ud.set(contextUseClipboard, forKey: "contextUseClipboard") } }
+    @Published var contextUseAppHint: Bool   { didSet { ud.set(contextUseAppHint, forKey: "contextUseAppHint") } }
+    @Published var contextCustomPrompt: String { didSet { ud.set(contextCustomPrompt, forKey: "contextCustomPrompt") } }
+
+    // Clipboard
+    @Published var autoCopyToClipboard: Bool { didSet { ud.set(autoCopyToClipboard, forKey: "autoCopyToClipboard") } }
+
+    // Notifications
+    @Published var notifyOnComplete: Bool { didSet { ud.set(notifyOnComplete, forKey: "notifyOnComplete") } }
 
     // Floating button
     @Published var floatingButtonEnabled: Bool { didSet {
@@ -172,6 +197,13 @@ class AppSettings: ObservableObject {
         whisperAPIKey        = ud.string(forKey: "whisperAPIKey") ?? ""
         whisperCppBinaryPath = ud.string(forKey: "whisperCppBinaryPath") ?? ""
         whisperCppModelPath  = ud.string(forKey: "whisperCppModelPath") ?? ""
+        launchAtLogin         = ud.object(forKey: "launchAtLogin") as? Bool ?? true  // デフォルトON
+        contextAwareEnabled   = ud.object(forKey: "contextAwareEnabled") as? Bool ?? true  // デフォルトON
+        contextUseClipboard   = ud.object(forKey: "contextUseClipboard") as? Bool ?? false  // デフォルトOFF（精度低下の原因になりやすい）
+        contextUseAppHint     = ud.object(forKey: "contextUseAppHint") as? Bool ?? true
+        contextCustomPrompt   = ud.string(forKey: "contextCustomPrompt") ?? ""
+        autoCopyToClipboard   = ud.bool(forKey: "autoCopyToClipboard")
+        notifyOnComplete      = ud.bool(forKey: "notifyOnComplete")
         floatingButtonEnabled = ud.bool(forKey: "floatingButtonEnabled")
         llmEnabled  = ud.bool(forKey: "llmEnabled")
         llmBaseURL  = ud.string(forKey: "llmBaseURL") ?? "https://api.chatweb.ai"

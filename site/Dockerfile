@@ -3,6 +3,8 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
 COPY src/ src/
 COPY index.html .
+COPY og.svg .
+COPY install.sh .
 RUN cargo build --release
 
 FROM debian:bookworm-slim

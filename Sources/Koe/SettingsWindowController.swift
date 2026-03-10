@@ -121,19 +121,68 @@ struct GeneralTab: View {
                     Text("日本語").tag("ja-JP")
                     Text("English").tag("en-US")
                     Text("中文").tag("zh-CN")
+                    Text("한국어").tag("ko-KR")
+                    Text("Français").tag("fr-FR")
+                    Text("Deutsch").tag("de-DE")
+                    Text("Español").tag("es-ES")
+                    Text("Português").tag("pt-BR")
+                    Text("Italiano").tag("it-IT")
+                    Text("Русский").tag("ru-RU")
+                    Text("العربية").tag("ar-SA")
+                    Text("हिन्दी").tag("hi-IN")
+                    Text("ไทย").tag("th-TH")
+                    Text("Tiếng Việt").tag("vi-VN")
+                    Text("Bahasa Indonesia").tag("id-ID")
                 }
                 .onChange(of: settings.language) { _ in
                     AppDelegate.shared?.reloadSpeechEngine()
                 }
+
+                // Engine badge
+                HStack(spacing: 6) {
+                    Image(systemName: settings.recognitionEngine.isLocal ? "desktopcomputer" : "cloud")
+                        .foregroundColor(settings.recognitionEngine.isLocal ? .green : .blue)
+                    Text(settings.recognitionEngine.isLocal ? "ローカル処理 — データ送信なし" : "クラウド処理 — ネットワーク必要")
+                        .font(.caption).foregroundColor(.secondary)
+                }
             } header: { Text("音声認識") }
 
             Section {
+                Toggle("ログイン時に自動起動", isOn: $settings.launchAtLogin)
                 Toggle("フローティングマイクボタンを表示", isOn: $settings.floatingButtonEnabled)
                 if settings.floatingButtonEnabled {
                     Text("画面上のボタンをクリックするだけで録音開始・停止できます。ドラッグで移動可能。")
                         .font(.caption).foregroundColor(.secondary)
                 }
-            } header: { Text("ワンクリック録音") }
+            } header: { Text("一般") }
+
+            Section {
+                Toggle("コンテキスト認識を有効にする", isOn: $settings.contextAwareEnabled)
+                if settings.contextAwareEnabled {
+                    Toggle("アプリ別ヒントワード", isOn: $settings.contextUseAppHint)
+                    Text("使用中のアプリに応じた日本語キーワードをプロンプトに追加")
+                        .font(.caption2).foregroundColor(.secondary)
+
+                    Toggle("クリップボードの日本語キーワード", isOn: $settings.contextUseClipboard)
+                    Text("クリップ内容から日本語のみ抽出（英語やコードは除外）")
+                        .font(.caption2).foregroundColor(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("カスタムプロンプト（常にwhisperに渡す）")
+                        .font(.caption).foregroundColor(.secondary)
+                    TextField("例: 技術用語、専門用語、固有名詞など", text: $settings.contextCustomPrompt)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 12))
+                }
+                Text("よく使う単語・専門用語を書くと認識精度が向上します。100文字以内推奨。")
+                    .font(.caption2).foregroundColor(.secondary)
+            } header: { Text("コンテキスト認識") }
+
+            Section {
+                Toggle("認識結果をクリップボードにコピー", isOn: $settings.autoCopyToClipboard)
+                Toggle("認識完了時に通知を表示", isOn: $settings.notifyOnComplete)
+            } header: { Text("出力") }
 
             Section {
                 HStack {
@@ -327,6 +376,13 @@ struct ProfileEditSheet: View {
                     Text("日本語").tag("ja-JP")
                     Text("English").tag("en-US")
                     Text("中文").tag("zh-CN")
+                    Text("한국어").tag("ko-KR")
+                    Text("Français").tag("fr-FR")
+                    Text("Deutsch").tag("de-DE")
+                    Text("Español").tag("es-ES")
+                    Text("Português").tag("pt-BR")
+                    Text("Italiano").tag("it-IT")
+                    Text("Русский").tag("ru-RU")
                 }
                 .labelsHidden()
                 .padding(4)
@@ -568,72 +624,113 @@ struct TextExpansionsTab: View {
 
 struct WhisperCppSettingsView: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var downloading = false
+    @State private var downloadProgress: Double = 0
+    @State private var downloadDetail = ""
 
-    private var binaryFound: Bool {
-        let p = settings.whisperCppBinaryPath
-        if !p.isEmpty { return FileManager.default.fileExists(atPath: p) }
-        return ["/opt/homebrew/bin/whisper-cli", "/usr/local/bin/whisper-cli",
-                "/opt/homebrew/bin/whisper-cpp", "/usr/local/bin/whisper-cpp"]
-            .contains { FileManager.default.fileExists(atPath: $0) }
-    }
-    private var modelFound: Bool {
-        !settings.whisperCppModelPath.isEmpty &&
-        FileManager.default.fileExists(atPath: settings.whisperCppModelPath)
-    }
+    private let dl = ModelDownloader.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Binary status
+        VStack(alignment: .leading, spacing: 8) {
+            // Current model
             HStack(spacing: 6) {
-                Image(systemName: binaryFound ? "checkmark.circle.fill" : "xmark.circle.fill")
-                    .foregroundColor(binaryFound ? .green : .red)
-                Text(binaryFound ? "whisper-cli 検出済み" : "whisper-cli が見つかりません")
-                    .font(.caption).foregroundColor(.secondary)
-                if !binaryFound {
-                    Button("インストール方法") {
-                        NSWorkspace.shared.open(URL(string: "https://formulae.brew.sh/formula/whisper-cpp")!)
-                    }.buttonStyle(.link).font(.caption)
-                }
+                Image(systemName: dl.isModelAvailable ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundColor(dl.isModelAvailable ? .green : .red)
+                Text(dl.isModelAvailable ? "モデル: \(dl.currentModel.name)" : "モデル未ダウンロード")
+                    .font(.caption)
             }
 
-            // Model path
-            HStack {
-                Text("モデル")
-                TextField("/path/to/ggml-model.bin", text: $settings.whisperCppModelPath)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(.caption, design: .monospaced))
-                Button("…") { pickModelFile() }
-                    .controlSize(.small)
-            }
-            if !settings.whisperCppModelPath.isEmpty && !modelFound {
-                Text("⚠ ファイルが見つかりません").font(.caption).foregroundColor(.orange)
+            // Model list
+            ForEach(ModelDownloader.availableModels, id: \.id) { model in
+                HStack(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Text(model.name).font(.system(size: 12, weight: .medium))
+                            if model.id == dl.currentModel.id {
+                                Text("使用中")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .padding(.horizontal, 4).padding(.vertical, 1)
+                                    .background(Color.accentColor.opacity(0.2))
+                                    .cornerRadius(3)
+                            }
+                        }
+                        Text("\(model.description) — \(model.sizeMB)MB")
+                            .font(.caption2).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if dl.isDownloaded(model) {
+                        if model.id != dl.currentModel.id {
+                            Button("選択") {
+                                dl.selectModel(model)
+                                // Force view refresh
+                                settings.objectWillChange.send()
+                            }
+                            .controlSize(.small)
+                            .buttonStyle(.bordered)
+                        }
+                    } else {
+                        Button("DL") {
+                            startDownload(model)
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .disabled(downloading)
+                    }
+                }
+                .padding(.vertical, 2)
             }
 
-            // Setup hint
-            if !binaryFound || !modelFound {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("セットアップ手順").font(.caption).bold().foregroundColor(.secondary)
-                    Text("brew install whisper-cpp").font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
-                    Text("whisper-download-ggml-model large-v3-turbo-q5_0")
-                        .font(.system(.caption, design: .monospaced)).foregroundColor(.secondary)
-                    Text("→ モデルパスを上に設定してください").font(.caption).foregroundColor(.secondary)
-                }
-                .padding(8)
-                .background(Color.secondary.opacity(0.08))
-                .cornerRadius(6)
+            if downloading {
+                ProgressView(value: downloadProgress, total: 100)
+                Text(downloadDetail).font(.caption2).foregroundColor(.secondary)
             }
         }
     }
 
-    private func pickModelFile() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = []
-        panel.message = "whisper.cpp モデルファイル (.bin) を選択"
-        panel.allowsOtherFileTypes = true
-        if panel.runModal() == .OK, let url = panel.url {
-            settings.whisperCppModelPath = url.path
+    private func startDownload(_ model: WhisperModel) {
+        downloading = true
+        downloadProgress = 0
+        downloadDetail = "準備中..."
+
+        try? FileManager.default.createDirectory(at: dl.modelDir, withIntermediateDirectories: true)
+        let url = URL(string: model.url)!
+        let session = URLSession(configuration: .default)
+
+        let task = session.downloadTask(with: url) { tempURL, _, error in
+            DispatchQueue.main.async {
+                if let error {
+                    downloadDetail = "失敗: \(error.localizedDescription)"
+                    downloading = false
+                    return
+                }
+                guard let tempURL else { downloading = false; return }
+                let dest = dl.modelDir.appendingPathComponent(model.fileName)
+                try? FileManager.default.removeItem(at: dest)
+                do {
+                    try FileManager.default.moveItem(at: tempURL, to: dest)
+                    dl.selectModel(model)
+                    settings.objectWillChange.send()
+                } catch {
+                    downloadDetail = "保存失敗: \(error.localizedDescription)"
+                }
+                downloading = false
+            }
         }
+
+        let observer = task.progress.observe(\.fractionCompleted, options: [.new]) { (progress: Progress, _: NSKeyValueObservedChange<Double>) in
+            DispatchQueue.main.async {
+                downloadProgress = progress.fractionCompleted * 100
+                let mb = Double(progress.completedUnitCount) / 1_000_000
+                let total = Double(progress.totalUnitCount) / 1_000_000
+                if total > 0 {
+                    downloadDetail = String(format: "%.0f / %.0f MB", mb, total)
+                } else {
+                    downloadDetail = String(format: "%.0f MB", mb)
+                }
+            }
+        }
+        objc_setAssociatedObject(task, "obs", observer, .OBJC_ASSOCIATION_RETAIN)
+        task.resume()
     }
 }
 

@@ -3,12 +3,80 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Koe (声) — Mac用 日本語音声入力</title>
-<meta name="description" content="Koe は macOS ネイティブの日本語音声入力アプリ。whisper.cpp + Metal GPU で完全ローカル処理。プライバシー最優先、クラウド不要、0.5秒で変換。">
-<meta property="og:title" content="Koe (声) — Mac用 日本語音声入力">
-<meta property="og:description" content="完全ローカル。日本語に最適化された音声入力。whisper.cpp + Metal で爆速変換。">
+<title>Koe (声) — Mac用 日本語音声入力アプリ | ローカル完結・無料</title>
+<meta name="description" content="Koe は macOS ネイティブの日本語音声入力アプリ。whisper.cpp + Metal GPU で完全ローカル処理、0.5秒で変換。プライバシー最優先、クラウド不要、月額0円。開発者向けアプリ別最適化搭載。">
+<meta name="keywords" content="Mac 音声入力,日本語 音声認識,whisper.cpp,macOS dictation,ローカル音声入力,Apple Silicon,音声テキスト変換,Speech to Text Mac,開発者向け,無料">
+<meta name="author" content="Yuki Hamada">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://koe.elio.love/">
+
+<!-- Open Graph -->
+<meta property="og:title" content="Koe (声) — Mac で最も速い日本語音声入力">
+<meta property="og:description" content="whisper.cpp + Metal GPU で完全ローカル処理。0.5秒で変換、月額0円、プライバシー最優先。">
 <meta property="og:type" content="website">
+<meta property="og:url" content="https://koe.elio.love/">
+<meta property="og:site_name" content="Koe">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:image" content="https://koe.elio.love/og.svg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Koe (声) — Mac で最も速い日本語音声入力">
+<meta name="twitter:description" content="whisper.cpp + Metal GPU。完全ローカル、0.5秒変換、月額0円。">
+<meta name="twitter:image" content="https://koe.elio.love/og.svg">
+
+<!-- Favicon (inline SVG as data URI) -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0a0a'/%3E%3Cg transform='translate(16,16)'%3E%3Crect x='-1' y='-9' width='2' height='18' rx='1' fill='url(%23g)'/%3E%3Crect x='-5' y='-6' width='2' height='12' rx='1' fill='url(%23g)' opacity='.8'/%3E%3Crect x='3' y='-7' width='2' height='14' rx='1' fill='url(%23g)' opacity='.85'/%3E%3Crect x='-9' y='-4' width='2' height='8' rx='1' fill='url(%23g)' opacity='.6'/%3E%3Crect x='7' y='-5' width='2' height='10' rx='1' fill='url(%23g)' opacity='.65'/%3E%3C/g%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32'%3E%3Cstop stop-color='%23ff3b30'/%3E%3Cstop offset='1' stop-color='%23ff9500'/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230a0a0a'/%3E%3Cg transform='translate(90,90)'%3E%3Crect x='-4.5' y='-42' width='9' height='84' rx='4.5' fill='url(%23g)'/%3E%3Crect x='-22.5' y='-30' width='9' height='60' rx='4.5' fill='url(%23g)' opacity='.8'/%3E%3Crect x='13.5' y='-33' width='9' height='66' rx='4.5' fill='url(%23g)' opacity='.85'/%3E%3Crect x='-40.5' y='-21' width='9' height='42' rx='4.5' fill='url(%23g)' opacity='.6'/%3E%3Crect x='31.5' y='-24' width='9' height='48' rx='4.5' fill='url(%23g)' opacity='.65'/%3E%3C/g%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='180' y2='180'%3E%3Cstop stop-color='%23ff3b30'/%3E%3Cstop offset='1' stop-color='%23ff9500'/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E">
+<meta name="theme-color" content="#0a0a0a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<!-- Structured Data (JSON-LD) -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Koe",
+  "alternateName": "声",
+  "description": "Mac で最も速い日本語音声入力アプリ。whisper.cpp + Metal GPU で完全ローカル処理。",
+  "url": "https://koe.elio.love",
+  "downloadUrl": "https://github.com/yukihamada/Koe-swift/releases/latest",
+  "operatingSystem": "macOS 13+",
+  "applicationCategory": "UtilitiesApplication",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "JPY"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "Yuki Hamada",
+    "url": "https://github.com/yukihamada"
+  },
+  "license": "https://opensource.org/licenses/MIT",
+  "softwareVersion": "1.0.1",
+  "datePublished": "2026-03-09",
+  "inLanguage": ["ja", "en"],
+  "screenshot": "https://koe.elio.love/og.svg",
+  "featureList": [
+    "whisper.cpp + Metal GPU で0.5秒以内に音声認識",
+    "完全ローカル処理 — クラウド不要",
+    "アプリ別プロンプト最適化",
+    "ウェイクワード (MFCC+DTW 自社エンジン)",
+    "投機的実行でレイテンシ削減",
+    "議事録モード",
+    "テキスト展開辞書",
+    "LLM後処理",
+    "オートアップデート"
+  ]
+}
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -191,11 +259,12 @@ footer a{color:#777}
   <h1><span>Koe</span> (声)</h1>
   <p class="tagline">Mac で最も速い日本語音声入力</p>
   <p class="sub">whisper.cpp + Metal GPU — 完全ローカル処理・クラウド不要・プライバシー最優先</p>
-  <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest" target="_blank">
+  <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-    ダウンロード (macOS)
+    インストーラーをダウンロード
   </a>
-  <p class="dl-sub">macOS 13+ / Apple Silicon (M1以降) / 無料・オープンソース</p>
+  <p class="dl-sub">macOS 13+ / Apple Silicon (M1以降) / 無料・オープンソース<br>
+  <span style="color:#666">.pkg をダブルクリックするだけでインストール完了</span></p>
 </div>
 
 <!-- Stats -->
@@ -572,12 +641,12 @@ footer a{color:#777}
 
   <div class="steps">
     <div class="step">
-      <h3>whisper.cpp を入れる</h3>
-      <p>Homebrew で whisper.cpp とモデルをインストール。Metal GPU が自動で有効化。</p>
+      <h3>インストーラーを実行</h3>
+      <p><a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">Koe.pkg</a> をダウンロードしてダブルクリック。ガイドに従うだけ。</p>
     </div>
     <div class="step">
-      <h3>Koe をダウンロード</h3>
-      <p>GitHub Releases から Koe.app.zip をダウンロード。アプリケーションフォルダに移動。</p>
+      <h3>whisper.cpp を入れる</h3>
+      <p>ターミナルで下記を実行。Metal GPU が自動で有効化されます。</p>
     </div>
     <div class="step">
       <h3>権限を許可して完了</h3>
@@ -586,17 +655,11 @@ footer a{color:#777}
   </div>
 
   <div class="install-code">
-    <span class="comment"># 1. whisper.cpp インストール</span><br>
-    <span class="cmd">brew install whisper-cpp</span><br><br>
-    <span class="comment"># 2. 日本語最適モデルをダウンロード</span><br>
+    <span class="comment"># whisper.cpp + 日本語モデルをインストール</span><br>
+    <span class="cmd">brew install whisper-cpp</span><br>
     <span class="cmd">brew install huggingface-cli</span><br>
     <span class="cmd">huggingface-cli download ggerganov/whisper.cpp \</span><br>
-    <span class="cmd">&nbsp;&nbsp;ggml-large-v3-turbo.bin --local-dir ~/.local/share/whisper</span><br><br>
-    <span class="comment"># 3. Koe をダウンロード・起動</span><br>
-    <span class="cmd">curl -L -o /tmp/Koe.zip \</span><br>
-    <span class="cmd">&nbsp;&nbsp;https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.app.zip</span><br>
-    <span class="cmd">unzip /tmp/Koe.zip -d /Applications</span><br>
-    <span class="cmd">open /Applications/Koe.app</span>
+    <span class="cmd">&nbsp;&nbsp;ggml-large-v3-turbo.bin --local-dir ~/.local/share/whisper</span>
   </div>
 </section>
 

@@ -10,19 +10,115 @@ mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/"
 
+# Copy app icon
+if [ -f "AppIcon.icns" ]; then
+    cp AppIcon.icns "$APP/Contents/Resources/"
+fi
+
+# whisper.cpp library paths
+WHISPER_LIB="/opt/homebrew/opt/whisper-cpp/libinternal"
+GGML_INCLUDE="/opt/homebrew/include"
+
+# Verify whisper dylib exists
+if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
+    echo "⚠ libwhisper.dylib not found at $WHISPER_LIB"
+    echo "  Install: brew install whisper-cpp"
+    exit 1
+fi
+
 swiftc Sources/Koe/*.swift \
+    -I Sources/CWhisper \
+    -L "$WHISPER_LIB" \
+    -lwhisper \
     -framework AppKit \
     -framework AVFoundation \
     -framework Speech \
     -framework SwiftUI \
+    -framework Metal \
+    -framework Accelerate \
+    -framework UserNotifications \
+    -framework ServiceManagement \
     -target arm64-apple-macos13.0 \
     -O \
     -o "$APP/Contents/MacOS/Koe"
 
-# Sign with developer certificate (keeps Accessibility permission across rebuilds)
-codesign --force --sign "F1EFBA93D51A3F2204A9E25679E1D77BA22DC59C" --deep "$APP" 2>&1 | grep -v "replacing" || true
+# Embed whisper dylibs in app bundle for self-contained distribution
+FRAMEWORKS="$APP/Contents/Frameworks"
+mkdir -p "$FRAMEWORKS"
+for lib in libwhisper.dylib libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib; do
+    if [ -f "$WHISPER_LIB/$lib" ]; then
+        cp "$WHISPER_LIB/$lib" "$FRAMEWORKS/"
+    fi
+done
 
-echo "✓ Built and signed $APP"
+# Fix dylib rpaths so the app finds embedded libraries
+install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+
+# Update dylib install names to use @rpath
+for lib in "$FRAMEWORKS"/*.dylib; do
+    libname=$(basename "$lib")
+    install_name_tool -id "@rpath/$libname" "$lib" 2>/dev/null || true
+done
+
+# Fix inter-dylib references (libwhisper → libggml etc.)
+for lib in "$FRAMEWORKS"/*.dylib; do
+    for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib; do
+        # Try to change references from various possible original paths
+        install_name_tool -change "$WHISPER_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        install_name_tool -change "@rpath/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        # Also handle versioned names
+        for versioned in libwhisper.1.dylib libwhisper.1.7.5.dylib; do
+            install_name_tool -change "$WHISPER_LIB/$versioned" "@rpath/libwhisper.dylib" "$lib" 2>/dev/null || true
+        done
+    done
+done
+
+# Copy Metal shader if exists
+METAL_SHADER="$WHISPER_LIB/ggml-metal.metal"
+if [ -f "$METAL_SHADER" ]; then
+    cp "$METAL_SHADER" "$APP/Contents/Resources/"
+fi
+# Also check for compiled metallib
+for mlib in "$WHISPER_LIB"/ggml*.metallib "$WHISPER_LIB"/../share/whisper-cpp/*.metallib; do
+    if [ -f "$mlib" ]; then
+        cp "$mlib" "$APP/Contents/Resources/"
+    fi
+done
+
+# Sign everything with Developer ID Application cert + hardened runtime + timestamp
+SIGN_ID="Developer ID Application: Yuki Hamada (5BV85JW8US)"
+ENTITLEMENTS="entitlements.plist"
+
+# Create entitlements if not exists
+if [ ! -f "$ENTITLEMENTS" ]; then
+cat > "$ENTITLEMENTS" << 'ENTXML'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>
+ENTXML
+fi
+
+# Sign dylibs first (inside-out signing)
+for lib in "$FRAMEWORKS"/*.dylib; do
+    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$lib"
+done
+
+# Sign the main binary and app bundle
+codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
+    --entitlements "$ENTITLEMENTS" --deep "$APP"
+
+echo "✓ Built and signed $APP (with embedded whisper.cpp)"
 echo "→ Launching..."
 pkill -9 Koe 2>/dev/null
 sleep 0.5

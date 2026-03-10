@@ -37,6 +37,7 @@ class AutoUpdater {
     private struct Release {
         let version: String
         let downloadURL: URL
+        let isPkg: Bool
         let body: String
     }
 
@@ -52,17 +53,25 @@ class AutoUpdater {
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let tagName = json["tag_name"] as? String,
-                  let assets = json["assets"] as? [[String: Any]],
-                  let zipAsset = assets.first(where: { ($0["name"] as? String)?.hasSuffix(".zip") == true }),
-                  let dlURLStr = zipAsset["browser_download_url"] as? String,
-                  let dlURL = URL(string: dlURLStr) else {
+                  let assets = json["assets"] as? [[String: Any]] else {
                 if let error { klog("AutoUpdater: fetch error \(error.localizedDescription)") }
                 completion(nil); return
             }
+
+            // Prefer .pkg, fall back to .zip
+            let pkgAsset = assets.first { ($0["name"] as? String)?.hasSuffix(".pkg") == true }
+            let zipAsset = assets.first { ($0["name"] as? String)?.hasSuffix(".zip") == true }
+            guard let asset = pkgAsset ?? zipAsset,
+                  let dlURLStr = asset["browser_download_url"] as? String,
+                  let dlURL = URL(string: dlURLStr) else {
+                completion(nil); return
+            }
+
+            let isPkg = (asset["name"] as? String)?.hasSuffix(".pkg") == true
             let version = tagName.hasPrefix("v") ? String(tagName.dropFirst()) : tagName
             let body = json["body"] as? String ?? ""
-            klog("AutoUpdater: latest=\(version) current=\(self.currentVersion)")
-            completion(Release(version: version, downloadURL: dlURL, body: body))
+            klog("AutoUpdater: latest=\(version) current=\(self.currentVersion) pkg=\(isPkg)")
+            completion(Release(version: version, downloadURL: dlURL, isPkg: isPkg, body: body))
         }.resume()
     }
 
@@ -84,9 +93,13 @@ class AutoUpdater {
 
     private func promptUpdate(release: Release) {
         let alert = NSAlert()
-        alert.messageText = "Koe \(release.version) が利用可能です"
-        alert.informativeText = "現在のバージョン: \(currentVersion)\n\n\(release.body.prefix(300))"
+        alert.messageText = "声 Koe \(release.version) が利用可能です"
+        let notes = release.body.prefix(300)
+        alert.informativeText = "現在: v\(currentVersion) → 新: v\(release.version)\n\n\(notes)"
         alert.alertStyle = .informational
+        if let icon = NSImage(named: "AppIcon") ?? NSImage(named: NSImage.applicationIconName) {
+            alert.icon = icon
+        }
         alert.addButton(withTitle: "アップデート")
         alert.addButton(withTitle: "後で")
 
@@ -98,7 +111,43 @@ class AutoUpdater {
     private func downloadAndInstall(release: Release) {
         klog("AutoUpdater: downloading \(release.downloadURL)")
 
+        // Show progress window
+        let progressWindow = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 100),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        progressWindow.title = "Koe アップデート中..."
+        progressWindow.center()
+        progressWindow.isReleasedWhenClosed = false
+
+        let pView = NSView(frame: progressWindow.contentView!.bounds)
+
+        let pLabel = NSTextField(labelWithString: "v\(release.version) をダウンロード中...")
+        pLabel.font = .systemFont(ofSize: 13, weight: .medium)
+        pLabel.frame = NSRect(x: 20, y: 60, width: 340, height: 20)
+        pView.addSubview(pLabel)
+
+        let pBar = NSProgressIndicator(frame: NSRect(x: 20, y: 35, width: 340, height: 20))
+        pBar.isIndeterminate = true
+        pBar.style = .bar
+        pBar.startAnimation(nil)
+        pView.addSubview(pBar)
+
+        let pDetail = NSTextField(labelWithString: "")
+        pDetail.font = .systemFont(ofSize: 11)
+        pDetail.textColor = .secondaryLabelColor
+        pDetail.frame = NSRect(x: 20, y: 12, width: 340, height: 16)
+        pView.addSubview(pDetail)
+
+        progressWindow.contentView = pView
+        progressWindow.makeKeyAndOrderFront(nil)
+
         let task = URLSession.shared.downloadTask(with: release.downloadURL) { tmpURL, _, error in
+            DispatchQueue.main.async {
+                progressWindow.close()
+            }
             guard let tmpURL, error == nil else {
                 klog("AutoUpdater: download error \(error?.localizedDescription ?? "nil")")
                 DispatchQueue.main.async {
@@ -110,18 +159,49 @@ class AutoUpdater {
                 return
             }
             DispatchQueue.main.async {
-                self.installFromZip(zipURL: tmpURL)
+                if release.isPkg {
+                    self.installFromPkg(pkgURL: tmpURL)
+                } else {
+                    self.installFromZip(zipURL: tmpURL)
+                }
             }
         }
         task.resume()
     }
+
+    // MARK: - Install from .pkg
+
+    private func installFromPkg(pkgURL: URL) {
+        // Copy to a stable temp path (download temp file may be cleaned up)
+        let stablePkg = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Koe_update.pkg")
+        try? FileManager.default.removeItem(at: stablePkg)
+        do {
+            try FileManager.default.moveItem(at: pkgURL, to: stablePkg)
+        } catch {
+            klog("AutoUpdater: pkg move error \(error)")
+            showError("アップデートファイルの準備に失敗しました")
+            return
+        }
+
+        klog("AutoUpdater: opening pkg installer \(stablePkg.path)")
+
+        // Open the .pkg with macOS Installer (user will see standard installer UI)
+        NSWorkspace.shared.open(stablePkg)
+
+        // Quit current app so installer can replace it
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            NSApplication.shared.terminate(nil)
+        }
+    }
+
+    // MARK: - Install from .zip (legacy)
 
     private func installFromZip(zipURL: URL) {
         let fm = FileManager.default
         let tmpDir = fm.temporaryDirectory.appendingPathComponent("koe_update_\(UUID().uuidString)")
 
         do {
-            // unzip
             let unzip = Process()
             unzip.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
             unzip.arguments = ["-o", zipURL.path, "-d", tmpDir.path]
@@ -130,33 +210,28 @@ class AutoUpdater {
             try unzip.run()
             unzip.waitUntilExit()
 
-            // Find Koe.app in extracted files
             let extracted = try fm.contentsOfDirectory(at: tmpDir, includingPropertiesForKeys: nil)
             guard let newApp = extracted.first(where: { $0.lastPathComponent == "Koe.app" }) else {
                 klog("AutoUpdater: Koe.app not found in zip")
                 return
             }
 
-            // Current app location
             guard let currentApp = Bundle.main.bundlePath as String? else { return }
             let currentURL = URL(fileURLWithPath: currentApp)
             let backupURL = currentURL.deletingLastPathComponent()
                 .appendingPathComponent("Koe_old.app")
 
-            // Backup → Replace → Relaunch
             try? fm.removeItem(at: backupURL)
             try fm.moveItem(at: currentURL, to: backupURL)
             try fm.moveItem(at: newApp, to: currentURL)
 
-            // 署名検証: 展開された .app が正当な実行ファイルか確認
+            // Verify signature
             let verify = Process()
             verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
             verify.arguments = ["--verify", "--deep", "--strict", currentURL.path]
-            let verifyPipe = Pipe()
-            verify.standardError = verifyPipe
+            verify.standardError = Pipe()
             try? verify.run()
             verify.waitUntilExit()
-            // 未署名の場合は ad-hoc 署名
             if verify.terminationStatus != 0 {
                 let sign = Process()
                 sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
@@ -169,26 +244,28 @@ class AutoUpdater {
 
             klog("AutoUpdater: installed, relaunching")
 
-            // Relaunch
             let relaunch = Process()
             relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
             relaunch.arguments = [currentURL.path]
             try relaunch.run()
 
-            // Cleanup
             try? fm.removeItem(at: backupURL)
             try? fm.removeItem(at: tmpDir)
 
-            // Quit current instance
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 NSApplication.shared.terminate(nil)
             }
         } catch {
             klog("AutoUpdater: install error \(error)")
-            let alert = NSAlert()
-            alert.messageText = "アップデートに失敗しました"
-            alert.informativeText = error.localizedDescription
-            alert.runModal()
+            showError("アップデートに失敗しました: \(error.localizedDescription)")
         }
+    }
+
+    private func showError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = "アップデートエラー"
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 }

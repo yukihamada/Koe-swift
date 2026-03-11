@@ -18,6 +18,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var eventMonitor: Any?
     private var carbonHotKeyRef: EventHotKeyRef?
     private var carbonTranslateHotKeyRef: EventHotKeyRef?
+    private var carbonSpaceHotKeyRef: EventHotKeyRef?
+    private var carbonEscHotKeyRef: EventHotKeyRef?
     private var levelTimer: Timer?
     private var isRecording      = false
     private var recordingStart:  Date?
@@ -372,6 +374,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         delegate.startRecording()
                     }
                 }
+            } else if hotKeyID.id == 3 {
+                // Space pressed (録音中のみ登録される)
+                DispatchQueue.main.async {
+                    guard delegate.isRecording else { return }
+                    if delegate.spacePressed {
+                        // 2回目のスペース → 変換
+                        delegate.stopAndRecognize()
+                    } else {
+                        // 1回目 → 延長
+                        delegate.spacePressed = true
+                        delegate.spaceHeld = true
+                        delegate.silenceStart = nil
+                        klog("Space: recording extended (Carbon)")
+                    }
+                }
+            } else if hotKeyID.id == 4 {
+                // ESC pressed → キャンセル
+                DispatchQueue.main.async {
+                    if delegate.isRecording || delegate.isRecognizing {
+                        delegate.cancelRecording()
+                    }
+                }
             }
             return noErr
         }, 1, &eventType, nil, nil)
@@ -390,6 +414,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { delegate.stopAndRecognize() }
             } else if hotKeyID.id == 2 && !isToggle && delegate.isRecording && delegate.isTranslateMode {
                 DispatchQueue.main.async { delegate.stopAndRecognize() }
+            } else if hotKeyID.id == 3 && delegate.isRecording && delegate.spaceHeld {
+                // Space released → 変換
+                DispatchQueue.main.async {
+                    delegate.spaceHeld = false
+                    delegate.stopAndRecognize()
+                }
             }
             return noErr
         }, 1, &eventTypeUp, nil, nil)
@@ -407,6 +437,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let transStatus = RegisterEventHotKey(UInt32(settings.translateHotkeyCode), transMods,
                                                transID, GetApplicationEventTarget(), 0, &carbonTranslateHotKeyRef)
         klog("Carbon hotkey translate: status=\(transStatus)")
+    }
+
+    /// 録音中のみ有効な Space/ESC ホットキーを登録
+    private func registerRecordingHotKeys() {
+        // Space (keyCode=49) — modifier なし
+        var spaceID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 3)
+        RegisterEventHotKey(UInt32(49), 0, spaceID, GetApplicationEventTarget(), 0, &carbonSpaceHotKeyRef)
+        // ESC (keyCode=53) — modifier なし
+        var escID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 4)
+        RegisterEventHotKey(UInt32(53), 0, escID, GetApplicationEventTarget(), 0, &carbonEscHotKeyRef)
+    }
+
+    /// 録音終了時に Space/ESC ホットキーを解除
+    private func unregisterRecordingHotKeys() {
+        if let ref = carbonSpaceHotKeyRef { UnregisterEventHotKey(ref); carbonSpaceHotKeyRef = nil }
+        if let ref = carbonEscHotKeyRef { UnregisterEventHotKey(ref); carbonEscHotKeyRef = nil }
     }
 
     private func handleEvent(_ event: NSEvent, settings: AppSettings) {
@@ -578,6 +624,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if overlay == nil { overlay = OverlayWindow() }
         overlay?.show(state: .recording)
         recorder.start()
+        registerRecordingHotKeys()  // Space/ESC を Carbon Hot Key で登録
         isStreamingInFlight = false
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -589,6 +636,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopAndRecognize() {
+        unregisterRecordingHotKeys()  // Space/ESC 解除
         levelTimer?.invalidate(); levelTimer = nil
         streamingTimer?.invalidate(); streamingTimer = nil
         overlay?.updateLevel(0)
@@ -898,6 +946,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cancelRecording() {
+        unregisterRecordingHotKeys()  // Space/ESC 解除
         klog("cancelRecording (recording=\(isRecording) recognizing=\(isRecognizing))")
         levelTimer?.invalidate(); levelTimer = nil
         streamingTimer?.invalidate(); streamingTimer = nil

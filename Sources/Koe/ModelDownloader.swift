@@ -213,11 +213,11 @@ class ModelDownloader {
         }
 
         let alert = NSAlert()
-        alert.messageText = "音声認識モデルのダウンロード"
-        alert.informativeText = "初回起動のため、日本語音声認識モデルをダウンロードします。\n\nモデル: \(currentModel.name) (\(currentModel.sizeMB)MB)"
+        alert.messageText = L10n.modelDownloadDialogTitle
+        alert.informativeText = L10n.modelDownloadDialogMessage(name: currentModel.name, sizeMB: currentModel.sizeMB)
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "ダウンロード")
-        alert.addButton(withTitle: "後で")
+        alert.addButton(withTitle: L10n.download)
+        alert.addButton(withTitle: L10n.later)
 
         let response = alert.runModal()
         guard response == .alertFirstButtonReturn else {
@@ -247,7 +247,7 @@ class ModelDownloader {
 
                 if let error {
                     klog("ModelDownloader: error \(error.localizedDescription)")
-                    self.showError("ダウンロードに失敗しました: \(error.localizedDescription)")
+                    self.showError(L10n.downloadFailedMessage(error.localizedDescription))
                     completion(false)
                     return
                 }
@@ -267,7 +267,7 @@ class ModelDownloader {
                     completion(true)
                 } catch {
                     klog("ModelDownloader: move error \(error)")
-                    self.showError("モデルの保存に失敗しました: \(error.localizedDescription)")
+                    self.showError(L10n.modelSaveFailed(error.localizedDescription))
                     completion(false)
                 }
             }
@@ -299,13 +299,13 @@ class ModelDownloader {
             backing: .buffered,
             defer: false
         )
-        window.title = "Koe — モデルダウンロード中"
+        window.title = L10n.modelDownloadTitle
         window.center()
         window.isReleasedWhenClosed = false
 
         let view = NSView(frame: window.contentView!.bounds)
 
-        let title = NSTextField(labelWithString: "\(model.name) をダウンロード中...")
+        let title = NSTextField(labelWithString: L10n.downloadingName(model.name))
         title.frame = NSRect(x: 20, y: 80, width: 360, height: 20)
         title.font = .systemFont(ofSize: 13, weight: .medium)
         view.addSubview(title)
@@ -319,7 +319,7 @@ class ModelDownloader {
         view.addSubview(progress)
         progressIndicator = progress
 
-        let label = NSTextField(labelWithString: "準備中...")
+        let label = NSTextField(labelWithString: L10n.preparing)
         label.frame = NSRect(x: 20, y: 20, width: 360, height: 20)
         label.font = .systemFont(ofSize: 11)
         label.textColor = .secondaryLabelColor
@@ -340,7 +340,7 @@ class ModelDownloader {
 
     private func showError(_ message: String) {
         let alert = NSAlert()
-        alert.messageText = "ダウンロードエラー"
+        alert.messageText = L10n.downloadError
         alert.informativeText = message
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")

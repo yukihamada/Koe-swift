@@ -110,11 +110,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             _ = AXIsProcessTrustedWithOptions(opts)
 
             let alert = NSAlert()
-            alert.messageText = "アクセシビリティ権限が必要です"
-            alert.informativeText = "⌥⌘V ショートカットを使うには、システム設定 → プライバシーとセキュリティ → アクセシビリティ で Koe を許可してください。\n\n許可後にアプリを再起動してください。"
+            alert.messageText = L10n.accessibilityAlertTitle
+            alert.informativeText = L10n.accessibilityAlertMessage
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "設定を開く")
-            alert.addButton(withTitle: "後で")
+            alert.addButton(withTitle: L10n.openSystemSettings)
+            alert.addButton(withTitle: L10n.later)
             if alert.runModal() == .alertFirstButtonReturn {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
             }

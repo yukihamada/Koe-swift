@@ -78,8 +78,8 @@ class SetupWindow: NSObject {
 
         // Tagline
         let taglineText = ArchUtil.isAppleSilicon
-            ? "Mac で最も速い日本語音声入力"
-            : "Mac で快適な日本語音声入力"
+            ? L10n.taglineAppleSilicon
+            : L10n.taglineIntel
         let tagline = NSTextField(labelWithString: taglineText)
         tagline.font = .systemFont(ofSize: 16)
         tagline.textColor = .secondaryLabelColor
@@ -89,21 +89,7 @@ class SetupWindow: NSObject {
 
         // Feature cards (Intel Mac では whisper.cpp Metal が使えないので表示を変える)
         let features: [(String, String, String)]
-        if ArchUtil.isAppleSilicon {
-            features = [
-                ("bolt.fill", "0.5秒以内に認識", "whisper.cpp + Metal GPU で超高速変換"),
-                ("lock.shield.fill", "完全ローカル処理", "音声データは一切クラウドへ送信しません"),
-                ("mic.fill", "ハンズフリー対応", "ウェイクワード「ヘイこえ」で起動"),
-                ("app.badge.fill", "アプリ別最適化", "アプリごとにプロンプトや言語を切替"),
-            ]
-        } else {
-            features = [
-                ("icloud.fill", "Apple 音声認識", "Intel Mac ではオンデバイス / クラウド認識を使用"),
-                ("globe", "OpenAI Whisper API 対応", "API キーを設定すれば高精度な認識も可能"),
-                ("mic.fill", "ハンズフリー対応", "ウェイクワード「ヘイこえ」で起動"),
-                ("app.badge.fill", "アプリ別最適化", "アプリごとにプロンプトや言語を切替"),
-            ]
-        }
+        features = ArchUtil.isAppleSilicon ? L10n.featuresAppleSilicon : L10n.featuresIntel
 
         for (i, feature) in features.enumerated() {
             let y = CGFloat(260 - i * 65)
@@ -119,7 +105,7 @@ class SetupWindow: NSObject {
         // Start button
         let startBtn = NSButton(frame: NSRect(x: (w - 200) / 2, y: 20, width: 200, height: 44))
         startBtn.bezelStyle = .rounded
-        startBtn.title = "セットアップを始める"
+        startBtn.title = L10n.startSetup
         startBtn.font = .systemFont(ofSize: 15, weight: .semibold)
         startBtn.target = self
         startBtn.action = #selector(onStartSetup)
@@ -183,7 +169,7 @@ class SetupWindow: NSObject {
         icon.frame = NSRect(x: 30, y: 460, width: 50, height: 44)
         setupView.addSubview(icon)
 
-        let title = NSTextField(labelWithString: "セットアップ")
+        let title = NSTextField(labelWithString: L10n.setupTitle)
         title.font = .systemFont(ofSize: 24, weight: .bold)
         title.frame = NSRect(x: 85, y: 468, width: 300, height: 32)
         setupView.addSubview(title)
@@ -192,7 +178,7 @@ class SetupWindow: NSObject {
         showLLMStep = ArchUtil.isAppleSilicon && MemoryMonitor.totalMemoryMB >= 8000
 
         let stepCount = showLLMStep ? 4 : 3
-        let subtitle = NSTextField(labelWithString: "\(stepCount)ステップで完了します")
+        let subtitle = NSTextField(labelWithString: L10n.stepsToComplete(stepCount))
         subtitle.font = .systemFont(ofSize: 13)
         subtitle.textColor = .secondaryLabelColor
         subtitle.frame = NSRect(x: 85, y: 448, width: 300, height: 18)
@@ -205,9 +191,9 @@ class SetupWindow: NSObject {
         setupView.addSubview(divider)
 
         // Steps
-        var steps = ["音声認識モデル"]
-        if showLLMStep { steps.append("AI後処理モデル") }
-        steps.append(contentsOf: ["マイク権限", "アクセシビリティ権限", "完了"])
+        var steps = [L10n.stepVoiceModel]
+        if showLLMStep { steps.append(L10n.stepAIModel) }
+        steps.append(contentsOf: [L10n.stepMicrophone, L10n.stepAccessibility, L10n.stepDone])
         for (i, step) in steps.enumerated() {
             let y = 380 - i * 42
 
@@ -234,7 +220,7 @@ class SetupWindow: NSObject {
         }
 
         // Model picker
-        let modelLabel = NSTextField(labelWithString: "モデル選択:")
+        let modelLabel = NSTextField(labelWithString: L10n.modelSelectLabel)
         modelLabel.font = .systemFont(ofSize: 12, weight: .medium)
         modelLabel.textColor = .secondaryLabelColor
         modelLabel.frame = NSRect(x: 30, y: 195, width: 80, height: 18)
@@ -282,7 +268,7 @@ class SetupWindow: NSObject {
         // Action button
         actionButton = NSButton(frame: NSRect(x: w - 150, y: 30, width: 120, height: 36))
         actionButton.bezelStyle = .rounded
-        actionButton.title = "セットアップ開始"
+        actionButton.title = L10n.setupStart
         actionButton.font = .systemFont(ofSize: 13, weight: .medium)
         actionButton.target = self
         actionButton.action = #selector(onAction)
@@ -354,8 +340,8 @@ class SetupWindow: NSObject {
 
         // Intel Mac: whisper.cpp モデルは不要 → スキップ
         if !ArchUtil.isAppleSilicon {
-            statusLabel.stringValue = "Intel Mac — モデルダウンロード不要"
-            detailLabel.stringValue = "Apple オンデバイス認識を使用します"
+            statusLabel.stringValue = L10n.intelNoModelNeeded
+            detailLabel.stringValue = L10n.intelUseApple
             modelPopup.isEnabled = false
             modelPopup.isHidden = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -366,7 +352,7 @@ class SetupWindow: NSObject {
 
         if ModelDownloader.shared.isDownloaded(selectedModel) {
             ModelDownloader.shared.selectModel(selectedModel)
-            statusLabel.stringValue = "モデルは既にダウンロード済み"
+            statusLabel.stringValue = L10n.modelAlreadyDownloaded
             detailLabel.stringValue = selectedModel.name
             modelPopup.isEnabled = false
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -375,7 +361,7 @@ class SetupWindow: NSObject {
             return
         }
 
-        statusLabel.stringValue = "音声認識モデルをダウンロード中..."
+        statusLabel.stringValue = L10n.downloadingModel
         detailLabel.stringValue = "\(selectedModel.name) (\(selectedModel.sizeMB)MB)"
         progressBar.isHidden = false
         progressBar.doubleValue = 0
@@ -396,9 +382,9 @@ class SetupWindow: NSObject {
             DispatchQueue.main.async {
                 guard let self else { return }
                 if let error {
-                    self.statusLabel.stringValue = "ダウンロード失敗"
+                    self.statusLabel.stringValue = L10n.downloadFailed
                     self.detailLabel.stringValue = error.localizedDescription
-                    self.actionButton.title = "リトライ"
+                    self.actionButton.title = L10n.retry
                     self.actionButton.isHidden = false
                     self.modelPopup.isEnabled = true
                     return
@@ -410,13 +396,13 @@ class SetupWindow: NSObject {
                     try FileManager.default.moveItem(at: tempURL, to: dest)
                     dl.selectModel(model)
                     self.progressBar.isHidden = true
-                    self.statusLabel.stringValue = "モデルダウンロード完了"
+                    self.statusLabel.stringValue = L10n.modelDownloadComplete
                     self.detailLabel.stringValue = model.name
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         self.advanceAfterWhisperModel()
                     }
                 } catch {
-                    self.statusLabel.stringValue = "保存に失敗: \(error.localizedDescription)"
+                    self.statusLabel.stringValue = L10n.saveFailed(error.localizedDescription)
                     self.modelPopup.isEnabled = true
                 }
             }
@@ -446,7 +432,7 @@ class SetupWindow: NSObject {
         guard let recommended = MemoryMonitor.recommendedLLMModel(),
               let model = LlamaContext.availableModels.first(where: { $0.id == recommended }) else {
             // 推奨モデルなし → スキップ
-            statusLabel.stringValue = "AI後処理モデル — スキップ"
+            statusLabel.stringValue = L10n.llmModelSkipped
             detailLabel.stringValue = ""
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.runStep2_Microphone()
@@ -456,8 +442,8 @@ class SetupWindow: NSObject {
 
         // 既にダウンロード済み
         if llama.isDownloaded(model) {
-            statusLabel.stringValue = "AI後処理モデルは既にダウンロード済み"
-            detailLabel.stringValue = "\(model.name) — 完全オフラインAI後処理が可能"
+            statusLabel.stringValue = L10n.llmAlreadyDownloaded
+            detailLabel.stringValue = "\(model.name) — \(L10n.llmOfflineCapable)"
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.runStep2_Microphone()
             }
@@ -465,12 +451,12 @@ class SetupWindow: NSObject {
         }
 
         // ダウンロードを提案
-        statusLabel.stringValue = "ローカルAI後処理モデル"
-        detailLabel.stringValue = "\(model.name) (\(model.sizeMB)MB)\n完全オフラインAI後処理が可能になります"
+        statusLabel.stringValue = L10n.llmLocalAI
+        detailLabel.stringValue = "\(model.name) (\(model.sizeMB)MB)\n\(L10n.llmOfflineCapable)"
         detailLabel.maximumNumberOfLines = 2
         progressBar.isHidden = true
 
-        actionButton.title = "ダウンロード"
+        actionButton.title = L10n.download
         actionButton.isHidden = false
         actionButton.wantsLayer = true
         actionButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
@@ -481,7 +467,7 @@ class SetupWindow: NSObject {
         let w = contentView.bounds.width
         let skipBtn = NSButton(frame: NSRect(x: w - 280, y: 30, width: 120, height: 36))
         skipBtn.bezelStyle = .rounded
-        skipBtn.title = "スキップ"
+        skipBtn.title = L10n.skip
         skipBtn.font = .systemFont(ofSize: 13)
         skipBtn.tag = 999  // 識別用
         skipBtn.target = self
@@ -497,8 +483,8 @@ class SetupWindow: NSObject {
         setupView.subviews.first { $0.tag == 999 }?.removeFromSuperview()
         actionButton.action = #selector(onAction)
         actionButton.isHidden = true
-        statusLabel.stringValue = "AI後処理モデル — スキップ"
-        detailLabel.stringValue = "設定からいつでもダウンロードできます"
+        statusLabel.stringValue = L10n.llmModelSkipped
+        detailLabel.stringValue = L10n.skipAvailableLater
         detailLabel.maximumNumberOfLines = 1
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.runStep2_Microphone()
@@ -515,7 +501,7 @@ class SetupWindow: NSObject {
             runStep2_Microphone(); return
         }
 
-        statusLabel.stringValue = "AI後処理モデルをダウンロード中..."
+        statusLabel.stringValue = L10n.llmDownloading
         detailLabel.stringValue = "\(model.name) (\(model.sizeMB)MB)"
         detailLabel.maximumNumberOfLines = 1
         progressBar.isHidden = false
@@ -528,10 +514,10 @@ class SetupWindow: NSObject {
             guard let self else { return }
             self.progressBar.isHidden = true
             if success {
-                self.statusLabel.stringValue = "AI後処理モデル ダウンロード完了"
+                self.statusLabel.stringValue = L10n.llmDownloadComplete
                 self.detailLabel.stringValue = model.name
             } else {
-                self.statusLabel.stringValue = "ダウンロード失敗（後から設定で再試行可能）"
+                self.statusLabel.stringValue = L10n.llmDownloadFailed
             }
             self.actionButton.action = #selector(self.onAction)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -545,22 +531,22 @@ class SetupWindow: NSObject {
     private func runStep2_Microphone() {
         let micStep = showLLMStep ? 2 : 1
         setStep(micStep)
-        statusLabel.stringValue = "マイクへのアクセスを許可してください"
-        detailLabel.stringValue = "音声入力に必要です"
+        statusLabel.stringValue = L10n.micRequestAccess
+        detailLabel.stringValue = L10n.micNeeded
         actionButton.isHidden = true
 
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
             DispatchQueue.main.async {
                 if granted {
-                    self?.statusLabel.stringValue = "マイク権限 OK"
+                    self?.statusLabel.stringValue = L10n.micOK
                     self?.detailLabel.stringValue = ""
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         self?.runStep3_Accessibility()
                     }
                 } else {
-                    self?.statusLabel.stringValue = "マイク権限が必要です"
-                    self?.detailLabel.stringValue = "システム設定 → プライバシーとセキュリティ → マイク"
-                    self?.actionButton.title = "システム設定を開く"
+                    self?.statusLabel.stringValue = L10n.micRequired
+                    self?.detailLabel.stringValue = L10n.micOpenSettings
+                    self?.actionButton.title = L10n.openSystemSettings
                     self?.actionButton.isHidden = false
                 }
             }
@@ -574,7 +560,7 @@ class SetupWindow: NSObject {
         setStep(accStep)
         let trusted = AXIsProcessTrusted()
         if trusted {
-            statusLabel.stringValue = "アクセシビリティ権限 OK"
+            statusLabel.stringValue = L10n.accessibilityOK
             detailLabel.stringValue = ""
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 self.runStep4_Done()
@@ -582,8 +568,8 @@ class SetupWindow: NSObject {
             return
         }
 
-        statusLabel.stringValue = "アクセシビリティ権限を許可してください"
-        detailLabel.stringValue = "テキスト入力に必要です。ダイアログが表示されます。"
+        statusLabel.stringValue = L10n.accessibilityRequest
+        detailLabel.stringValue = L10n.accessibilityNeeded
 
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
@@ -594,7 +580,7 @@ class SetupWindow: NSObject {
     private func pollAccessibility() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
             if AXIsProcessTrusted() {
-                self?.statusLabel.stringValue = "アクセシビリティ権限 OK"
+                self?.statusLabel.stringValue = L10n.accessibilityOK
                 self?.detailLabel.stringValue = ""
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                     self?.runStep4_Done()
@@ -611,15 +597,11 @@ class SetupWindow: NSObject {
         let doneStep = showLLMStep ? 4 : 3
         setStep(doneStep)
 
-        statusLabel.stringValue = "セットアップ完了！"
-        detailLabel.stringValue = ""
-
-        // Show usage guide in status card area
-        let usageGuide = "⌥⌘V を長押し → 話す → 離すと変換\nトグルモードなら2回押しで録音開始/停止"
-        detailLabel.stringValue = usageGuide
+        statusLabel.stringValue = L10n.setupComplete
+        detailLabel.stringValue = L10n.usageGuide
         detailLabel.maximumNumberOfLines = 2
 
-        actionButton.title = "始める"
+        actionButton.title = L10n.letsGo
         actionButton.isHidden = false
         actionButton.wantsLayer = true
         actionButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor

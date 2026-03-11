@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  width: 1200px;
+  height: 630px;
+  background: #0a0a0a;
+  font-family: -apple-system, 'Noto Sans JP', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+body::before {
+  content: '';
+  position: absolute;
+  top: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 800px;
+  background: radial-gradient(circle, rgba(255,59,48,.12) 0%, transparent 70%);
+}
+.content {
+  text-align: center;
+  position: relative;
+  z-index: 1;
+}
+.icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 32px;
+}
+h1 {
+  font-size: 72px;
+  font-weight: 700;
+  letter-spacing: -3px;
+  background: linear-gradient(135deg, #ff3b30, #ff9500);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 16px;
+}
+.tagline {
+  font-size: 32px;
+  color: #e8e8e8;
+  font-weight: 500;
+  margin-bottom: 12px;
+}
+.sub {
+  font-size: 20px;
+  color: #888;
+}
+.badges {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 32px;
+}
+.badge {
+  background: rgba(255,255,255,.08);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px;
+  padding: 8px 20px;
+  color: #ccc;
+  font-size: 16px;
+  font-weight: 500;
+}
+</style>
+</head>
+<body>
+<div class="content">
+  <svg class="icon" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="120" height="120" rx="28" fill="#0a0a0a"/>
+    <rect x="1" y="1" width="118" height="118" rx="27" stroke="url(#g)" stroke-width="2" stroke-opacity="0.4"/>
+    <g transform="translate(60,60)">
+      <rect x="-3" y="-28" width="6" height="56" rx="3" fill="url(#g)"/>
+      <rect x="-15" y="-20" width="6" height="40" rx="3" fill="url(#g)" opacity="0.8"/>
+      <rect x="9" y="-22" width="6" height="44" rx="3" fill="url(#g)" opacity="0.85"/>
+      <rect x="-27" y="-14" width="6" height="28" rx="3" fill="url(#g)" opacity="0.6"/>
+      <rect x="21" y="-16" width="6" height="32" rx="3" fill="url(#g)" opacity="0.65"/>
+    </g>
+    <defs><linearGradient id="g" x1="0" y1="0" x2="120" y2="120"><stop stop-color="#ff3b30"/><stop offset="1" stop-color="#ff9500"/></linearGradient></defs>
+  </svg>
+  <h1>Koe (声)</h1>
+  <div class="tagline">話すだけで、文字になる。</div>
+  <div class="sub">Mac用の無料音声入力アプリ</div>
+  <div class="badges">
+    <div class="badge">🔒 完全ローカル処理</div>
+    <div class="badge">💰 ずっと無料</div>
+    <div class="badge">🌐 20言語対応</div>
+  </div>
+</div>
+</body>
+</html>

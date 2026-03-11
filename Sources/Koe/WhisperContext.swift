@@ -13,7 +13,14 @@ final class WhisperContext {
     private(set) var isLoaded = false
     private(set) var isLoading = false
     /// 投機実行をキャンセルするフラグ
+    /// UnsafeMutablePointer経由でCコールバックからアクセスするためclass変数として管理
     private var cancelSpeculation = false
+    /// abort_callback用: C関数からアクセス可能なポインタ
+    private var cancelFlag: UnsafeMutablePointer<Bool> = {
+        let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
+        ptr.initialize(to: false)
+        return ptr
+    }()
 
     // MARK: - Model loading
 
@@ -122,14 +129,16 @@ final class WhisperContext {
             completion(nil); return
         }
 
-        // 投機実行をキャンセル（キューに溜まっているものをスキップさせる）
+        // 投機実行をキャンセル（キューに溜まっているものをスキップ + 実行中のものをabort）
         cancelSpeculation = true
+        cancelFlag.pointee = true
 
         let ws = WhisperSettings()
         queue.async { [weak self] in
             guard let self, let ctx = self.ctx else { completion(nil); return }
             // メイン認識開始: 投機キャンセルをリセット
             self.cancelSpeculation = false
+            self.cancelFlag.pointee = false
 
             // WAV → Float32 PCM
             guard let samples = Self.loadWAV(url: url) else {
@@ -214,13 +223,24 @@ final class WhisperContext {
             let promptCStr = prompt.isEmpty ? nil : (prompt as NSString).utf8String
             params.initial_prompt = promptCStr
 
+            // abort_callback: メイン認識が来たら実行中の推論を即座に中断
+            let flagPtr = self.cancelFlag
+            params.abort_callback = { userData -> Bool in
+                guard let ptr = userData?.assumingMemoryBound(to: Bool.self) else { return false }
+                return ptr.pointee
+            }
+            params.abort_callback_user_data = UnsafeMutableRawPointer(flagPtr)
+
             // whisper.cppに生データをそのまま渡す
             let processed = samples
 
             let result = processed.withUnsafeBufferPointer { buf -> String? in
                 guard let ptr = buf.baseAddress else { return nil }
                 let ret = whisper_full(ctx, params, ptr, Int32(processed.count))
-                guard ret == 0 else { return nil }
+                if ret != 0 {
+                    klog("WhisperContext: speculation aborted or failed (ret=\(ret))")
+                    return nil
+                }
 
                 let nSegments = whisper_full_n_segments(ctx)
                 var text = ""
@@ -457,5 +477,6 @@ final class WhisperContext {
 
     deinit {
         unload()
+        cancelFlag.deallocate()
     }
 }

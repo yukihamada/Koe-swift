@@ -9,8 +9,11 @@ final class WhisperContext {
 
     private var ctx: OpaquePointer?  // whisper_context*
     private let queue = DispatchQueue(label: "com.yuki.koe.whisper", qos: .userInitiated)
+    // 投機実行は同じqueueを使用（whisper_contextは並行アクセス不可）
     private(set) var isLoaded = false
     private(set) var isLoading = false
+    /// 投機実行をキャンセルするフラグ
+    private var cancelSpeculation = false
 
     // MARK: - Model loading
 
@@ -67,9 +70,51 @@ final class WhisperContext {
         klog("WhisperContext: unloaded")
     }
 
+    // MARK: - Settings snapshot (メインスレッドで読む)
+
+    private struct WhisperSettings {
+        let bestOf: Int32
+        let temperature: Float
+        let temperatureInc: Float
+        let entropyThreshold: Float
+        let beamSearch: Bool
+        let useContext: Bool
+
+        init() {
+            let s = AppSettings.shared
+            bestOf = Int32(s.whisperBestOf)
+            temperature = Float(s.whisperTemperature)
+            temperatureInc = Float(s.whisperTemperatureInc)
+            entropyThreshold = Float(s.whisperEntropyThreshold)
+            beamSearch = s.whisperBeamSearch
+            useContext = s.whisperUseContext
+        }
+    }
+
+    private func makeParams(settings ws: WhisperSettings, timestamps: Bool = false) -> whisper_full_params {
+        // greedy (best_of=1) で高速認識。whisper-cliのデフォルトに近い設定。
+        var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+        params.n_threads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
+        params.print_progress = false
+        params.print_special = false
+        params.print_realtime = false
+        params.print_timestamps = false
+        params.no_timestamps = !timestamps
+        params.single_segment = false
+        params.suppress_blank = true
+        params.suppress_nst = true
+        params.token_timestamps = timestamps
+        params.no_context = true  // 常にtrue: 投機実行のコンテキスト汚染を防ぐ
+        params.greedy.best_of = ws.bestOf
+        params.entropy_thold = ws.entropyThreshold
+        params.logprob_thold = -1.0
+        return params
+    }
+
     // MARK: - Transcribe
 
     /// WAV ファイルからテキストを生成。バックグラウンドで実行。
+    /// メイン認識パス: 投機実行をキャンセルしてから実行。
     func transcribe(url: URL, language: String = "ja", prompt: String = "",
                     completion: @escaping (String?) -> Void) {
         guard isLoaded, ctx != nil else {
@@ -77,8 +122,14 @@ final class WhisperContext {
             completion(nil); return
         }
 
+        // 投機実行をキャンセル（キューに溜まっているものをスキップさせる）
+        cancelSpeculation = true
+
+        let ws = WhisperSettings()
         queue.async { [weak self] in
             guard let self, let ctx = self.ctx else { completion(nil); return }
+            // メイン認識開始: 投機キャンセルをリセット
+            self.cancelSpeculation = false
 
             // WAV → Float32 PCM
             guard let samples = Self.loadWAV(url: url) else {
@@ -88,20 +139,7 @@ final class WhisperContext {
             }
 
             // Setup params
-            var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
-            params.n_threads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
-            params.print_progress = false
-            params.print_special = false
-            params.print_realtime = false
-            params.print_timestamps = false
-            params.no_timestamps = true
-            params.single_segment = false
-            params.suppress_blank = true
-            params.suppress_nst = true
-            params.no_context = true
-            params.temperature = 0.0
-            params.temperature_inc = 0.2
-            params.greedy.best_of = 1
+            var params = self.makeParams(settings: ws)
 
             // Language
             let langCStr = language == "auto" ? nil : (language as NSString).utf8String
@@ -114,26 +152,27 @@ final class WhisperContext {
 
             let start = CFAbsoluteTimeGetCurrent()
 
-            // DSP前処理: 音量正規化 + プリエンファシス(高域強調)
-            let processed = AudioDSP.process(samples)
-
-            // 音声がなければスキップ (無音録音をWhisperに渡さない)
-            guard AudioDSP.hasVoice(processed) else {
+            // 音声がなければスキップ (生データで判定)
+            guard AudioDSP.hasVoice(samples, threshold: 0.003, minVoiceFrames: 3) else {
                 klog("WhisperContext: no voice detected, skipping")
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
 
+            // whisper.cppに生データをそのまま渡す（DSP処理は認識精度を下げるため無効化）
+            let processed = samples
+
             // Run inference
             let result = processed.withUnsafeBufferPointer { buf -> String? in
                 guard let ptr = buf.baseAddress else { return nil }
-                let ret = whisper_full(ctx, params, ptr, Int32(samples.count))
+                let ret = whisper_full(ctx, params, ptr, Int32(processed.count))
                 guard ret == 0 else {
                     klog("WhisperContext: whisper_full returned \(ret)")
                     return nil
                 }
 
                 let nSegments = whisper_full_n_segments(ctx)
+                klog("WhisperContext: \(nSegments) segments from \(processed.count) samples")
                 var text = ""
                 for i in 0..<nSegments {
                     if let seg = whisper_full_get_segment_text(ctx, i) {
@@ -144,34 +183,30 @@ final class WhisperContext {
             }
 
             let elapsed = CFAbsoluteTimeGetCurrent() - start
-            klog("WhisperContext: transcribed in \(String(format: "%.3f", elapsed))s → '\(result ?? "")'")
+            let samplesSec = String(format: "%.1f", Double(processed.count) / 16000.0)
+            klog("WhisperContext: transcribed \(samplesSec)s audio in \(String(format: "%.3f", elapsed))s → '\(result ?? "")'")
 
             DispatchQueue.main.async { completion(result) }
         }
     }
 
-    /// 既に Float32 PCM バッファがある場合（投機実行用）
+    /// 既に Float32 PCM バッファがある場合（投機実行・ストリーミング用）
+    /// メイン認識がリクエストされたらキャンセルされる。
     func transcribeBuffer(samples: [Float], language: String = "ja", prompt: String = "",
                           completion: @escaping (String?) -> Void) {
         guard isLoaded, ctx != nil else { completion(nil); return }
 
+        let ws = WhisperSettings()
         queue.async { [weak self] in
             guard let self, let ctx = self.ctx else { completion(nil); return }
+            // メイン認識が来たらスキップ
+            if self.cancelSpeculation {
+                klog("WhisperContext: speculation cancelled, skipping")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
 
-            var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
-            params.n_threads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
-            params.print_progress = false
-            params.print_special = false
-            params.print_realtime = false
-            params.print_timestamps = false
-            params.no_timestamps = true
-            params.single_segment = false
-            params.suppress_blank = true
-            params.suppress_nst = true
-            params.no_context = true
-            params.temperature = 0.0
-            params.temperature_inc = 0.2
-            params.greedy.best_of = 1
+            var params = self.makeParams(settings: ws)
 
             let langCStr = language == "auto" ? nil : (language as NSString).utf8String
             params.language = langCStr
@@ -179,8 +214,8 @@ final class WhisperContext {
             let promptCStr = prompt.isEmpty ? nil : (prompt as NSString).utf8String
             params.initial_prompt = promptCStr
 
-            // DSP前処理
-            let processed = AudioDSP.process(samples)
+            // whisper.cppに生データをそのまま渡す
+            let processed = samples
 
             let result = processed.withUnsafeBufferPointer { buf -> String? in
                 guard let ptr = buf.baseAddress else { return nil }
@@ -217,6 +252,7 @@ final class WhisperContext {
             completion([]); return
         }
 
+        let ws = WhisperSettings()
         queue.async { [weak self] in
             guard let self, let ctx = self.ctx else { completion([]); return }
 
@@ -226,20 +262,7 @@ final class WhisperContext {
                 return
             }
 
-            var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
-            params.n_threads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
-            params.print_progress = false
-            params.print_special = false
-            params.print_realtime = false
-            params.print_timestamps = false
-            params.no_timestamps = false  // タイムスタンプが必要（話者検出用）
-            params.single_segment = false
-            params.suppress_blank = true
-            params.suppress_nst = true
-            params.no_context = true
-            params.temperature = 0.0
-            params.temperature_inc = 0.2
-            params.greedy.best_of = 1
+            var params = self.makeParams(settings: ws, timestamps: true)
 
             // tinydiarize 有効化
             params.tdrz_enable = true
@@ -333,9 +356,15 @@ final class WhisperContext {
     static func loadWAV(url: URL) -> [Float]? {
         guard let data = try? Data(contentsOf: url), data.count > 44 else { return nil }
 
-        // Parse WAV header
-        let headerSize = 44  // standard WAV header
-        let audioData = data.subdata(in: headerSize..<data.count)
+        // WAVヘッダーを正しくパース: "data"チャンクを探す
+        // AVAudioRecorderはJUNK/FLLRチャンクを挿入するため44バイト固定は不可
+        let dataOffset = findDataChunk(in: data)
+        guard dataOffset > 0, dataOffset < data.count else {
+            klog("WhisperContext: WAV data chunk not found")
+            return nil
+        }
+
+        let audioData = data.subdata(in: dataOffset..<data.count)
         let sampleCount = audioData.count / 2  // 16-bit samples
 
         var samples = [Float](repeating: 0, count: sampleCount)
@@ -346,15 +375,39 @@ final class WhisperContext {
             }
         }
 
-        // トリミング: 前後の無音を除去（Whisperの処理時間を短縮）
-        return trimSilence(samples)
+        // whisper.cppは無音を自動処理するのでトリミング不要
+        return samples
+    }
+
+    /// WAVファイル内の "data" チャンクのデータ開始オフセットを返す
+    private static func findDataChunk(in data: Data) -> Int {
+        // RIFF header: 12 bytes (RIFF + size + WAVE)
+        guard data.count > 12 else { return -1 }
+        var offset = 12
+        while offset + 8 < data.count {
+            // チャンクID (4 bytes) + サイズ (4 bytes)
+            let chunkID = data.subdata(in: offset..<offset+4)
+            let sizeBytes = data.subdata(in: offset+4..<offset+8)
+            let chunkSize = sizeBytes.withUnsafeBytes { $0.load(as: UInt32.self) }
+
+            if chunkID == Data("data".utf8) {
+                // データチャンクの開始位置 = チャンクヘッダー(8バイト)の直後
+                return offset + 8
+            }
+            // 次のチャンクへ (チャンクサイズが奇数の場合パディング1バイト)
+            offset += 8 + Int(chunkSize)
+            if Int(chunkSize) % 2 != 0 { offset += 1 }
+        }
+        // フォールバック: 見つからなければ44を返す
+        klog("WhisperContext: data chunk not found, falling back to offset 44")
+        return 44
     }
 
     /// 前後の無音区間をカットして音声部分だけ返す
-    /// 160サンプル(10ms)のフレーム単位で判定、前後に200ms(3200サンプル)のマージン
+    /// 160サンプル(10ms)のフレーム単位で判定、前後にマージンを確保
     private static func trimSilence(_ samples: [Float], threshold: Float = 0.005) -> [Float] {
         let frameSize = 160  // 10ms @ 16kHz
-        let margin = 3200    // 200ms margin
+        let margin = 8000    // 500ms margin（後半の言葉を拾い損ねない）
         let frameCount = samples.count / frameSize
         guard frameCount > 0 else { return samples }
 

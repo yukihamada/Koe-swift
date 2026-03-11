@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Speech
 import UniformTypeIdentifiers
 import UserNotifications
@@ -21,16 +22,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeAppBundleID = ""
 
     // Silence-based auto-stop
-    private let voiceThreshold: Float   = 0.12  // この音量以上で「発話中」
-    private let silenceThreshold: Float = 0.07  // この音量以下で「無音」
-    private let maxRecordDuration: TimeInterval = 60
-    /// 適応的無音閾値: 短い発話ほど速く打ち切る
+    private let voiceThreshold: Float   = 0.08  // この音量以上で「発話中」（低めで敏感に検出）
+    private let silenceThreshold: Float = 0.04  // この音量以下で「無音」
+    private let maxRecordDuration: TimeInterval = 300  // 5分（whisper.cppは内部で30秒セグメントに分割処理）
+    /// 無音閾値: 最初から設定値をそのまま使用（後半の言葉を拾い損ねない）
     private var silenceAutoStop: TimeInterval {
-        guard let start = recordingStart else { return 0.85 }
-        let elapsed = Date().timeIntervalSince(start)
-        if elapsed < 2.0 { return 0.6 }   // 2秒以下: 0.6秒で打ち切り
-        if elapsed < 5.0 { return 0.7 }   // 5秒以下: 0.7秒
-        return 0.85                         // 5秒以上: 標準
+        return AppSettings.shared.silenceAutoStopSeconds
     }
     private var speechDetected = false
     private var silenceStart: Date?
@@ -46,6 +43,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Streaming preview
     private var streamingTimer: Timer?
     private var isStreamingInFlight = false
+
+    // IME switch (left⌘→英語, right⌘→日本語)
+    private var cmdPressedKeyCode: UInt16? = nil  // 押されたCmdのkeyCode (55=左, 54=右)
+    private var cmdUsedAsModifier = false          // Cmd+他キーが押されたらtrue
 
     // 認識中フラグ（ESCでキャンセル用）
     private var isRecognizing = false
@@ -123,6 +124,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             AutoUpdater.shared.checkForUpdates(silent: true)
         }
+
+        // 4時間ごとに定期アップデート確認
+        Timer.scheduledTimer(withTimeInterval: 4 * 3600, repeats: true) { _ in
+            AutoUpdater.shared.checkForUpdates(silent: true)
+        }
     }
 
     /// 組み込み whisper.cpp モデルのロード。モデルがなければダウンロード。
@@ -193,62 +199,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
-        let engine = AppSettings.shared.recognitionEngine
-        let badge = engine.isLocal ? "LOCAL" : "CLOUD"
-        let langFlag = AppSettings.shared.languageFlag
-        let wakeLabel = AppSettings.shared.wakeWordEnabled ? " [WakeWord Beta]" : ""
-        let header = NSMenuItem(title: "Koe — \(AppSettings.shared.shortcutDisplayString) で録音 [\(badge)] [\(langFlag)]\(wakeLabel)", action: nil, keyEquivalent: "")
+        let s = AppSettings.shared
+        let badge = s.recognitionEngine.isLocal ? "LOCAL" : "CLOUD"
+
+        // ステータスヘッダー (コンパクト)
+        let header = NSMenuItem(title: "\(s.languageFlag) \(s.shortcutDisplayString) · \(badge)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         menu.addItem(.separator())
-        let meetingTitle = MeetingMode.shared.isActive
-            ? "🔴 議事録停止 (\(MeetingMode.shared.entryCount)件)"
-            : "⚫ 議事録開始"
-        menu.addItem(withTitle: meetingTitle, action: #selector(toggleMeetingMode), keyEquivalent: "m")
-        menu.addItem(withTitle: "ファイルを文字起こし…", action: #selector(openFileTranscription), keyEquivalent: "t")
 
-        // 言語切替サブメニュー
-        let langMenu = NSMenu()
-        for lang in AppSettings.quickLanguages {
-            let item = NSMenuItem(title: "\(lang.flag) \(lang.name) (\(lang.code))", action: #selector(selectLanguage(_:)), keyEquivalent: "")
+        // 言語切替 (メニューバー用: よく使う言語のみ)
+        for lang in s.menuBarLanguages {
+            let item = NSMenuItem(title: "\(lang.flag) \(lang.name)", action: #selector(selectLanguage(_:)), keyEquivalent: "")
             item.representedObject = lang.code
-            item.state = (AppSettings.shared.language == lang.code) ? .on : .off
-            langMenu.addItem(item)
+            item.state = (s.language == lang.code) ? .on : .off
+            menu.addItem(item)
         }
-        let langItem = NSMenuItem(title: "言語: \(langFlag) \(AppSettings.shared.language)", action: nil, keyEquivalent: "")
-        langItem.submenu = langMenu
-        menu.addItem(langItem)
+        // その他の言語 (サブメニュー)
+        let others = s.otherLanguages
+        if !others.isEmpty {
+            let otherMenu = NSMenu()
+            for lang in others {
+                let item = NSMenuItem(title: "\(lang.flag) \(lang.name)", action: #selector(selectLanguage(_:)), keyEquivalent: "")
+                item.representedObject = lang.code
+                item.state = (s.language == lang.code) ? .on : .off
+                otherMenu.addItem(item)
+            }
+            let otherItem = NSMenuItem(title: "その他の言語…", action: nil, keyEquivalent: "")
+            otherItem.submenu = otherMenu
+            menu.addItem(otherItem)
+        }
+        menu.addItem(.separator())
 
-        // LLMモード切替サブメニュー (β)
+        // LLMモード
         let modeMenu = NSMenu()
         for mode in LLMMode.allCases {
-            let beta = (mode != .none) ? " β" : ""
-            let item = NSMenuItem(title: mode.displayName + beta, action: #selector(selectLLMMode(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: mode.displayName, action: #selector(selectLLMMode(_:)), keyEquivalent: "")
             item.representedObject = mode.rawValue
-            item.state = (AppSettings.shared.llmMode == mode) ? .on : .off
+            item.state = (s.llmMode == mode) ? .on : .off
             modeMenu.addItem(item)
         }
-        let modeLabel = AppSettings.shared.llmMode == .none ? "LLM修正: オフ" : "LLM修正: \(AppSettings.shared.llmMode.displayName) β"
+        let modeLabel = s.llmMode == .none ? "LLM: オフ" : "LLM: \(s.llmMode.displayName)"
         let modeItem = NSMenuItem(title: modeLabel, action: nil, keyEquivalent: "")
         modeItem.submenu = modeMenu
         menu.addItem(modeItem)
 
-        // エージェントモード (β)
-        let agentItem = NSMenuItem(title: "エージェントモード β", action: #selector(toggleAgentMode(_:)), keyEquivalent: "")
-        agentItem.state = AppSettings.shared.agentModeEnabled ? .on : .off
-        menu.addItem(agentItem)
-
-        // 翻訳ショートカット表示
-        let transDisplay = AppSettings.shared.translateShortcutDisplayString
-        let transItem = NSMenuItem(title: "翻訳: \(transDisplay)", action: nil, keyEquivalent: "")
+        let transItem = NSMenuItem(title: "翻訳 \(s.translateShortcutDisplayString)", action: nil, keyEquivalent: "")
         transItem.isEnabled = false
         menu.addItem(transItem)
+        menu.addItem(.separator())
 
+        // ツール
+        let meetingTitle = MeetingMode.shared.isActive
+            ? "議事録停止 (\(MeetingMode.shared.entryCount)件)"
+            : "議事録開始"
+        menu.addItem(withTitle: meetingTitle, action: #selector(toggleMeetingMode), keyEquivalent: "m")
+        menu.addItem(withTitle: "ファイル文字起こし…", action: #selector(openFileTranscription), keyEquivalent: "t")
         menu.addItem(.separator())
+
         menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(withTitle: "アップデートを確認…", action: #selector(checkUpdate), keyEquivalent: "")
-        menu.addItem(withTitle: "Koe について", action: #selector(showAbout), keyEquivalent: "")
-        menu.addItem(.separator())
         menu.addItem(withTitle: "終了", action: #selector(quit), keyEquivalent: "q")
         statusItem.menu = menu
     }
@@ -300,8 +309,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let transCode = UInt16(settings.translateHotkeyCode)
         let transMods = NSEvent.ModifierFlags(rawValue: settings.translateHotkeyModifiers)
 
+        // IME切替: Cmdが押されている間に他キーが押されたらmodifier使用とみなす
+        if settings.cmdIMESwitchEnabled {
+            handleCmdIME(event)
+        }
+
         switch event.type {
         case .keyDown:
+            // Cmd+他キーが押された → modifier使用フラグ
+            if cmdPressedKeyCode != nil { cmdUsedAsModifier = true }
+
             // ESC → キャンセル（録音中 or 認識中）
             if event.keyCode == 53, (isRecording || isRecognizing) {
                 DispatchQueue.main.async { self.cancelRecording() }; return
@@ -377,6 +394,60 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - IME Switch (左⌘→英語, 右⌘→日本語)
+
+    private func handleCmdIME(_ event: NSEvent) {
+        guard event.type == .flagsChanged else { return }
+        let flags = event.modifierFlags
+        let code = event.keyCode
+
+        // keyCode 55 = 左⌘, 54 = 右⌘
+        guard code == 55 || code == 54 else { return }
+
+        let cmdDown = flags.contains(.command)
+
+        if cmdDown {
+            // Cmd押下開始
+            cmdPressedKeyCode = code
+            cmdUsedAsModifier = false
+        } else if let pressed = cmdPressedKeyCode {
+            // Cmd離した
+            cmdPressedKeyCode = nil
+            if !cmdUsedAsModifier {
+                // 単独タップ → IME切替
+                if pressed == 55 {
+                    // 左⌘ → 英語
+                    switchInputSource(toJapanese: false)
+                } else {
+                    // 右⌘ → 日本語
+                    switchInputSource(toJapanese: true)
+                }
+            }
+            cmdUsedAsModifier = false
+        }
+    }
+
+    private func switchInputSource(toJapanese: Bool) {
+        let filter = [kTISPropertyInputSourceIsSelectCapable: true] as CFDictionary
+        guard let sources = TISCreateInputSourceList(filter, false)?.takeRetainedValue() as? [TISInputSource] else { return }
+        for source in sources {
+            guard let idRef = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { continue }
+            let sourceID = Unmanaged<CFString>.fromOpaque(idRef).takeUnretainedValue() as String
+
+            if toJapanese {
+                if sourceID.contains("Japanese") && sourceID.contains("Hiragana") {
+                    TISSelectInputSource(source)
+                    return
+                }
+            } else {
+                if sourceID.contains("ABC") || sourceID == "com.apple.keylayout.US" {
+                    TISSelectInputSource(source)
+                    return
+                }
+            }
+        }
+    }
+
     // MARK: - Recording
 
     private func startRecording() {
@@ -423,7 +494,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 音声がなければスキップ（無音録音を認識エンジンに渡さない）
         if let wavSamples = WhisperContext.loadWAVPublic(url: audioURL),
-           !AudioDSP.hasVoice(wavSamples) {
+           !AudioDSP.hasVoice(wavSamples, threshold: 0.003, minVoiceFrames: 3) {
             klog("stopAndRecognize: no voice detected, skipping recognition")
             overlay?.hide()
             if AppSettings.shared.wakeWordEnabled {
@@ -461,7 +532,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     klog("diarize result: \(segments.count) segments, \(Set(segments.map { $0.speaker }).count) speakers")
                     HistoryStore.shared.add(fullText)
                     MeetingMode.shared.appendSpeakerSegments(segments, audioURL: self.lastAudioURL)
-                    self.typer.type(fullText)
+                    if AppSettings.shared.streamingPreviewEnabled {
+                        self.typer.typeInto(fullText, bundleID: self.activeAppBundleID)
+                    } else {
+                        self.typer.finalizeStreaming(fullText, bundleID: self.activeAppBundleID)
+                    }
                     CorrectionStore.shared.trackDelivery(original: fullText, appBundleID: self.activeAppBundleID)
                     self.publishHandoffActivity(text: fullText)
                     if AppSettings.shared.autoCopyToClipboard {
@@ -472,10 +547,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         self.sendNotification(text: fullText)
                     }
                 }
-                self.rebuildMenu()
-                if AppSettings.shared.wakeWordEnabled {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
-                }
+                self.postRecognitionCleanup()
             }
             return
         }
@@ -517,10 +589,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     klog("Agent result: '\(result)'")
                     HistoryStore.shared.add("[\(command.description)] \(result)")
                     self.sendNotification(text: result)
-                    self.rebuildMenu()
-                    if AppSettings.shared.wakeWordEnabled {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
-                    }
+                    self.postRecognitionCleanup()
                 }
             }
             return
@@ -551,7 +620,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if !final.isEmpty {
                     HistoryStore.shared.add(final)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
-                    self.typer.type(final)
+                    if AppSettings.shared.streamingPreviewEnabled {
+                        self.typer.typeInto(final, bundleID: self.activeAppBundleID)
+                    } else {
+                        self.typer.finalizeStreaming(final, bundleID: self.activeAppBundleID)
+                    }
                     CorrectionStore.shared.trackDelivery(original: final, appBundleID: self.activeAppBundleID)
                     self.publishHandoffActivity(text: final)
                     if AppSettings.shared.autoCopyToClipboard {
@@ -562,13 +635,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         self.sendNotification(text: final)
                     }
                 }
-                self.rebuildMenu()
-                if AppSettings.shared.wakeWordEnabled {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                        WakeWordDetector.shared.start()
-                    }
-                }
+                self.postRecognitionCleanup()
             }
+        }
+    }
+
+    /// 認識完了後の共通処理: メニュー更新 + ウェイクワード再開 + 議事録自動録音
+    private func postRecognitionCleanup() {
+        rebuildMenu()
+        if MeetingMode.shared.isActive {
+            // 議事録モード中は自動で次の録音を開始（1秒待ってから）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self, MeetingMode.shared.isActive, !self.isRecording else { return }
+                klog("MeetingMode: auto-starting next recording")
+                self.startRecording()
+            }
+        } else if AppSettings.shared.wakeWordEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
         }
     }
 
@@ -647,13 +730,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 self.isStreamingInFlight = false
                 if let text, !text.isEmpty {
-                    // 5文字以下は認識途中の不安定な結果なので「音声入力中...」を表示
                     if text.count <= 5 {
+                        // 5文字以下は不安定な結果 → 認識中表示
                         let lang = AppSettings.shared.language
-                        let placeholder = lang.hasPrefix("ja") ? "音声入力中..." : "Listening..."
+                        let placeholder = lang.hasPrefix("ja") ? "音声認識中..." : "Recognizing..."
                         self.overlay?.updateStreamingText(placeholder)
                     } else {
-                        self.overlay?.updateStreamingText(text)
+                        if AppSettings.shared.streamingPreviewEnabled {
+                            // オーバーレイモード: プレビュー表示
+                            self.overlay?.updateStreamingText(text)
+                        } else {
+                            // 直接入力モード: テキストフィールドにリアルタイム入力
+                            self.typer.typeStreaming(text, bundleID: self.activeAppBundleID)
+                        }
                     }
                 }
             }
@@ -705,6 +794,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         streamingTimer?.invalidate(); streamingTimer = nil
         overlay?.updateLevel(0)
         overlay?.clearStreamingText()
+        // 直接入力モードの場合、入力済みストリーミングテキストを削除
+        if !AppSettings.shared.streamingPreviewEnabled {
+            typer.cancelStreaming()
+        }
         isRecording = false
         isRecognizing = false
         isTranslateMode = false
@@ -733,6 +826,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func reloadSpeechEngine() {
         speech = SpeechEngine()
+        rebuildMenu()
+
+        // 言語変更時にモデルを自動切替
+        let rawLang = AppSettings.shared.language
+        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "en")
+        guard lang != "auto" else { return }
+
+        let dl = ModelDownloader.shared
+        let best = ModelDownloader.bestModel(for: lang)
+        guard best.id != dl.currentModel.id else { return }
+
+        if dl.isDownloaded(best) {
+            klog("reloadSpeechEngine: switching to \(best.name) for \(lang)")
+            dl.selectModel(best)
+            WhisperContext.shared.loadModel(path: dl.path(for: best)) { _ in }
+        } else {
+            klog("reloadSpeechEngine: downloading \(best.name) for \(lang)")
+            dl.download(model: best) { success in
+                if success {
+                    klog("reloadSpeechEngine: downloaded \(best.name), loading")
+                    dl.selectModel(best)
+                    WhisperContext.shared.loadModel(path: dl.path(for: best)) { _ in }
+                }
+            }
+        }
     }
 
     // フローティングボタンから呼ばれる
@@ -743,14 +861,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Settings
 
     @objc func openSettings() {
+        // 設定画面を開く間はウェイクワードを一時停止（テンプレート録音と干渉しないよう）
+        WakeWordDetector.shared.stop()
         if settingsWC == nil { settingsWC = SettingsWindowController() }
         settingsWC?.show()
+        settingsWC?.onClose = { [weak self] in
+            guard let self else { return }
+            if AppSettings.shared.wakeWordEnabled && !self.isRecording {
+                WakeWordDetector.shared.start()
+            }
+        }
     }
 
     @objc private func toggleMeetingMode() {
         MeetingMode.shared.toggle()
         rebuildMenu()
     }
+
+    func rebuildMenuPublic() { rebuildMenu() }
 
     @objc private func selectLanguage(_ sender: NSMenuItem) {
         guard let code = sender.representedObject as? String else { return }

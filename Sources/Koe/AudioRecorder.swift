@@ -75,8 +75,11 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         guard let r = recorder, r.isRecording, let url = tempURL else { return nil }
         guard let data = try? Data(contentsOf: url), data.count > 44 else { return nil }
 
-        let headerSize = 44
-        let audioData = data.subdata(in: headerSize..<data.count)
+        // WAVヘッダーを正しくパース ("data"チャンクを探す)
+        let dataOffset = Self.findDataChunk(in: data)
+        guard dataOffset > 0, dataOffset < data.count else { return nil }
+
+        let audioData = data.subdata(in: dataOffset..<data.count)
         let sampleCount = audioData.count / 2  // 16-bit samples
 
         guard sampleCount > 0 else { return nil }
@@ -89,6 +92,21 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             }
         }
         return samples
+    }
+
+    /// WAVファイル内の "data" チャンクのデータ開始オフセットを返す
+    static func findDataChunk(in data: Data) -> Int {
+        guard data.count > 12 else { return 44 }
+        var offset = 12
+        while offset + 8 < data.count {
+            let chunkID = data.subdata(in: offset..<offset+4)
+            let sizeBytes = data.subdata(in: offset+4..<offset+8)
+            let chunkSize = sizeBytes.withUnsafeBytes { $0.load(as: UInt32.self) }
+            if chunkID == Data("data".utf8) { return offset + 8 }
+            offset += 8 + Int(chunkSize)
+            if Int(chunkSize) % 2 != 0 { offset += 1 }
+        }
+        return 44
     }
 
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {

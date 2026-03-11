@@ -255,6 +255,26 @@ class AppSettings: ObservableObject {
         ("🌐", "Auto Detect",  "auto"),
     ]
 
+    /// メニューバーに表示する言語コード一覧（ユーザーがカスタマイズ可能）
+    @Published var menuBarLanguageCodes: [String] {
+        didSet {
+            if let data = try? JSONEncoder().encode(menuBarLanguageCodes) { ud.set(data, forKey: "menuBarLanguageCodes") }
+            AppDelegate.shared?.rebuildMenuPublic()
+        }
+    }
+
+    /// メニューバー用の言語リスト（menuBarLanguageCodes に基づく）
+    var menuBarLanguages: [(flag: String, name: String, code: String)] {
+        menuBarLanguageCodes.compactMap { code in
+            Self.quickLanguages.first { $0.code == code }
+        }
+    }
+
+    /// メニューバーに表示されない言語リスト
+    var otherLanguages: [(flag: String, name: String, code: String)] {
+        Self.quickLanguages.filter { lang in !menuBarLanguageCodes.contains(lang.code) }
+    }
+
     /// 現在の言語に対応するフラグ絵文字を返す
     var languageFlag: String {
         AppSettings.quickLanguages.first { $0.code == language }?.flag ?? "🌐"
@@ -313,8 +333,20 @@ class AppSettings: ObservableObject {
     // Streaming preview (real-time transcription during recording)
     @Published var streamingPreviewEnabled: Bool { didSet { ud.set(streamingPreviewEnabled, forKey: "streamingPreviewEnabled") } }
 
+    // Whisper advanced params
+    @Published var whisperBestOf: Int { didSet { ud.set(whisperBestOf, forKey: "whisperBestOf") } }
+    @Published var whisperEntropyThreshold: Double { didSet { ud.set(whisperEntropyThreshold, forKey: "whisperEntropyThreshold") } }
+    @Published var whisperTemperature: Double { didSet { ud.set(whisperTemperature, forKey: "whisperTemperature") } }
+    @Published var whisperTemperatureInc: Double { didSet { ud.set(whisperTemperatureInc, forKey: "whisperTemperatureInc") } }
+    @Published var silenceAutoStopSeconds: Double { didSet { ud.set(silenceAutoStopSeconds, forKey: "silenceAutoStopSeconds") } }
+    @Published var whisperBeamSearch: Bool { didSet { ud.set(whisperBeamSearch, forKey: "whisperBeamSearch") } }
+    @Published var whisperUseContext: Bool { didSet { ud.set(whisperUseContext, forKey: "whisperUseContext") } }
+
     // Speaker diarization (tinydiarize)
     @Published var diarizationEnabled: Bool { didSet { ud.set(diarizationEnabled, forKey: "diarizationEnabled") } }
+
+    // IME switch (左⌘→英語, 右⌘→日本語)
+    @Published var cmdIMESwitchEnabled: Bool { didSet { ud.set(cmdIMESwitchEnabled, forKey: "cmdIMESwitchEnabled") } }
 
     // Wake word
     @Published var wakeWordEnabled: Bool { didSet {
@@ -416,6 +448,8 @@ class AppSettings: ObservableObject {
         translateTargetLang = ud.string(forKey: "translateTargetLang") ?? defaultTarget
 
         language          = savedLang
+        menuBarLanguageCodes = (ud.data(forKey: "menuBarLanguageCodes").flatMap { try? JSONDecoder().decode([String].self, from: $0) })
+            ?? ["ja-JP", "en-US", "zh-CN", "ko-KR", "auto"]
         recognitionEngine = RecognitionEngine(rawValue: ud.string(forKey: "recognitionEngine") ?? "") ?? .whisperCpp
         whisperAPIKey        = ud.string(forKey: "whisperAPIKey") ?? ""
         whisperCppBinaryPath = ud.string(forKey: "whisperCppBinaryPath") ?? ""
@@ -440,7 +474,15 @@ class AppSettings: ObservableObject {
         superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
         agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF
         streamingPreviewEnabled = ud.object(forKey: "streamingPreviewEnabled") as? Bool ?? true  // デフォルトON
+        whisperBestOf = ud.object(forKey: "whisperBestOf") as? Int ?? 1
+        whisperEntropyThreshold = ud.object(forKey: "whisperEntropyThreshold") as? Double ?? 2.4
+        whisperTemperature = ud.object(forKey: "whisperTemperature") as? Double ?? 0.0
+        whisperTemperatureInc = ud.object(forKey: "whisperTemperatureInc") as? Double ?? 0.2
+        silenceAutoStopSeconds = ud.object(forKey: "silenceAutoStopSeconds") as? Double ?? 3.5
+        whisperBeamSearch = ud.object(forKey: "whisperBeamSearch") as? Bool ?? false  // デフォルトOFF（速度優先、greedyで十分）
+        whisperUseContext = ud.object(forKey: "whisperUseContext") as? Bool ?? true   // デフォルトON（長文の一貫性）
         diarizationEnabled = ud.object(forKey: "diarizationEnabled") as? Bool ?? false  // デフォルトOFF
+        cmdIMESwitchEnabled = ud.object(forKey: "cmdIMESwitchEnabled") as? Bool ?? false  // デフォルトOFF
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []

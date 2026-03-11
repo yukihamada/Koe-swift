@@ -12,11 +12,11 @@ class OverlayWindow: NSPanel {
     private var tipIndex = 0
 
     init() {
-        let w: CGFloat = 280, h: CGFloat = 56
+        let w: CGFloat = 340, h: CGFloat = 80
         let screen = NSScreen.main ?? NSScreen.screens[0]
         let rect = CGRect(
             x: screen.frame.midX - w / 2,
-            y: screen.frame.midY - h / 2 + 60,
+            y: screen.frame.midY - h / 2,
             width: w, height: h
         )
         super.init(contentRect: rect,
@@ -32,7 +32,7 @@ class OverlayWindow: NSPanel {
         let hosting = NSHostingView(rootView: OverlayView(model: stateModel))
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = CGColor.clear
-        hosting.layer?.cornerRadius = 28
+        hosting.layer?.cornerRadius = 16
         hosting.layer?.masksToBounds = true
         contentView = hosting
     }
@@ -61,12 +61,6 @@ class OverlayWindow: NSPanel {
             stopTipRotation()
         }
 
-        // ウィンドウ高さを計算
-        let newH = calcHeight()
-        var f = frame
-        f.origin.y -= (newH - f.height)
-        f.size.height = newH
-        setFrame(f, display: false)
         orderFrontRegardless()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.65)) {
@@ -75,14 +69,6 @@ class OverlayWindow: NSPanel {
         }
     }
 
-    private func calcHeight() -> CGFloat {
-        var h: CGFloat = 56
-        if !stateModel.modeName.isEmpty { h += 10 }
-        if !stateModel.streamingText.isEmpty { h += 22 }
-        if !stateModel.tipText.isEmpty { h += 22 }
-        if !stateModel.hint.isEmpty { h += 20 }
-        return h
-    }
 
     private func startTipRotation() {
         tipTimer?.invalidate()
@@ -91,7 +77,6 @@ class OverlayWindow: NSPanel {
         withAnimation(.easeInOut(duration: 0.3)) {
             stateModel.tipText = tips[tipIndex]
         }
-        adjustHeight()
         tipTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             let tips = OverlayStateModel.localizedTips()
@@ -107,19 +92,9 @@ class OverlayWindow: NSPanel {
         tipTimer = nil
         if !stateModel.tipText.isEmpty {
             withAnimation(.easeOut(duration: 0.15)) { stateModel.tipText = "" }
-            adjustHeight()
         }
     }
 
-    private func adjustHeight() {
-        let newH = calcHeight()
-        var f = frame
-        if abs(f.height - newH) > 1 {
-            f.origin.y -= (newH - f.height)
-            f.size.height = newH
-            setFrame(f, display: true, animate: true)
-        }
-    }
 
     func hide() {
         stopTipRotation()
@@ -127,33 +102,32 @@ class OverlayWindow: NSPanel {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { self.orderOut(nil) }
     }
 
-    func updateLevel(_ level: Float) { stateModel.audioLevel = level }
+    func updateLevel(_ level: Float) {
+        stateModel.audioLevel = level
+        stateModel.pushLevel(level)
+    }
 
     func showHint(_ text: String) {
         guard stateModel.hint != text else { return }
         withAnimation(.easeIn(duration: 0.3)) { stateModel.hint = text }
-        adjustHeight()
     }
 
     func clearHint() {
         guard !stateModel.hint.isEmpty else { return }
         withAnimation(.easeOut(duration: 0.2)) { stateModel.hint = "" }
-        adjustHeight()
     }
 
     /// ストリーミング認識のプレビューテキストを更新。
     /// 末尾100文字にトランケートし、ウィンドウ高さを自動調整する。
     func updateStreamingText(_ text: String) {
-        let truncated = text.count > 100 ? "..." + String(text.suffix(97)) : text
+        let truncated = text.count > 150 ? "..." + String(text.suffix(147)) : text
         guard stateModel.streamingText != truncated else { return }
         stateModel.streamingText = truncated
-        adjustHeight()
     }
 
     func clearStreamingText() {
         guard !stateModel.streamingText.isEmpty else { return }
         stateModel.streamingText = ""
-        adjustHeight()
     }
 }
 
@@ -166,7 +140,16 @@ class OverlayStateModel: ObservableObject {
     @Published var streamingText: String = ""
     @Published var isTranslateMode: Bool = false
     @Published var tipText: String = ""
+    /// 直近のレベル履歴（波形描画用）
+    @Published var levelHistory: [Float] = Array(repeating: 0, count: 40)
     var engineBadge: String { AppSettings.shared.recognitionEngine.badgeText }
+
+    func pushLevel(_ level: Float) {
+        levelHistory.append(level)
+        if levelHistory.count > 40 {
+            levelHistory.removeFirst(levelHistory.count - 40)
+        }
+    }
 
     static func localizedTips() -> [String] {
         let lang = AppSettings.shared.language
@@ -233,23 +216,28 @@ struct OverlayView: View {
     @ObservedObject var model: OverlayStateModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
+        VStack(spacing: 6) {
+            // ステータスバー: ドット + 波形/ドット + バッジ
+            HStack(spacing: 10) {
                 Circle()
                     .fill(dotColor)
                     .frame(width: 7, height: 7)
                     .shadow(color: dotColor.opacity(0.9), radius: 6)
                     .modifier(DotPulse(active: model.state == .recording))
 
-                Group {
-                    if model.state == .recording {
-                        WaveformView(level: model.audioLevel)
-                            .frame(width: 90, height: 26)
-                    } else {
-                        ThreeDotsView()
-                            .frame(width: 90, height: 26)
-                    }
+                ZStack {
+                    WaveformView(levels: model.levelHistory)
+                        .opacity(model.state == .recording ? 1 : 0)
+                    ThreeDotsView()
+                        .opacity(model.state == .recording ? 0 : 1)
                 }
+                .frame(width: 180, height: 22)
+
+                Text(model.modeName)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(model.modeName.isEmpty ? 0 : 0.5))
+
+                Spacer()
 
                 Text(model.engineBadge)
                     .font(.system(size: 8, weight: .bold, design: .monospaced))
@@ -258,57 +246,42 @@ struct OverlayView: View {
                     .background(badgeColor.opacity(0.15))
                     .cornerRadius(4)
             }
-            .padding(.horizontal, 24)
-            .frame(height: model.modeName.isEmpty ? 56 : 46)
+            .padding(.horizontal, 20)
+            .frame(height: 36)
 
-            if !model.modeName.isEmpty && model.state == .recording {
-                Text(model.modeName)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white.opacity(0.5))
-                    .frame(height: 14)
-            }
-
-            if !model.streamingText.isEmpty && model.state == .recording {
-                Text(model.streamingText)
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundColor(.white.opacity(0.4))
+            // テキスト表示エリア（完全固定高さ、ZStackで重ねて切替）
+            ZStack {
+                Text(model.streamingText.isEmpty ? " " : model.streamingText)
+                    .font(.system(size: 12, weight: .regular))
+                    .foregroundColor(.white.opacity(0.7))
                     .lineLimit(2)
                     .truncationMode(.head)
-                    .padding(.horizontal, 20)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 18)
-                    .animation(.easeInOut(duration: 0.15), value: model.streamingText)
-            }
+                    .multilineTextAlignment(.center)
+                    .opacity(!model.streamingText.isEmpty && model.state == .recording ? 1 : 0)
 
-            if !model.tipText.isEmpty && model.state == .recognizing {
-                Text(model.tipText)
-                    .font(.system(size: 10, weight: .medium))
+                Text(model.tipText.isEmpty ? " " : model.tipText)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white.opacity(0.4))
-                    .lineLimit(1)
-                    .padding(.horizontal, 20)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 18)
-                    .transition(.opacity)
-                    .animation(.easeInOut(duration: 0.3), value: model.tipText)
-                    .id(model.tipText)
-            }
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .opacity(!model.tipText.isEmpty && model.streamingText.isEmpty ? 1 : 0)
 
-            if !model.hint.isEmpty {
-                Text(model.hint)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.45))
-                    .padding(.horizontal, 20)
-                    .frame(height: 20)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                Text(model.state == .recording ? "話してください..." : "認識中...")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(.white.opacity(0.2))
+                    .opacity(model.streamingText.isEmpty && model.tipText.isEmpty ? 1 : 0)
             }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
         }
-        .frame(width: 280)
+        .padding(.vertical, 6)
+        .frame(width: 340, height: 80)
         .background(
-            RoundedRectangle(cornerRadius: 28)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(Color(white: 0.07, opacity: 0.93))
-                .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(dotColor.opacity(0.3), lineWidth: 0.7))
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(dotColor.opacity(0.3), lineWidth: 0.7))
         )
-        .scaleEffect(model.visible ? 1 : 0.82)
         .opacity(model.visible ? 1 : 0)
     }
 
@@ -357,32 +330,25 @@ struct DotPulse: AnimatableModifier {
 // MARK: - Waveform (recording)
 
 struct WaveformView: View {
-    let level: Float
-    private let barCount = 24
+    let levels: [Float]
+    private let barCount = 40
 
     var body: some View {
-        TimelineView(.animation) { tl in
-            let t = tl.date.timeIntervalSinceReferenceDate
-            Canvas { ctx, size in
-                let barW: CGFloat = 2.5, gap: CGFloat = 2.0
-                let totalW = CGFloat(barCount) * (barW + gap) - gap
-                let sx = (size.width - totalW) / 2
-                let midY = size.height / 2
-                let lvl = Double(max(0.03, level))
+        Canvas { ctx, size in
+            let barW: CGFloat = 2.5, gap: CGFloat = 2.0
+            let totalW = CGFloat(barCount) * (barW + gap) - gap
+            let sx = (size.width - totalW) / 2
+            let midY = size.height / 2
 
-                for i in 0..<barCount {
-                    let r = Double(i) / Double(barCount - 1)
-                    let phase = r * .pi * 3.2
-                    let env = 1.0 - pow(abs(r - 0.5) * 2, 1.5)
-                    let j = (sin(t * 20 + phase) * 0.5 + 0.5)
-                    let s = (sin(t *  6 + phase) * 0.5 + 0.5)
-                    let h = max(2.5, CGFloat(3 + lvl * 18 * env * (j * 0.6 + s * 0.4) + lvl * 4))
-                    let rect = CGRect(x: sx + CGFloat(i) * (barW + gap), y: midY - h / 2, width: barW, height: h)
-                    let alpha = 0.35 + lvl * 0.65
-                    let g = 0.15 + abs(r - 0.5) * 0.55
-                    ctx.fill(Path(roundedRect: rect, cornerRadius: barW / 2),
-                             with: .color(Color(red: 1, green: g, blue: 0.22).opacity(alpha)))
-                }
+            for i in 0..<barCount {
+                let lvl = Double(i < levels.count ? max(0.02, levels[i]) : 0.02)
+                let h = max(2.5, CGFloat(2 + lvl * 20))
+                let rect = CGRect(x: sx + CGFloat(i) * (barW + gap), y: midY - h / 2, width: barW, height: h)
+                let alpha = 0.4 + lvl * 0.6
+                let r = Double(i) / Double(barCount - 1)
+                let g = 0.15 + abs(r - 0.5) * 0.55
+                ctx.fill(Path(roundedRect: rect, cornerRadius: barW / 2),
+                         with: .color(Color(red: 1, green: g, blue: 0.22).opacity(alpha)))
             }
         }
     }

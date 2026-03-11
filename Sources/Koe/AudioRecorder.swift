@@ -44,14 +44,31 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         recorder?.stop()
         recorder = nil
         guard let src = tempURL else { return nil }
-        // 認識が終わるまで上書きされないよう別名にコピー
-        let dest = Self.audioDir.appendingPathComponent("recognize.wav")
-        try? FileManager.default.removeItem(at: dest)
+        // 一意なファイル名で保存（議事録モードで次の録音に上書きされないように）
+        let id = UUID().uuidString.prefix(8)
+        let dest = Self.audioDir.appendingPathComponent("recognize_\(id).wav")
         try? FileManager.default.copyItem(at: src, to: dest)
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
-        klog("Recording stopped, size=\(size) bytes")
+        klog("Recording stopped, size=\(size) bytes -> \(dest.lastPathComponent)")
+        // 古い一時ファイルを掃除（最新5件以外を削除）
+        cleanOldFiles()
         prepare()   // 次回のために即再準備
         return dest
+    }
+
+    /// 古い recognize_*.wav を掃除（最新5件を残す）
+    private func cleanOldFiles() {
+        let dir = Self.audioDir
+        guard let files = try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: [.creationDateKey]) else { return }
+        let recFiles = files.filter { $0.lastPathComponent.hasPrefix("recognize_") }
+            .sorted { a, b in
+                let da = (try? a.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return da > db
+            }
+        for file in recFiles.dropFirst(5) {
+            try? FileManager.default.removeItem(at: file)
+        }
     }
 
     func cancel() {

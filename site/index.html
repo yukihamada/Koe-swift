@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Koe (声) — Mac/Windows 音声入力アプリ | 20言語対応・AI自動学習・ローカル完結・無料</title>
-<meta name="description" content="Koe は macOS/Windows 対応の音声入力アプリ。whisper.cpp + Metal/CUDA GPU で完全ローカル処理、0.5秒で変換。20言語対応、言語別専用AIモデル自動選択、自動学習、IME切替、2入力モード搭載。プライバシー最優先、月額0円。">
+<meta name="description" content="Koe は macOS 対応の音声入力アプリ。Apple Speech + whisper.cpp ハイブリッド認識で即座に変換。Metal GPU で完全ローカル処理。20言語対応、言語別専用AIモデル自動選択、自動学習、IME切替、2入力モード搭載。Mac App Store で入手可能。プライバシー最優先、月額0円。">
 <meta name="keywords" content="Mac 音声入力,Windows 音声入力,日本語 音声認識,whisper.cpp,macOS dictation,ローカル音声入力,Apple Silicon,CUDA,音声テキスト変換,Speech to Text,多言語,20言語,開発者向け,無料,IME切替">
 <meta name="author" content="Yuki Hamada">
 <meta name="robots" content="index, follow">
@@ -12,7 +12,7 @@
 
 <!-- Open Graph -->
 <meta property="og:title" content="Koe (声) — Mac で最も速い日本語音声入力">
-<meta property="og:description" content="whisper.cpp + Metal/CUDA GPU で完全ローカル処理。20言語対応、言語別専用AIモデル自動選択。0.5秒変換、月額0円。">
+<meta property="og:description" content="Apple Speech + whisper.cpp ハイブリッド認識で即座に変換。完全ローカル処理。20言語対応、言語別専用AIモデル自動選択。月額0円。">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://koe.elio.love/">
 <meta property="og:site_name" content="Koe">
@@ -24,7 +24,7 @@
 <!-- Twitter Card -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Koe (声) — Mac で最も速い日本語音声入力">
-<meta name="twitter:description" content="whisper.cpp + Metal/CUDA GPU。20言語対応、言語別AIモデル自動選択。完全ローカル、0.5秒変換、月額0円。">
+<meta name="twitter:description" content="Apple Speech + whisper.cpp ハイブリッド認識。20言語対応、言語別AIモデル自動選択。完全ローカル、月額0円。">
 <meta name="twitter:image" content="https://koe.elio.love/og.png">
 
 <!-- Favicon (inline SVG as data URI) -->
@@ -57,12 +57,12 @@
     "url": "https://github.com/yukihamada"
   },
   "license": "https://opensource.org/licenses/MIT",
-  "softwareVersion": "2.1.0",
+  "softwareVersion": "2.2.0",
   "datePublished": "2026-03-11",
   "inLanguage": ["ja", "en"],
   "screenshot": "https://koe.elio.love/og.png",
   "featureList": [
-    "whisper.cpp + Metal GPU で0.5秒以内に音声認識",
+    "Apple Speech + whisper.cpp ハイブリッド認識で即座に音声入力",
     "完全ローカル処理 — クラウド不要",
     "20言語対応・言語別専用モデル自動選択",
     "2つの入力モード（オーバーレイ / 直接入力）",
@@ -71,7 +71,10 @@
     "アプリ別プロンプト最適化",
     "リアルタイム音声波形表示",
     "ウェイクワード Beta (MFCC+DTW 自社エンジン)",
-    "投機的実行でレイテンシ削減",
+    "Apple Speech リアルタイムプレビュー + whisper 高精度確定",
+    "Mac App Store で入手可能",
+    "⌃K ショートカットで即起動",
+    "アクセシビリティ権限なしでも動作（クリップボードモード）",
     "議事録モード",
     "テキスト展開辞書",
     "LLM後処理 (llama.cpp / クラウド)",
@@ -377,7 +380,7 @@ footer a{color:#777}
 <!-- Stats -->
 <div class="stats">
   <div class="stat">
-    <div class="stat-val" data-i18n="stat_speed_val">&lt; 0.5秒</div>
+    <div class="stat-val" data-i18n="stat_speed_val">即座</div>
     <div class="stat-label" data-i18n="stat_speed_label">音声認識速度</div>
   </div>
   <div class="stat">
@@ -400,15 +403,15 @@ footer a{color:#777}
 
 <!-- What's New v2.1 -->
 <section>
-  <div class="section-title" data-i18n="new_section_title">v2.1 新機能</div>
-  <h2 class="section-heading" data-i18n="new_section_heading">大幅アップデート</h2>
-  <p class="section-desc" data-i18n="new_section_desc">入力モード切替、言語別AIモデル自動選択、IME切替、自動学習など。</p>
+  <div class="section-title" data-i18n="new_section_title">v2.2 新機能</div>
+  <h2 class="section-heading" data-i18n="new_section_heading">ハイブリッド認識エンジン</h2>
+  <p class="section-desc" data-i18n="new_section_desc">Apple Speech でリアルタイムプレビュー + whisper で高精度確定。Mac App Store にも対応。</p>
 
   <div class="features">
     <div class="feat" style="border-color:rgba(255,59,48,.3)">
       <div class="feat-icon">🌍</div>
       <h3 data-i18n="new1_title">言語別専用モデル自動選択</h3>
-      <p data-i18n="new1_desc">言語を切り替えると、その言語に最適化されたWhisperモデルを自動ダウンロード＆切替。日本語→Kotoba v2、中国語→Belle Turbo、韓国語→Korean Medium、フランス語→French Q5、イタリア語→Italian Distil。その他の言語はLarge V3 Turbo Q5で高精度カバー。</p>
+      <p data-i18n="new1_desc">言語を切り替えると、その言語に最適化されたWhisperモデルを自動ダウンロード＆切替。デフォルトはLarge V3 Turbo Q5。中国語→Belle Turbo、韓国語→Korean Medium、フランス語→French Q5、イタリア語→Italian Distilなど言語別に最適モデルを自動選択。</p>
     </div>
     <div class="feat" style="border-color:rgba(255,149,0,.3)">
       <div class="feat-icon">✏️</div>
@@ -450,7 +453,7 @@ footer a{color:#777}
         <span style="font-size:24px">🇯🇵</span>
         <div>
           <div style="font-size:15px;font-weight:600" data-i18n="ml_ja_name">日本語</div>
-          <div style="font-size:12px;color:var(--muted)">Kotoba Whisper v2.0 Q5</div>
+          <div style="font-size:12px;color:var(--muted)">Large V3 Turbo Q5</div>
         </div>
         <span style="margin-left:auto;font-size:11px;background:rgba(255,59,48,.15);color:#ff3b30;padding:2px 8px;border-radius:4px;font-weight:600" data-i18n="ml_default">デフォルト</span>
       </div>
@@ -733,15 +736,15 @@ footer a{color:#777}
       <div class="jp-item">
         <div class="icon">⚡</div>
         <div>
-          <h4 data-i18n="jp_feat2_title">投機的実行 (Speculative Execution)</h4>
-          <p data-i18n="jp_feat2_desc">話し終わった瞬間にWhisperへ送信開始。0.85秒の無音確認を待たず、結果を先取りキャッシュ。体感レイテンシ500ms削減。</p>
+          <h4 data-i18n="jp_feat2_title">ハイブリッド認識 (Apple Speech + whisper)</h4>
+          <p data-i18n="jp_feat2_desc">Apple Speech APIでリアルタイムプレビューを即座に表示・入力。その後whisper.cppが高精度な最終結果で自動置換。体感ゼロ遅延を実現。</p>
         </div>
       </div>
       <div class="jp-item">
         <div class="icon">🗾</div>
         <div>
           <h4 data-i18n="jp_feat3_title">10+言語別専用モデル (自動切替)</h4>
-          <p data-i18n="jp_feat3_desc">日本語はKotoba v2.0、中国語はBelle Turbo、韓国語・フランス語・イタリア語にもそれぞれ専用モデルを搭載。言語切替時に最適モデルを自動ダウンロード＆適用。10以上のモデルから手動切替も可能。</p>
+          <p data-i18n="jp_feat3_desc">デフォルトはLarge V3 Turbo Q5。中国語はBelle Turbo、韓国語・フランス語・イタリア語にもそれぞれ専用モデルを搭載。言語切替時に最適モデルを自動ダウンロード＆適用。10以上のモデルから手動切替も可能。</p>
         </div>
       </div>
       <div class="jp-item">
@@ -842,13 +845,13 @@ footer a{color:#777}
     <tbody>
       <tr class="hl">
         <td data-i18n="cmp_accuracy">日本語精度</td>
-        <td><span class="check" data-i18n="cmp_accuracy_koe">◎ Kotoba v2.0 / large-v3</span></td>
+        <td><span class="check" data-i18n="cmp_accuracy_koe">◎ Large V3 Turbo + Apple Speech</span></td>
         <td data-i18n="cmp_accuracy_macos">△ やや低い</td>
         <td data-i18n="cmp_accuracy_cloud">○ 高い</td>
       </tr>
       <tr class="hl">
         <td data-i18n="cmp_speed">速度</td>
-        <td><span class="check">◎ &lt;0.5秒 (Metal)</span></td>
+        <td><span class="check">◎ 即座 (Apple Speech + Metal)</span></td>
         <td data-i18n="cmp_speed_macos">△ 1-3秒</td>
         <td data-i18n="cmp_speed_cloud">△ ネットワーク依存</td>
       </tr>
@@ -923,11 +926,11 @@ footer a{color:#777}
     </div>
     <div class="step">
       <h3 data-i18n="install_step2_title">初回起動で自動セットアップ</h3>
-      <p data-i18n="install_step2_desc">whisper.cpp + Metal GPU はアプリに内蔵済み。音声認識モデル (Kotoba Whisper v2.0) が初回起動時に自動ダウンロード。</p>
+      <p data-i18n="install_step2_desc">whisper.cpp + Metal GPU はアプリに内蔵済み。音声認識モデル (Large V3 Turbo Q5) が初回起動時に自動ダウンロード。</p>
     </div>
     <div class="step">
       <h3 data-i18n="install_step3_title">権限を許可して完了</h3>
-      <p data-i18n="install_step3_desc">マイク・アクセシビリティ権限を許可。⌘⌥V を押せば即座に音声入力開始。</p>
+      <p data-i18n="install_step3_desc">マイク権限を許可。アクセシビリティは任意（自動ペーストに必要）。⌘⌥V で音声入力開始。</p>
     </div>
   </div>
 
@@ -1015,11 +1018,11 @@ footer a{color:#777}
   var en = {
     hero_title_suffix: '(Voice)',
     hero_tagline: 'The fastest English voice input for Mac & Windows',
-    hero_sub: 'whisper.cpp + Metal/CUDA GPU — Fully local, 20 languages, auto model selection, no cloud',
+    hero_sub: 'Apple Speech + whisper.cpp hybrid recognition — Fully local, 20 languages, available on Mac App Store',
     dl_dmg: 'Download DMG',
     dl_pkg: 'Download PKG (Recommended)',
     dl_sub: 'macOS 13+ / Apple Silicon & Intel / Free & Open Source',
-    stat_speed_val: '< 0.5s',
+    stat_speed_val: 'Instant',
     stat_speed_label: 'Recognition Speed',
     stat_local_label: 'Local Processing',
     stat_cost_val: '$0',
@@ -1028,11 +1031,11 @@ footer a{color:#777}
     stat_lang_label: 'Supported',
     stat_model_val: '10+',
     stat_model_label: 'Specialized Models',
-    new_section_title: 'v2.1 New Features',
-    new_section_heading: 'Major Update',
-    new_section_desc: 'Input mode switching, language-specific AI models, IME switching, auto-learning, and more.',
+    new_section_title: 'v2.2 New Features',
+    new_section_heading: 'Hybrid Recognition Engine',
+    new_section_desc: 'Apple Speech for real-time preview + whisper for high-accuracy final result. Now on Mac App Store.',
     new1_title: 'Language-Specific Model Auto-Selection',
-    new1_desc: 'When you switch languages, Koe automatically downloads and activates the best Whisper model: Kotoba v2 for Japanese, Belle Turbo for Chinese, Korean Medium, French Q5, Italian Distil. Other languages use Large V3 Turbo Q5.',
+    new1_desc: 'When you switch languages, Koe automatically downloads and activates the best Whisper model. Default is Large V3 Turbo Q5. Belle Turbo for Chinese, Korean Medium, French Q5, Italian Distil for specialized languages.',
     new2_title: 'Two Input Modes',
     new2_desc: '<strong>Voice Input Mode</strong> (default): Preview in overlay before inserting. <strong>Direct Input Mode</strong>: Real-time streaming into text fields.',
     new3_title: 'IME Auto-Switch (Karabiner-Compatible)',
@@ -1091,10 +1094,10 @@ footer a{color:#777}
     jp_section_desc: 'Not satisfied with built-in dictation? Koe uses Large V3 Turbo for best-in-class English accuracy.',
     jp_feat1_title: 'Per-App Prompt Optimization',
     jp_feat1_desc: 'Auto-switches Whisper hints based on the active app. Dramatically improves technical term recognition.',
-    jp_feat2_title: 'Speculative Execution',
-    jp_feat2_desc: 'Starts sending to Whisper the moment you stop speaking. Reduces perceived latency by 500ms.',
+    jp_feat2_title: 'Hybrid Recognition (Apple Speech + whisper)',
+    jp_feat2_desc: 'Apple Speech API provides instant real-time preview. whisper.cpp then auto-replaces with high-accuracy final result. Zero perceived latency.',
     jp_feat3_title: '10+ Language-Specific Models',
-    jp_feat3_desc: 'Kotoba v2.0 for Japanese, Belle Turbo for Chinese, plus specialized models for Korean, French, and Italian. Auto-downloads the best model when you change language.',
+    jp_feat3_desc: 'Default is Large V3 Turbo Q5. Belle Turbo for Chinese, plus specialized models for Korean, French, and Italian. Auto-downloads the best model when you change language.',
     jp_feat4_title: 'Text Expansion Dictionary',
     jp_feat4_desc: 'Auto-expand abbreviations to full phrases with O(1) fast lookup.',
     jp_feat5_title: 'LLM Post-Processing (Local / Cloud)',
@@ -1104,8 +1107,8 @@ footer a{color:#777}
     feat_section_title: 'Features',
     feat_section_heading: 'Voice input for developers',
     feat_section_desc: 'Type at the speed of thought without leaving your keyboard.',
-    feat1_title: 'Global Hotkey', feat1_desc: 'Instantly activate from any app with \u2318\u2325V. Hold or toggle mode. ESC to cancel.',
-    feat2_title: 'Auto-Stop on Silence', feat2_desc: 'Automatically starts recognition after 0.85s of silence.',
+    feat1_title: 'Global Hotkey', feat1_desc: 'Instantly activate from any app with \u2318\u2325V or \u2303K. Hold or toggle mode. ESC to cancel.',
+    feat2_title: 'Auto-Stop on Silence', feat2_desc: 'Automatically starts recognition after 2s of silence.',
     feat3_title: 'Per-App Settings', feat3_desc: 'Auto-switch language, prompt, and LLM instructions per app.',
     feat4_title: 'Meeting Minutes Mode', feat4_desc: 'Record speech with timestamps. Exports as text file.',
     feat5_title: 'Completely Private', feat5_desc: 'No audio data ever leaves your device. 100% local processing.',
@@ -1134,7 +1137,7 @@ footer a{color:#777}
     install_step2_title: 'Auto-setup on first launch',
     install_step2_desc: 'whisper.cpp + Metal GPU is bundled. The speech model downloads automatically on first launch.',
     install_step3_title: 'Grant permissions',
-    install_step3_desc: 'Allow Microphone & Accessibility permissions. Press \u2318\u2325V to start.',
+    install_step3_desc: 'Allow Microphone permission. Accessibility is optional (enables auto-paste). Press \u2318\u2325V to start.',
     install_detail: 'For detailed instructions, see <a href="https://github.com/yukihamada/Koe-swift#インストール" target="_blank">GitHub README</a>',
     oss_section_title: 'Open Source', oss_section_heading: '100% Free \u2014 MIT License',
     oss_desc: 'All code is public. Fork, modify, and use commercially.',
@@ -1148,13 +1151,13 @@ footer a{color:#777}
     ja: {
       hero_title_suffix: '(声)',
       hero_tagline: 'Mac で最も速い日本語音声入力',
-      hero_sub: 'whisper.cpp + Metal/CUDA GPU — 完全ローカル処理・20言語対応・言語別専用モデル自動選択・クラウド不要',
+      hero_sub: 'Apple Speech + whisper.cpp ハイブリッド認識 — 完全ローカル処理・20言語対応・Mac App Store 対応',
       dl_dmg: 'DMG をダウンロード',
       dl_pkg: 'PKG をダウンロード',
       dl_sub: 'macOS 13+ / Apple Silicon & Intel 対応 / 無料・オープンソース',
       dl_compare_dmg: '<strong>DMG 版</strong> — ドラッグ&ドロップでインストール。自分で Applications に配置。アンインストールはゴミ箱に入れるだけ。',
       dl_compare_pkg: '<strong>PKG 版</strong> — ダブルクリックで自動インストール。Applications に自動配置。初心者におすすめ。',
-      stat_speed_val: '< 0.5秒',
+      stat_speed_val: '即座',
       stat_speed_label: '音声認識速度',
       stat_local_label: 'ローカル処理',
       stat_cost_val: '0円',
@@ -1200,10 +1203,10 @@ footer a{color:#777}
       jp_section_desc: 'macOS標準の音声入力では満足できない。Koe は日本語の認識精度と速度を徹底的に追求しました。',
       jp_feat1_title: 'アプリ別プロンプト最適化',
       jp_feat1_desc: 'ターミナルでは「git commit」「kubectl」、Xcodeでは「SwiftUI」「@State」など、使用中のアプリに合わせてWhisperへのヒントを自動切替。専門用語の認識精度が飛躍的に向上。',
-      jp_feat2_title: '投機的実行 (Speculative Execution)',
-      jp_feat2_desc: '話し終わった瞬間にWhisperへ送信開始。0.85秒の無音確認を待たず、結果を先取りキャッシュ。体感レイテンシ500ms削減。',
+      jp_feat2_title: 'ハイブリッド認識 (Apple Speech + whisper)',
+      jp_feat2_desc: 'Apple Speech APIでリアルタイムプレビューを即座に表示・入力。その後whisper.cppが高精度な最終結果で自動置換。体感ゼロ遅延を実現。',
       jp_feat3_title: '10+言語別専用モデル (自動切替)',
-      jp_feat3_desc: '日本語はKotoba v2.0、中国語はBelle Turbo、韓国語・フランス語・イタリア語にもそれぞれ専用モデルを搭載。言語切替時に最適モデルを自動ダウンロード＆適用。10以上のモデルから手動切替も可能。',
+      jp_feat3_desc: 'デフォルトはLarge V3 Turbo Q5。中国語はBelle Turbo、韓国語・フランス語・イタリア語にもそれぞれ専用モデルを搭載。言語切替時に最適モデルを自動ダウンロード＆適用。10以上のモデルから手動切替も可能。',
       jp_feat4_title: 'テキスト展開辞書',
       jp_feat4_desc: '「メアド」→ メールアドレスに自動展開。「じゅうしょ」→ 住所に変換。よく使うフレーズをO(1)高速ルックアップ。',
       jp_feat5_title: 'LLM後処理 (ローカル / クラウド)',
@@ -1214,9 +1217,9 @@ footer a{color:#777}
       feat_section_heading: '開発者のための音声入力',
       feat_section_desc: 'キーボードから手を離さずに、思考の速度でテキスト入力。',
       feat1_title: 'グローバルホットキー',
-      feat1_desc: '⌘⌥V でどのアプリからでも即起動。ホールド / トグルモード選択可。ESCでキャンセル。',
+      feat1_desc: '⌘⌥V または ⌃K でどのアプリからでも即起動。ホールド / トグルモード選択可。ESCでキャンセル。',
       feat2_title: '無音自動停止',
-      feat2_desc: '話し終わると0.85秒で自動的に認識開始。長い発話はSpace長押しで延長。',
+      feat2_desc: '話し終わると2秒で自動的に認識開始。長い発話はSpace長押しで延長。',
       feat3_title: 'アプリ別設定',
       feat3_desc: 'Terminal、VS Code、Xcode…アプリごとに言語・プロンプト・LLM指示を自動切替。',
       feat4_title: '議事録モード',
@@ -1231,11 +1234,11 @@ footer a{color:#777}
       feat8_desc: '修正した内容を自動保存し、次回の認識精度に反映。使い続けるほど賢くなる。',
       feat9_title: '20言語対応',
       feat9_desc: '日本語・英語・中国語・韓国語・フランス語・イタリア語など20言語。各言語に最適なモデルを自動選択。',
-      new_section_title: 'v2.1 新機能',
-      new_section_heading: '大幅アップデート',
-      new_section_desc: '入力モード切替、言語別AIモデル自動選択、IME切替、自動学習など。',
+      new_section_title: 'v2.2 新機能',
+      new_section_heading: 'ハイブリッド認識エンジン',
+      new_section_desc: 'Apple Speech でリアルタイムプレビュー + whisper で高精度確定。Mac App Store にも対応。',
       new1_title: '言語別専用モデル自動選択',
-      new1_desc: '言語を切り替えると、その言語に最適化されたWhisperモデルを自動ダウンロード＆切替。日本語→Kotoba v2、中国語→Belle Turbo、韓国語→Korean Medium、フランス語→French Q5、イタリア語→Italian Distil。その他の言語はLarge V3 Turbo Q5で高精度カバー。',
+      new1_desc: '言語を切り替えると、その言語に最適化されたWhisperモデルを自動ダウンロード＆切替。デフォルトはLarge V3 Turbo Q5。中国語→Belle Turbo、韓国語→Korean Medium、フランス語→French Q5、イタリア語→Italian Distilなど言語別に最適モデルを自動選択。',
       new2_title: '2つの入力モード',
       new2_desc: '<strong>声入力モード</strong>（デフォルト）: オーバーレイでプレビュー表示してから入力。<strong>直接入力モード</strong>: リアルタイムにテキストフィールドへストリーミング入力。認識途中のテキストも即座に表示。',
       new3_title: 'IME自動切替 (Karabiner互換)',
@@ -1279,7 +1282,7 @@ footer a{color:#777}
       cmp_macos: 'macOS標準',
       cmp_cloud: 'クラウドSTT',
       cmp_accuracy: '日本語精度',
-      cmp_accuracy_koe: '◎ Kotoba v2.0 / large-v3',
+      cmp_accuracy_koe: '◎ Large V3 Turbo + Apple Speech',
       cmp_accuracy_macos: '△ やや低い',
       cmp_accuracy_cloud: '○ 高い',
       cmp_speed: '速度',
@@ -1309,9 +1312,9 @@ footer a{color:#777}
       install_step1_title: 'インストーラーを実行',
       install_step1_desc: '<a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">Koe.pkg</a> をダウンロードしてダブルクリック。ガイドに従うだけ。<br><span style="font-size:12px;color:#555">上級者は <a href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">DMG版</a> も利用可能</span>',
       install_step2_title: '初回起動で自動セットアップ',
-      install_step2_desc: 'whisper.cpp + Metal GPU はアプリに内蔵済み。音声認識モデル (Kotoba Whisper v2.0) が初回起動時に自動ダウンロード。',
+      install_step2_desc: 'whisper.cpp + Metal GPU はアプリに内蔵済み。音声認識モデル (Large V3 Turbo Q5) が初回起動時に自動ダウンロード。',
       install_step3_title: '権限を許可して完了',
-      install_step3_desc: 'マイク・アクセシビリティ権限を許可。⌘⌥V を押せば即座に音声入力開始。',
+      install_step3_desc: 'マイク権限を許可。アクセシビリティは任意（自動ペーストに必要）。⌘⌥V で音声入力開始。',
       install_detail: '詳しいセットアップ手順は <a href="https://github.com/yukihamada/Koe-swift#インストール" target="_blank">GitHub README</a> をご覧ください',
       oss_section_title: 'オープンソース',
       oss_section_heading: '100% 無料・MIT License',
@@ -1327,9 +1330,9 @@ footer a{color:#777}
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — 完全本地处理・20种语言・语言专用模型自动选择・无需云端',
       dl_pkg: '下载 PKG（推荐）', dl_dmg: '下载 DMG',
       dl_sub: 'macOS 13+ / Apple Silicon & Intel / 免费开源',
-      stat_speed_val: '< 0.5秒', stat_speed_label: '识别速度', stat_local_label: '本地处理', stat_cost_val: '¥0', stat_cost_label: '月费', stat_lang_val: '20种语言', stat_lang_label: '支持语言', stat_model_val: '10+', stat_model_label: '专用模型',
+      stat_speed_val: '即座', stat_speed_label: '识别速度', stat_local_label: '本地处理', stat_cost_val: '¥0', stat_cost_label: '月费', stat_lang_val: '20种语言', stat_lang_label: '支持语言', stat_model_val: '10+', stat_model_label: '专用模型',
       new_section_title: 'v2.1 新功能', new_section_heading: '重大更新', new_section_desc: '输入模式切换、语言专用AI模型、IME切换、自动学习等。',
-      new1_title: '语言专用模型自动选择', new1_desc: '切换语言时自动下载并启用最佳Whisper模型：日语→Kotoba v2、中文→Belle Turbo、韩语→Korean Medium、法语→French Q5、意大利语→Italian Distil。',
+      new1_title: '语言专用模型自动选择', new1_desc: '切换语言时自动下载并启用最佳Whisper模型。默认Large V3 Turbo Q5。中文→Belle Turbo、韩语→Korean Medium、法语→French Q5、意大利语→Italian Distil。',
       new2_title: '两种输入模式', new2_desc: '<strong>语音输入模式</strong>（默认）：悬浮预览后插入。<strong>直接输入模式</strong>：实时流式输入到文本框。',
       new3_title: 'IME自动切换', new3_desc: '左⌘切换英文输入，右⌘切换日文输入。无需Karabiner。',
       new4_title: '自动学习', new4_desc: '自动保存修正数据，频繁修正的词汇会反馈到Whisper提示中。越用越准确。',
@@ -1356,7 +1359,7 @@ footer a{color:#777}
       cmp_accuracy: '中文精度', cmp_accuracy_koe: '◎ Belle Turbo 专用模型',
       jp_feat1_title: '应用级提示优化', jp_feat1_desc: '根据当前应用自动切换Whisper提示词。大幅提升专业术语识别率。',
       jp_feat2_title: '推测执行', jp_feat2_desc: '说完瞬间开始发送到Whisper。体感延迟减少500ms。',
-      jp_feat3_title: '10+语言专用模型', jp_feat3_desc: '日语Kotoba v2.0、中文Belle Turbo、韩语/法语/意大利语各有专用模型。切换语言时自动下载。',
+      jp_feat3_title: '10+语言专用模型', jp_feat3_desc: '默认Large V3 Turbo Q5。中文Belle Turbo、韩语/法语/意大利语各有专用模型。切换语言时自动下载。',
       jp_feat4_title: '文本展开词典', jp_feat4_desc: '缩写自动展开为完整短语。O(1)快速查找。',
       jp_feat5_title: 'LLM后处理', jp_feat5_desc: '用LLM自动修正。可通过llama.cpp本地运行。按应用配置。',
       jp_feat6_title: '唤醒词 <span style="font-size:11px;color:#ff9500;font-weight:600;background:rgba(255,149,0,.15);padding:2px 6px;border-radius:4px;margin-left:4px">Beta</span>',
@@ -1387,7 +1390,7 @@ footer a{color:#777}
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — 完全本地處理・20種語言・語言專用模型自動選擇・無需雲端',
       dl_pkg: '下載 PKG（推薦）', dl_dmg: '下載 DMG',
       dl_sub: 'macOS 13+ / Apple Silicon & Intel / 免費開源',
-      stat_speed_val: '< 0.5秒', stat_speed_label: '識別速度', stat_local_label: '本地處理', stat_cost_val: 'NT$0', stat_cost_label: '月費', stat_lang_val: '20種語言', stat_lang_label: '支援語言', stat_model_val: '10+', stat_model_label: '專用模型',
+      stat_speed_val: '即座', stat_speed_label: '識別速度', stat_local_label: '本地處理', stat_cost_val: 'NT$0', stat_cost_label: '月費', stat_lang_val: '20種語言', stat_lang_label: '支援語言', stat_model_val: '10+', stat_model_label: '專用模型',
       new_section_title: 'v2.1 新功能', new_section_heading: '重大更新', new_section_desc: '輸入模式切換、語言專用AI模型、IME切換、自動學習等。',
       feat_section_title: '功能', feat_section_heading: '為所有人設計的語音輸入',
       ml_section_title: '多語言支援', ml_section_heading: '為每種語言最佳化的AI模型',
@@ -1401,9 +1404,9 @@ footer a{color:#777}
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — 완전 로컬 처리・20개 언어・언어별 전용 모델 자동 선택・클라우드 불필요',
       dl_pkg: 'PKG 다운로드 (권장)', dl_dmg: 'DMG 다운로드',
       dl_sub: 'macOS 13+ / Apple Silicon & Intel / 무료 오픈소스',
-      stat_speed_val: '< 0.5초', stat_speed_label: '인식 속도', stat_local_label: '로컬 처리', stat_cost_val: '₩0', stat_cost_label: '월 비용', stat_lang_val: '20개 언어', stat_lang_label: '지원 언어', stat_model_val: '10+', stat_model_label: '전용 모델',
+      stat_speed_val: '즉시', stat_speed_label: '인식 속도', stat_local_label: '로컬 처리', stat_cost_val: '₩0', stat_cost_label: '월 비용', stat_lang_val: '20개 언어', stat_lang_label: '지원 언어', stat_model_val: '10+', stat_model_label: '전용 모델',
       new_section_title: 'v2.1 새 기능', new_section_heading: '대규모 업데이트', new_section_desc: '입력 모드 전환, 언어별 AI 모델, IME 전환, 자동 학습 등.',
-      new1_title: '언어별 전용 모델 자동 선택', new1_desc: '언어를 전환하면 최적의 Whisper 모델을 자동 다운로드: 일본어→Kotoba v2, 중국어→Belle Turbo, 한국어→Korean Medium, 프랑스어→French Q5.',
+      new1_title: '언어별 전용 모델 자동 선택', new1_desc: '언어를 전환하면 최적의 Whisper 모델을 자동 다운로드. 기본 Large V3 Turbo Q5. 중국어→Belle Turbo, 한국어→Korean Medium, 프랑스어→French Q5.',
       new2_title: '2가지 입력 모드', new2_desc: '<strong>음성 입력 모드</strong>(기본): 오버레이에서 미리보기 후 입력. <strong>직접 입력 모드</strong>: 텍스트 필드에 실시간 스트리밍.',
       new3_title: 'IME 자동 전환', new3_desc: '왼쪽⌘로 영어, 오른쪽⌘로 일본어 입력 전환.',
       new4_title: '자동 학습', new4_desc: '수정 내용을 자동 저장하고 Whisper 프롬프트에 반영. 사용할수록 정확해집니다.',
@@ -1434,7 +1437,7 @@ footer a{color:#777}
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — Procesamiento local, 20 idiomas, selección automática de modelo',
       dl_pkg: 'Descargar PKG (Recomendado)', dl_dmg: 'Descargar DMG',
       dl_sub: 'macOS 13+ / Apple Silicon & Intel / Gratis y código abierto',
-      stat_speed_val: '< 0.5s', stat_speed_label: 'Velocidad', stat_local_label: 'Procesamiento local', stat_cost_val: '$0', stat_cost_label: 'Costo mensual', stat_lang_val: '20 idiomas', stat_lang_label: 'Soportados', stat_model_val: '10+', stat_model_label: 'Modelos especializados',
+      stat_speed_val: 'Instant', stat_speed_label: 'Velocidad', stat_local_label: 'Procesamiento local', stat_cost_val: '$0', stat_cost_label: 'Costo mensual', stat_lang_val: '20 idiomas', stat_lang_label: 'Soportados', stat_model_val: '10+', stat_model_label: 'Modelos especializados',
       new_section_title: 'v2.1 Novedades', new_section_heading: 'Actualización importante', new_section_desc: 'Modos de entrada, modelos AI por idioma, cambio de IME, aprendizaje automático.',
       ml_section_title: 'Multilingüe', ml_section_heading: 'Modelos AI optimizados para cada idioma',
       jp_section_title: 'Optimizado para español', jp_section_heading: 'Diseñado para entrada de voz en español',
@@ -1573,7 +1576,7 @@ footer a{color:#777}
       hero_tagline: 'हिन्दी के लिए अनुकूलित, सबसे तेज़ वॉइस इनपुट',
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — पूरी तरह लोकल, 20 भाषाएँ, ऑटो मॉडल चयन',
       dl_pkg: 'PKG डाउनलोड करें (अनुशंसित)', dl_dmg: 'DMG डाउनलोड करें',
-      stat_speed_val: '< 0.5s', stat_cost_val: '₹0', stat_cost_label: 'मासिक शुल्क', stat_lang_val: '20 भाषाएँ',
+      stat_speed_val: 'Instant', stat_cost_val: '₹0', stat_cost_label: 'मासिक शुल्क', stat_lang_val: '20 भाषाएँ',
       new_section_title: 'v2.1 नई सुविधाएँ', new_section_heading: 'बड़ा अपडेट',
       feat_section_title: 'सुविधाएँ', feat_section_heading: 'सभी के लिए वॉइस इनपुट',
       feat7_title: 'डायरेक्ट इनपुट मोड', feat8_title: 'ऑटो-लर्निंग', feat9_title: '20 भाषाएँ',
@@ -1585,7 +1588,7 @@ footer a{color:#777}
       hero_tagline: 'การป้อนเสียงที่เร็วที่สุด ปรับแต่งสำหรับภาษาไทย',
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — ประมวลผลในเครื่อง, 20 ภาษา, เลือกโมเดลอัตโนมัติ',
       dl_pkg: 'ดาวน์โหลด PKG (แนะนำ)', dl_dmg: 'ดาวน์โหลด DMG',
-      stat_speed_val: '< 0.5วิ', stat_cost_val: '฿0', stat_lang_val: '20 ภาษา',
+      stat_speed_val: 'ทันที', stat_cost_val: '฿0', stat_lang_val: '20 ภาษา',
       new_section_title: 'v2.1 ฟีเจอร์ใหม่', new_section_heading: 'อัปเดตครั้งใหญ่',
       feat_section_title: 'ฟีเจอร์', feat_section_heading: 'การป้อนเสียงสำหรับทุกคน',
       feat7_title: 'โหมดป้อนตรง', feat8_title: 'เรียนรู้อัตโนมัติ', feat9_title: '20 ภาษา',
@@ -1597,7 +1600,7 @@ footer a{color:#777}
       hero_tagline: 'Nhập liệu giọng nói nhanh nhất, tối ưu cho tiếng Việt',
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — Xử lý cục bộ, 20 ngôn ngữ, tự động chọn mô hình',
       dl_pkg: 'Tải PKG (Khuyến nghị)', dl_dmg: 'Tải DMG',
-      stat_speed_val: '< 0.5s', stat_cost_val: '0₫', stat_lang_val: '20 ngôn ngữ',
+      stat_speed_val: 'Instant', stat_cost_val: '0₫', stat_lang_val: '20 ngôn ngữ',
       new_section_title: 'v2.1 Tính năng mới', new_section_heading: 'Cập nhật lớn',
       feat_section_title: 'Tính năng', feat_section_heading: 'Nhập liệu bằng giọng nói cho mọi người',
       feat7_title: 'Chế độ nhập trực tiếp', feat8_title: 'Tự học', feat9_title: '20 ngôn ngữ',
@@ -1657,7 +1660,7 @@ footer a{color:#777}
       hero_tagline: 'أسرع إدخال صوتي، محسّن للغة العربية',
       hero_sub: 'whisper.cpp + Metal/CUDA GPU — معالجة محلية، 20 لغة، اختيار تلقائي للنموذج',
       dl_pkg: 'تحميل PKG (موصى به)', dl_dmg: 'تحميل DMG',
-      stat_speed_val: '< 0.5ث', stat_cost_val: '$0', stat_lang_val: '20 لغة',
+      stat_speed_val: 'فوري', stat_cost_val: '$0', stat_lang_val: '20 لغة',
       new_section_title: 'v2.1 جديد', new_section_heading: 'تحديث كبير',
       feat_section_title: 'الميزات', feat_section_heading: 'إدخال صوتي للجميع',
       feat7_title: 'وضع الإدخال المباشر', feat8_title: 'تعلم تلقائي', feat9_title: '20 لغة',

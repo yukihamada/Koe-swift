@@ -20,6 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var carbonTranslateHotKeyRef: EventHotKeyRef?
     private var carbonSpaceHotKeyRef: EventHotKeyRef?
     private var carbonEscHotKeyRef: EventHotKeyRef?
+    private var carbonCmdKHotKeyRef: EventHotKeyRef?
     private var levelTimer: Timer?
     private var isRecording      = false
     private var recordingStart:  Date?
@@ -43,6 +44,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Speculative execution
     private var speculativeResult: String? = nil
     private var speculationID = 0
+    // ストリーミング中の最新認識結果（投機とは独立）
+    private var lastStreamingResult: String? = nil
+    private var lastStreamingSampleCount = 0
+    // Apple Speechで先行入力したテキスト（whisper結果で置換用）
+    private var appleSpechPreliminary: String? = nil
 
     // Streaming preview
     private var streamingTimer: Timer?
@@ -104,19 +110,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             finishLaunch()
         }
 
-        // アクセシビリティ権限がない場合はダイアログで案内
+        // アクセシビリティ権限がない場合 — 基本機能は動作するが自動ペーストにはアクセシビリティが必要
         if !AXIsProcessTrusted() {
-            let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-            _ = AXIsProcessTrustedWithOptions(opts)
-
-            let alert = NSAlert()
-            alert.messageText = L10n.accessibilityAlertTitle
-            alert.informativeText = L10n.accessibilityAlertMessage
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: L10n.openSystemSettings)
-            alert.addButton(withTitle: L10n.later)
-            if alert.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            klog("Accessibility not granted — clipboard-only mode (auto-paste disabled)")
+            // システム環境設定のアクセシビリティ画面を開く
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                NSWorkspace.shared.open(url)
             }
         }
     }
@@ -309,11 +308,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Carbon Hot Key API でメインホットキーを登録（アクセシビリティ不要）
         registerCarbonHotKey(settings: settings)
 
-        // Global monitor は補助キー用 (Space延長, ESCキャンセル, modifier release)
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.keyDown, .keyUp, .flagsChanged]
-        ) { [weak self] event in
-            self?.handleEvent(event, settings: settings)
+        // Global monitor は補助機能用 (IME切替, modifier release) — アクセシビリティ必要
+        // Space/ESC は Carbon Hot Key で処理するため monitor がなくても基本機能は動作
+        if AXIsProcessTrusted() {
+            eventMonitor = NSEvent.addGlobalMonitorForEvents(
+                matching: [.keyDown, .keyUp, .flagsChanged]
+            ) { [weak self] event in
+                self?.handleEvent(event, settings: settings)
+            }
+        } else {
+            klog("Skipping global event monitor (no accessibility)")
         }
         rebuildMenu()
         klog("Hotkey registered: \(settings.shortcutDisplayString)")
@@ -353,8 +357,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let settings = AppSettings.shared
             let isToggle = settings.recordingMode == .toggle
 
-            if hotKeyID.id == 1 {
-                // メインホットキー pressed
+            if hotKeyID.id == 1 || hotKeyID.id == 5 {
+                // メインホットキー or ⌘K pressed
                 DispatchQueue.main.async {
                     if isToggle {
                         delegate.isRecording ? delegate.stopAndRecognize() : delegate.startRecording()
@@ -410,7 +414,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let delegate = AppDelegate.shared else { return noErr }
             let isToggle = AppSettings.shared.recordingMode == .toggle
 
-            if hotKeyID.id == 1 && !isToggle && delegate.isRecording {
+            if (hotKeyID.id == 1 || hotKeyID.id == 5) && !isToggle && delegate.isRecording {
                 DispatchQueue.main.async { delegate.stopAndRecognize() }
             } else if hotKeyID.id == 2 && !isToggle && delegate.isRecording && delegate.isTranslateMode {
                 DispatchQueue.main.async { delegate.stopAndRecognize() }
@@ -437,6 +441,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let transStatus = RegisterEventHotKey(UInt32(settings.translateHotkeyCode), transMods,
                                                transID, GetApplicationEventTarget(), 0, &carbonTranslateHotKeyRef)
         klog("Carbon hotkey translate: status=\(transStatus)")
+
+        // ⌃K ショートカット（追加のクイック起動キー）
+        if let ref = carbonCmdKHotKeyRef {
+            UnregisterEventHotKey(ref)
+            carbonCmdKHotKeyRef = nil
+        }
+        var ctrlKID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 5)
+        let ctrlKStatus = RegisterEventHotKey(UInt32(kVK_ANSI_K), UInt32(controlKey),
+                                               ctrlKID, GetApplicationEventTarget(), 0, &carbonCmdKHotKeyRef)
+        klog("Carbon hotkey ⌃K: status=\(ctrlKStatus)")
     }
 
     /// 録音中のみ有効な Space/ESC ホットキーを登録
@@ -613,6 +627,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         activeAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         klog("startRecording from app: \(activeAppBundleID)")
         isRecording    = true
+        lastStreamingResult = nil
+        lastStreamingSampleCount = 0
         recordingStart = Date()
         speechDetected = false
         silenceStart   = nil
@@ -639,6 +655,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         unregisterRecordingHotKeys()  // Space/ESC 解除
         levelTimer?.invalidate(); levelTimer = nil
         streamingTimer?.invalidate(); streamingTimer = nil
+        // Apple Speech ストリーミングを終了
+        streamingRecognitionRequest?.endAudio()
+        streamingRecognitionTask?.cancel()
+        streamingRecognitionRequest = nil
+        streamingRecognitionTask = nil
         overlay?.updateLevel(0)
         overlay?.clearStreamingText()
         klog("stopAndRecognize")
@@ -654,6 +675,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
            !AudioDSP.hasVoice(wavSamples, threshold: 0.003, minVoiceFrames: 3) {
             klog("stopAndRecognize: no voice detected, skipping recognition")
             overlay?.hide()
+            // 議事録モード中は無音でも自動録音ループを継続
+            if MeetingMode.shared.isActive {
+                postRecognitionCleanup()
+                return
+            }
             if AppSettings.shared.wakeWordEnabled {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
             }
@@ -707,6 +733,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.postRecognitionCleanup()
             }
             return
+        }
+
+        // Apple Speechの結果を先に入力（即時フィードバック）
+        if let streaming = lastStreamingResult {
+            klog("Apple Speech result: '\(streaming)'")
+            lastStreamingResult = nil
+            speculativeResult = nil
+            // 先にApple Speechの結果を入力
+            let streamingExpanded = AppSettings.shared.expand(streaming)
+            self.typer.typeInto(streamingExpanded, bundleID: self.activeAppBundleID)
+            appleSpechPreliminary = streamingExpanded
         }
 
         // 投機実行の結果がすでに届いていればそれを使う（whisper呼び出しをスキップ）
@@ -775,13 +812,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlay?.hide()
                 klog("final: '\(final)'")
                 if !final.isEmpty {
+                    // Apple Speechで先行入力済みなら、BackSpaceで消してwhisper結果に置換
+                    if let preliminary = self.appleSpechPreliminary {
+                        klog("Replacing Apple Speech '\(preliminary)' → whisper '\(final)'")
+                        if preliminary != final {
+                            // 先行入力を削除してからwhisper結果を入力
+                            self.typer.deleteAndReplace(oldText: preliminary, newText: final, bundleID: self.activeAppBundleID)
+                        }
+                        self.appleSpechPreliminary = nil
+                    } else {
+                        if AppSettings.shared.streamingPreviewEnabled {
+                            self.typer.typeInto(final, bundleID: self.activeAppBundleID)
+                        } else {
+                            self.typer.finalizeStreaming(final, bundleID: self.activeAppBundleID)
+                        }
+                    }
                     HistoryStore.shared.add(final)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
-                    if AppSettings.shared.streamingPreviewEnabled {
-                        self.typer.typeInto(final, bundleID: self.activeAppBundleID)
-                    } else {
-                        self.typer.finalizeStreaming(final, bundleID: self.activeAppBundleID)
-                    }
                     CorrectionStore.shared.trackDelivery(original: final, appBundleID: self.activeAppBundleID)
                     self.publishHandoffActivity(text: final)
                     if AppSettings.shared.autoCopyToClipboard {
@@ -859,48 +906,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Streaming Preview
 
-    /// 録音中に定期的に中間認識を実行してオーバーレイに表示する。
-    /// whisper.cpp のみ対応。1.5秒ごとに現在のバッファで推論する。
+    /// 録音中にApple Speech APIでリアルタイムプレビューを表示する。
+    /// whisper.cppのGPUリソースを消費しないため、最終認識が高速になる。
+    private var streamingRecognizer: SFSpeechRecognizer?
+    private var streamingRecognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var streamingRecognitionTask: SFSpeechRecognitionTask?
+
     private func startStreamingPreview() {
-        guard AppSettings.shared.streamingPreviewEnabled,
-              AppSettings.shared.recognitionEngine == .whisperCpp,
-              WhisperContext.shared.isLoaded else { return }
+        guard AppSettings.shared.streamingPreviewEnabled else { return }
 
-        let profile = AppSettings.shared.profile(for: activeAppBundleID)
-        let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
-        let lang = rawLang == "auto" ? "auto" : (rawLang.components(separatedBy: "-").first ?? "en")
+        // Apple Speech APIでリアルタイムプレビュー（whisperとは独立）
+        let lang = AppSettings.shared.language
+        let locale = lang == "auto" ? Locale.current : Locale(identifier: lang)
+        guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else { return }
+        streamingRecognizer = recognizer
 
-        streamingTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
-            guard let self, self.isRecording else { return }
-            // 前回のストリーミング推論がまだ進行中ならスキップ
-            guard !self.isStreamingInFlight else { return }
-            // 録音開始から1秒未満はスキップ（音声が短すぎる）
-            guard let start = self.recordingStart, Date().timeIntervalSince(start) >= 1.0 else { return }
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        if #available(macOS 13, *) {
+            request.addsPunctuation = true
+        }
+        streamingRecognitionRequest = request
 
-            guard let samples = self.recorder.currentSamples(), samples.count > 8000 else { return }
+        // 録音バッファをApple Speechに定期的に送る
+        streamingTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+            guard let self, self.isRecording,
+                  let samples = self.recorder.currentSamples(), !samples.isEmpty else { return }
+            // 前回からの差分だけ送る
+            let newCount = samples.count - self.lastStreamingSampleCount
+            guard newCount > 0 else { return }
+            let newSamples = Array(samples.suffix(newCount))
+            self.lastStreamingSampleCount = samples.count
 
-            self.isStreamingInFlight = true
-            WhisperContext.shared.transcribeBuffer(samples: samples, language: lang) { [weak self] text in
-                guard let self, self.isRecording else {
-                    self?.isStreamingInFlight = false
-                    return
-                }
-                self.isStreamingInFlight = false
-                if let text, !text.isEmpty {
-                    if text.count <= 5 {
-                        // 5文字以下は不安定な結果 → 認識中表示
-                        let lang = AppSettings.shared.language
-                        let placeholder = lang.hasPrefix("ja") ? "音声認識中..." : "Recognizing..."
-                        self.overlay?.updateStreamingText(placeholder)
-                    } else {
-                        if AppSettings.shared.streamingPreviewEnabled {
-                            // オーバーレイモード: プレビュー表示
-                            self.overlay?.updateStreamingText(text)
-                        } else {
-                            // 直接入力モード: テキストフィールドにリアルタイム入力
-                            self.typer.typeStreaming(text, bundleID: self.activeAppBundleID)
-                        }
-                    }
+            // Float32 → PCMBuffer
+            let format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(newSamples.count)) else { return }
+            buffer.frameLength = AVAudioFrameCount(newSamples.count)
+            let dst = buffer.floatChannelData![0]
+            for i in 0..<newSamples.count { dst[i] = newSamples[i] }
+            request.append(buffer)
+        }
+
+        streamingRecognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self, let result else { return }
+            let text = result.bestTranscription.formattedString
+            if !text.isEmpty {
+                self.lastStreamingResult = text
+                if self.isRecording {
+                    self.overlay?.updateStreamingText(text)
                 }
             }
         }
@@ -935,8 +988,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else if speechDetected && level < silenceThreshold {
             if silenceStart == nil {
                 silenceStart = Date()
-                // 無音検知開始と同時に投機実行を起動
-                startSpeculation()
             }
             if let s = silenceStart, Date().timeIntervalSince(s) >= silenceAutoStop {
                 klog("Auto-stop: silence detected after speech")
@@ -950,6 +1001,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         klog("cancelRecording (recording=\(isRecording) recognizing=\(isRecognizing))")
         levelTimer?.invalidate(); levelTimer = nil
         streamingTimer?.invalidate(); streamingTimer = nil
+        streamingRecognitionRequest?.endAudio()
+        streamingRecognitionTask?.cancel()
+        streamingRecognitionRequest = nil
+        streamingRecognitionTask = nil
         overlay?.updateLevel(0)
         overlay?.clearStreamingText()
         // 直接入力モードの場合、入力済みストリーミングテキストを削除

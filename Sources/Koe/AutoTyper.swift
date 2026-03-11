@@ -1,9 +1,13 @@
 import AppKit
 import Carbon.HIToolbox
+import UserNotifications
 
 class AutoTyper {
     /// 直接入力モード: 前回ストリーミングで入力した文字数
     private var streamingCharCount = 0
+
+    /// アクセシビリティ権限があるか（CGEvent でキー送信可能か）
+    private var canUseCGEvent: Bool { AXIsProcessTrusted() }
 
     func type(_ text: String) {
         typeInto(text, bundleID: nil)
@@ -15,7 +19,6 @@ class AutoTyper {
            let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
            !app.isActive {
             app.activate()
-            // アプリがフォーカスを受け取るまで少し待つ
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
                 self.paste(text)
             }
@@ -30,37 +33,48 @@ class AutoTyper {
         pb.clearContents()
         pb.setString(text, forType: .string)
 
-        postKey(keyCode: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            pb.clearContents()
-            if let prev { pb.setString(prev, forType: .string) }
+        if canUseCGEvent {
+            postKey(keyCode: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                pb.clearContents()
+                if let prev { pb.setString(prev, forType: .string) }
+            }
+        } else {
+            // アクセシビリティなし: クリップボードに置くだけ（復元しない）
+            showClipboardHint()
         }
     }
 
     /// ストリーミング認識テキストを直接入力（前回分を削除して上書き）
     func typeStreaming(_ text: String, bundleID: String?) {
-        // 前回入力分をバックスペースで削除
-        if streamingCharCount > 0 {
-            deleteBackward(count: streamingCharCount)
-            Thread.sleep(forTimeInterval: 0.02)
-        }
-        streamingCharCount = text.count
-        if let bundleID, !bundleID.isEmpty,
-           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
-           !app.isActive {
-            app.activate()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                self.pasteStreaming(text)
+        if canUseCGEvent {
+            // 前回入力分をバックスペースで削除
+            if streamingCharCount > 0 {
+                deleteBackward(count: streamingCharCount)
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+            streamingCharCount = text.count
+            if let bundleID, !bundleID.isEmpty,
+               let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first,
+               !app.isActive {
+                app.activate()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                    self.pasteStreaming(text)
+                }
+            } else {
+                pasteStreaming(text)
             }
         } else {
-            pasteStreaming(text)
+            // アクセシビリティなし: クリップボードを更新するだけ
+            streamingCharCount = 0
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
         }
     }
 
     /// ストリーミング入力を確定（最終結果で上書き）
     func finalizeStreaming(_ text: String, bundleID: String?) {
-        if streamingCharCount > 0 {
+        if canUseCGEvent && streamingCharCount > 0 {
             deleteBackward(count: streamingCharCount)
             Thread.sleep(forTimeInterval: 0.02)
         }
@@ -68,12 +82,23 @@ class AutoTyper {
         typeInto(text, bundleID: bundleID)
     }
 
+    /// Apple Speech先行入力をwhisper結果で置換
+    func deleteAndReplace(oldText: String, newText: String, bundleID: String?) {
+        if canUseCGEvent {
+            // 先行入力分をBackSpaceで削除
+            deleteBackward(count: oldText.count)
+            Thread.sleep(forTimeInterval: 0.03)
+        }
+        // whisper結果をペースト
+        typeInto(newText, bundleID: bundleID)
+    }
+
     /// ストリーミング入力をキャンセル（入力済みテキストを削除）
     func cancelStreaming() {
-        if streamingCharCount > 0 {
+        if canUseCGEvent && streamingCharCount > 0 {
             deleteBackward(count: streamingCharCount)
-            streamingCharCount = 0
         }
+        streamingCharCount = 0
     }
 
     private func pasteStreaming(_ text: String) {
@@ -87,6 +112,25 @@ class AutoTyper {
             if let prev { pb.setString(prev, forType: .string) }
         }
     }
+
+    // MARK: - Clipboard Hint (アクセシビリティ不要モード)
+
+    /// 「⌘V でペースト」の一時通知を表示
+    private func showClipboardHint() {
+        DispatchQueue.main.async {
+            let content = UNMutableNotificationContent()
+            content.title = "Koe"
+            content.body = "⌘V でペースト"
+            let request = UNNotificationRequest(identifier: "koe-paste-hint", content: content, trigger: nil)
+            UNUserNotificationCenter.current().add(request)
+            // 2秒後に自動消去
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["koe-paste-hint"])
+            }
+        }
+    }
+
+    // MARK: - CGEvent Key Simulation (アクセシビリティ必要)
 
     private func deleteBackward(count: Int) {
         let src = CGEventSource(stateID: .hidSystemState)
@@ -111,7 +155,7 @@ class AutoTyper {
         down.flags = flags
         up.flags   = flags
         down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.012)  // 12ms: アプリが認識できる最短時間
+        Thread.sleep(forTimeInterval: 0.012)
         up.post(tap: .cghidEventTap)
     }
 }

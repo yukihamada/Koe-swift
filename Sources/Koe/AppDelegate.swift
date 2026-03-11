@@ -16,6 +16,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var speech    = SpeechEngine()
     private let typer     = AutoTyper()
     private var eventMonitor: Any?
+    private var carbonHotKeyRef: EventHotKeyRef?
+    private var carbonTranslateHotKeyRef: EventHotKeyRef?
     private var levelTimer: Timer?
     private var isRecording      = false
     private var recordingStart:  Date?
@@ -100,10 +102,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             finishLaunch()
         }
 
-        // アクセシビリティ権限がない場合はバックグラウンドで許可を要求
+        // アクセシビリティ権限がない場合はダイアログで案内
         if !AXIsProcessTrusted() {
             let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(opts)
+
+            let alert = NSAlert()
+            alert.messageText = "アクセシビリティ権限が必要です"
+            alert.informativeText = "⌥⌘V ショートカットを使うには、システム設定 → プライバシーとセキュリティ → アクセシビリティ で Koe を許可してください。\n\n許可後にアプリを再起動してください。"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "設定を開く")
+            alert.addButton(withTitle: "後で")
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+            }
         }
     }
 
@@ -291,6 +303,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func reregisterHotkey() {
         if let m = eventMonitor { NSEvent.removeMonitor(m); eventMonitor = nil }
         let settings = AppSettings.shared
+
+        // Carbon Hot Key API でメインホットキーを登録（アクセシビリティ不要）
+        registerCarbonHotKey(settings: settings)
+
+        // Global monitor は補助キー用 (Space延長, ESCキャンセル, modifier release)
         eventMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.keyDown, .keyUp, .flagsChanged]
         ) { [weak self] event in
@@ -298,6 +315,98 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         rebuildMenu()
         klog("Hotkey registered: \(settings.shortcutDisplayString)")
+    }
+
+    // MARK: - Carbon Hot Key (アクセシビリティ不要)
+
+    private func registerCarbonHotKey(settings: AppSettings) {
+        // 既存のCarbon Hot Keyを解除
+        if let ref = carbonHotKeyRef {
+            UnregisterEventHotKey(ref)
+            carbonHotKeyRef = nil
+        }
+        if let ref = carbonTranslateHotKeyRef {
+            UnregisterEventHotKey(ref)
+            carbonTranslateHotKeyRef = nil
+        }
+
+        // Carbon modifier変換
+        func carbonMods(_ nsMods: NSEvent.ModifierFlags) -> UInt32 {
+            var m: UInt32 = 0
+            if nsMods.contains(.command) { m |= UInt32(cmdKey) }
+            if nsMods.contains(.option)  { m |= UInt32(optionKey) }
+            if nsMods.contains(.control) { m |= UInt32(controlKey) }
+            if nsMods.contains(.shift)   { m |= UInt32(shiftKey) }
+            return m
+        }
+
+        // イベントハンドラをインストール（初回のみ）
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
+            var hotKeyID = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                              EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+            guard let delegate = AppDelegate.shared else { return noErr }
+            let settings = AppSettings.shared
+            let isToggle = settings.recordingMode == .toggle
+
+            if hotKeyID.id == 1 {
+                // メインホットキー pressed
+                DispatchQueue.main.async {
+                    if isToggle {
+                        delegate.isRecording ? delegate.stopAndRecognize() : delegate.startRecording()
+                    } else if !delegate.isRecording {
+                        delegate.startRecording()
+                    }
+                }
+            } else if hotKeyID.id == 2 {
+                // 翻訳ホットキー pressed
+                DispatchQueue.main.async {
+                    if delegate.isRecording && delegate.isTranslateMode {
+                        delegate.stopAndRecognize()
+                    } else if !delegate.isRecording {
+                        delegate.isTranslateMode = true
+                        delegate.overlay?.setTranslateMode(true)
+                        klog("Translate mode: ON")
+                        delegate.startRecording()
+                    }
+                }
+            }
+            return noErr
+        }, 1, &eventType, nil, nil)
+
+        // keyUp用ハンドラも追加（hold mode用）
+        var eventTypeUp = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
+        InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
+            var hotKeyID = EventHotKeyID()
+            GetEventParameter(event, EventParamName(kEventParamDirectObject),
+                              EventParamType(typeEventHotKeyID), nil,
+                              MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID)
+            guard let delegate = AppDelegate.shared else { return noErr }
+            let isToggle = AppSettings.shared.recordingMode == .toggle
+
+            if hotKeyID.id == 1 && !isToggle && delegate.isRecording {
+                DispatchQueue.main.async { delegate.stopAndRecognize() }
+            } else if hotKeyID.id == 2 && !isToggle && delegate.isRecording && delegate.isTranslateMode {
+                DispatchQueue.main.async { delegate.stopAndRecognize() }
+            }
+            return noErr
+        }, 1, &eventTypeUp, nil, nil)
+
+        // メインホットキー登録
+        let mainMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers))
+        var mainID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 1) // "Koe\0"
+        let mainStatus = RegisterEventHotKey(UInt32(settings.shortcutKeyCode), mainMods,
+                                              mainID, GetApplicationEventTarget(), 0, &carbonHotKeyRef)
+        klog("Carbon hotkey main: status=\(mainStatus)")
+
+        // 翻訳ホットキー登録
+        let transMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.translateHotkeyModifiers))
+        var transID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 2)
+        let transStatus = RegisterEventHotKey(UInt32(settings.translateHotkeyCode), transMods,
+                                               transID, GetApplicationEventTarget(), 0, &carbonTranslateHotKeyRef)
+        klog("Carbon hotkey translate: status=\(transStatus)")
     }
 
     private func handleEvent(_ event: NSEvent, settings: AppSettings) {
@@ -874,8 +983,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleMeetingMode() {
+        let wasActive = MeetingMode.shared.isActive
         MeetingMode.shared.toggle()
         rebuildMenu()
+        if MeetingMode.shared.isActive {
+            // 議事録開始時に自動で最初の録音を開始
+            if !isRecording {
+                klog("MeetingMode: auto-starting first recording")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self, MeetingMode.shared.isActive, !self.isRecording else { return }
+                    self.startRecording()
+                }
+            }
+        } else if wasActive {
+            // 議事録停止時に録音中なら停止
+            if isRecording {
+                klog("MeetingMode: stopping recording")
+                cancelRecording()
+            }
+            if isRecognizing {
+                overlay?.hide()
+                isRecognizing = false
+            }
+        }
     }
 
     func rebuildMenuPublic() { rebuildMenu() }

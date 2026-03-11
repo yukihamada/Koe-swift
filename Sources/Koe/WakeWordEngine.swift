@@ -18,7 +18,7 @@ class WakeWordEngine {
     private let preEmph: Float = 0.97
 
     /// DTW正規化距離の閾値（大きいほど緩い）。ログのdistを見て調整
-    var distThreshold: Float = 3.0
+    var distThreshold: Float = 2.0
 
     // MARK: - Pre-computed tables
 

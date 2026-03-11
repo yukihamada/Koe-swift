@@ -10,13 +10,17 @@ struct WhisperModel {
     let url: String
     let sizeMB: Int
     let isDefault: Bool
-    let isJapaneseOnly: Bool
+    /// 対応言語コード（空=多言語対応）。"ja", "zh", "ko" などの2文字コード。
+    let targetLanguages: [String]
 
-    init(id: String, name: String, description: String, fileName: String, url: String, sizeMB: Int, isDefault: Bool, isJapaneseOnly: Bool = false) {
+    init(id: String, name: String, description: String, fileName: String, url: String, sizeMB: Int, isDefault: Bool, targetLanguages: [String] = []) {
         self.id = id; self.name = name; self.description = description
         self.fileName = fileName; self.url = url; self.sizeMB = sizeMB
-        self.isDefault = isDefault; self.isJapaneseOnly = isJapaneseOnly
+        self.isDefault = isDefault; self.targetLanguages = targetLanguages
     }
+
+    /// 後方互換: isJapaneseOnly
+    var isJapaneseOnly: Bool { targetLanguages == ["ja"] }
 
     var displayString: String {
         "\(name) (\(sizeMB)MB)"
@@ -24,8 +28,9 @@ struct WhisperModel {
 
     /// この言語コードに対応しているか
     func supportsLanguage(_ langCode: String) -> Bool {
-        if !isJapaneseOnly { return true }
-        return langCode == "ja" || langCode == "ja-JP" || langCode == "auto"
+        if targetLanguages.isEmpty { return true } // 多言語モデル
+        let prefix = langCode.components(separatedBy: "-").first ?? langCode
+        return targetLanguages.contains(prefix) || langCode == "auto"
     }
 }
 
@@ -35,6 +40,7 @@ class ModelDownloader {
 
     /// 利用可能なモデル一覧
     static let availableModels: [WhisperModel] = [
+        // ── 日本語特化 ──
         WhisperModel(
             id: "kotoba-v2-q5",
             name: "Kotoba v2.0 Q5 (推奨)",
@@ -43,7 +49,7 @@ class ModelDownloader {
             url: "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0-q5_0.bin",
             sizeMB: 538,
             isDefault: true,
-            isJapaneseOnly: true
+            targetLanguages: ["ja"]
         ),
         WhisperModel(
             id: "kotoba-v2-full",
@@ -53,8 +59,53 @@ class ModelDownloader {
             url: "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0.bin",
             sizeMB: 1520,
             isDefault: false,
-            isJapaneseOnly: true
+            targetLanguages: ["ja"]
         ),
+        // ── 中国語特化 (Belle) ──
+        WhisperModel(
+            id: "belle-zh-turbo",
+            name: "Belle 中文 Turbo",
+            description: "中国語特化・24-64%精度向上",
+            fileName: "ggml-belle-whisper-large-v3-turbo-zh.bin",
+            url: "https://huggingface.co/BELLE-2/Belle-whisper-large-v3-turbo-zh-ggml/resolve/main/ggml-model.bin",
+            sizeMB: 1620,
+            isDefault: false,
+            targetLanguages: ["zh"]
+        ),
+        // ── 韓国語特化 ──
+        WhisperModel(
+            id: "korean-medium",
+            name: "Korean Medium",
+            description: "한국어특화・WER 16%",
+            fileName: "ggml-whisper-medium-korean.bin",
+            url: "https://huggingface.co/royshilkrot/whisper-medium-korean-ggml/resolve/main/ggml-model.bin",
+            sizeMB: 1500,
+            isDefault: false,
+            targetLanguages: ["ko"]
+        ),
+        // ── フランス語特化 (Q5量子化あり) ──
+        WhisperModel(
+            id: "french-large-v3-q5",
+            name: "French Large V3 Q5",
+            description: "Français特化・高精度・軽量",
+            fileName: "ggml-whisper-large-v3-french-q5_0.bin",
+            url: "https://huggingface.co/bofenghuang/whisper-large-v3-french/resolve/main/ggml-model-q5_0.bin",
+            sizeMB: 1080,
+            isDefault: false,
+            targetLanguages: ["fr"]
+        ),
+        // ── イタリア語特化 (蒸留+Q5、超軽量) ──
+        WhisperModel(
+            id: "italian-distil-q5",
+            name: "Italian Distil Q5",
+            description: "Italiano特化・高速・軽量",
+            fileName: "ggml-whisper-distil-it-q5_0.bin",
+            url: "https://huggingface.co/bofenghuang/whisper-large-v3-distil-it-v0.2/resolve/main/ggml-model-q5_0.bin",
+            sizeMB: 400,
+            isDefault: false,
+            targetLanguages: ["it"]
+        ),
+        // ── 多言語汎用 ──
         WhisperModel(
             id: "large-v3-turbo",
             name: "Large V3 Turbo",
@@ -94,16 +145,16 @@ class ModelDownloader {
     }
 
     /// 指定言語に最適なモデルを返す。
-    /// 日本語なら Kotoba（高精度）、それ以外なら Large V3 Turbo Q5（多言語対応）。
+    /// 言語特化モデルがあればそれを推奨、なければ Large V3 Turbo Q5。
     static func bestModel(for langCode: String) -> WhisperModel {
-        let current = shared.currentModel
-        // 現在のモデルがその言語をサポートしていればそのまま使う
-        if current.supportsLanguage(langCode) { return current }
-        // 日本語系ならデフォルトの Kotoba を推奨
-        if langCode == "ja" || langCode == "ja-JP" {
-            return defaultModel
+        let prefix = langCode.components(separatedBy: "-").first ?? langCode
+        guard prefix != "auto" else { return shared.currentModel }
+
+        // 言語特化モデルを検索（最初に見つかったものを推奨）
+        if let specialized = availableModels.first(where: { !$0.targetLanguages.isEmpty && $0.targetLanguages.contains(prefix) }) {
+            return specialized
         }
-        // それ以外は多言語モデル
+        // 特化モデルがない言語は多言語モデル
         return multilingualModel
     }
 

@@ -1,7 +1,9 @@
 import AppKit
 import SwiftUI
 
-class SettingsWindowController: NSWindowController {
+class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    var onClose: (() -> Void)?
+
     convenience init() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 540, height: 520),
@@ -13,11 +15,16 @@ class SettingsWindowController: NSWindowController {
         window.center()
         window.contentView = NSHostingView(rootView: SettingsRootView())
         self.init(window: window)
+        window.delegate = self
     }
 
     func show() {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        onClose?()
     }
 }
 
@@ -27,15 +34,9 @@ struct SettingsRootView: View {
             GeneralTab()
                 .tabItem { Label("一般", systemImage: "gear") }
             AITab()
-                .tabItem { Label("AI β", systemImage: "brain.head.profile") }
-            AppProfilesTab()
-                .tabItem { Label("アプリ", systemImage: "app.badge") }
-            TextExpansionsTab()
-                .tabItem { Label("展開", systemImage: "text.word.spacing") }
+                .tabItem { Label("AI", systemImage: "brain.head.profile") }
             HistoryTab()
                 .tabItem { Label("履歴", systemImage: "clock.arrow.circlepath") }
-            AgentTab()
-                .tabItem { Label("エージェント β", systemImage: "terminal") }
         }
         .padding(16)
         .frame(width: 540, height: 520)
@@ -100,19 +101,19 @@ struct GeneralTab: View {
 
     var body: some View {
         Form {
+            // ===== 基本設定 =====
             Section {
+                // ショートカット (1行にまとめ)
                 HStack {
                     Text("ショートカット")
                     Spacer()
                     Text(settings.shortcutDisplayString)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Color(NSColor.controlBackgroundColor))
-                        .cornerRadius(6)
+                        .cornerRadius(5)
                         .font(.system(.body, design: .monospaced))
                 }
-                HStack(spacing: 8) {
-                    Text("プリセット")
-                    Spacer()
+                HStack(spacing: 6) {
                     ForEach(presets, id: \.0) { name, code, mods in
                         Button(name) {
                             settings.shortcutKeyCode  = code
@@ -120,27 +121,24 @@ struct GeneralTab: View {
                             AppDelegate.shared?.reregisterHotkey()
                         }
                         .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                }
-                HStack {
                     Spacer()
                     if isRecordingKey {
-                        Text("キーを押してください…")
-                            .foregroundColor(.secondary)
-                        Button("キャンセル") { stopRecording() }
+                        Text("キーを押して…").foregroundColor(.secondary).font(.caption)
+                        Button("×") { stopRecording() }.controlSize(.small)
                     } else {
-                        Button("カスタムキーを設定") { startRecording() }
+                        Button("カスタム") { startRecording() }.controlSize(.small)
                     }
                 }
+
                 Picker("録音モード", selection: $settings.recordingMode) {
                     ForEach(RecordingMode.allCases, id: \.self) { mode in
                         Text(mode.displayName).tag(mode)
                     }
                 }
                 .onChange(of: settings.recordingMode) { _ in AppDelegate.shared?.reregisterHotkey() }
-            } header: { Text("操作") }
 
-            Section {
                 Picker("エンジン", selection: $settings.recognitionEngine) {
                     ForEach(RecognitionEngine.allCases, id: \.self) { engine in
                         Text(engine.displayName).tag(engine)
@@ -160,105 +158,135 @@ struct GeneralTab: View {
                     }
                 }
 
-                // クイック言語切替ボタン
-                HStack(spacing: 6) {
-                    Text("クイック切替")
-                    Spacer()
+                Picker("言語", selection: $settings.language) {
                     ForEach(AppSettings.quickLanguages, id: \.code) { lang in
-                        Button(lang.flag) {
-                            settings.language = lang.code
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(settings.language == lang.code ? .accentColor : nil)
-                        .help("\(lang.name) (\(lang.code))")
+                        Text("\(lang.flag) \(lang.name)").tag(lang.code)
                     }
                 }
+            } header: { Text("基本") }
 
-                Picker("認識言語", selection: $settings.language) {
-                    Text("自動検出").tag("auto")
-                    Text("日本語").tag("ja-JP")
-                    Text("English").tag("en-US")
-                    Text("中文").tag("zh-CN")
-                    Text("한국어").tag("ko-KR")
-                    Text("Français").tag("fr-FR")
-                    Text("Deutsch").tag("de-DE")
-                    Text("Español").tag("es-ES")
-                    Text("Português").tag("pt-BR")
-                    Text("Italiano").tag("it-IT")
-                    Text("Русский").tag("ru-RU")
-                    Text("العربية").tag("ar-SA")
-                    Text("हिन्दी").tag("hi-IN")
-                    Text("ไทย").tag("th-TH")
-                    Text("Tiếng Việt").tag("vi-VN")
-                    Text("Bahasa Indonesia").tag("id-ID")
-                }
-
-                // Engine badge
-                HStack(spacing: 6) {
-                    Image(systemName: settings.recognitionEngine.isLocal ? "desktopcomputer" : "cloud")
-                        .foregroundColor(settings.recognitionEngine.isLocal ? .green : .blue)
-                    Text(settings.recognitionEngine.isLocal ? "ローカル処理 — データ送信なし" : "クラウド処理 — ネットワーク必要")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            } header: { Text("音声認識") }
-
+            // ===== 動作 =====
             Section {
                 Toggle("ログイン時に自動起動", isOn: $settings.launchAtLogin)
-                Toggle("フローティングマイクボタンを表示", isOn: $settings.floatingButtonEnabled)
-                if settings.floatingButtonEnabled {
-                    Text("画面上のボタンをクリックするだけで録音開始・停止できます。ドラッグで移動可能。")
-                        .font(.caption).foregroundColor(.secondary)
-                }
-            } header: { Text("一般") }
+                Toggle("クリップボードにコピー", isOn: $settings.autoCopyToClipboard)
+                Toggle("完了時に通知", isOn: $settings.notifyOnComplete)
+                Toggle("フローティングボタン", isOn: $settings.floatingButtonEnabled)
+            } header: { Text("動作") }
 
+            // ===== オプション (折りたたみ) =====
             Section {
-                Toggle("コンテキスト認識を有効にする", isOn: $settings.contextAwareEnabled)
-                if settings.contextAwareEnabled {
-                    Toggle("アプリ別ヒントワード", isOn: $settings.contextUseAppHint)
-                    Text("使用中のアプリに応じた日本語キーワードをプロンプトに追加")
-                        .font(.caption2).foregroundColor(.secondary)
+                DisclosureGroup("オプション") {
+                    // 入力モード
+                    HStack {
+                        Text("入力モード")
+                        Spacer()
+                        Picker("", selection: $settings.streamingPreviewEnabled) {
+                            Text("声入力").tag(true)
+                            Text("直接入力").tag(false)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 160)
+                    }
 
-                    Toggle("クリップボードの日本語キーワード", isOn: $settings.contextUseClipboard)
-                    Text("クリップ内容から日本語のみ抽出（英語やコードは除外）")
-                        .font(.caption2).foregroundColor(.secondary)
-                }
+                    // IME切替
+                    Toggle("左⌘→英語 / 右⌘→日本語", isOn: $settings.cmdIMESwitchEnabled)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("カスタムプロンプト（常にwhisperに渡す）")
-                        .font(.caption).foregroundColor(.secondary)
-                    TextField("例: 技術用語、専門用語、固有名詞など", text: $settings.contextCustomPrompt)
+                    Divider()
+
+                    // メニューバー言語
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("メニューバーの言語").font(.system(size: 11, weight: .medium))
+                        Text("チェックした言語がメニューバーに表示されます").font(.system(size: 10)).foregroundColor(.secondary)
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 2) {
+                            ForEach(AppSettings.quickLanguages, id: \.code) { lang in
+                                Toggle("\(lang.flag) \(lang.name)", isOn: Binding(
+                                    get: { settings.menuBarLanguageCodes.contains(lang.code) },
+                                    set: { on in
+                                        if on {
+                                            if !settings.menuBarLanguageCodes.contains(lang.code) {
+                                                settings.menuBarLanguageCodes.append(lang.code)
+                                            }
+                                        } else {
+                                            settings.menuBarLanguageCodes.removeAll { $0 == lang.code }
+                                        }
+                                    }
+                                )).font(.system(size: 11))
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    // コンテキスト認識
+                    Toggle("コンテキスト認識", isOn: $settings.contextAwareEnabled)
+                    if settings.contextAwareEnabled {
+                        Toggle("アプリ別ヒント", isOn: $settings.contextUseAppHint)
+                        Toggle("クリップボード活用", isOn: $settings.contextUseClipboard)
+                    }
+                    TextField("カスタムプロンプト", text: $settings.contextCustomPrompt)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12))
-                }
-                Text("よく使う単語・専門用語を書くと認識精度が向上します。100文字以内推奨。")
-                    .font(.caption2).foregroundColor(.secondary)
-            } header: { Text("コンテキスト認識") }
+                        .font(.system(size: 11))
 
-            Section {
-                Toggle("認識結果をクリップボードにコピー", isOn: $settings.autoCopyToClipboard)
-                Toggle("認識完了時に通知を表示", isOn: $settings.notifyOnComplete)
-            } header: { Text("出力") }
+                    Divider()
 
-            Section {
-                HStack {
-                    Image(systemName: "mic")
-                    Text("マイク")
-                    Spacer()
-                    Button("システム設定を開く") {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-                    }.buttonStyle(.link)
+                    // 認識エンジン設定
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("高精度モード (Beam Search)", isOn: $settings.whisperBeamSearch)
+                        Text("精度が上がりますが少し遅くなります")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Toggle("文脈を引き継ぐ", isOn: $settings.whisperUseContext)
+                        Text("長い文章で固有名詞や文体が安定します")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                    HStack {
+                        Text("話し終わりの待ち時間")
+                        Spacer()
+                        Picker("", selection: $settings.silenceAutoStopSeconds) {
+                            Text("速い (1.0s)").tag(1.0); Text("普通 (1.5s)").tag(1.5); Text("ゆっくり (2.0s)").tag(2.0)
+                            Text("長め (3.0s)").tag(3.0); Text("最長 (5.0s)").tag(5.0)
+                        }.frame(width: 160)
+                    }
+                    HStack {
+                        Text("認識のゆらぎ")
+                            .help("0で最も確実な結果、高いと多様な候補から選びます")
+                        Spacer()
+                        Picker("", selection: $settings.whisperTemperature) {
+                            Text("確実 (0)").tag(0.0); Text("少し柔軟 (0.2)").tag(0.2); Text("柔軟 (0.4)").tag(0.4)
+                        }.frame(width: 160)
+                    }
+                    HStack {
+                        Text("あいまい判定")
+                            .help("低いと不確かな認識結果を棄却します")
+                        Spacer()
+                        Picker("", selection: $settings.whisperEntropyThreshold) {
+                            Text("厳しい (2.0)").tag(2.0); Text("普通 (2.4)").tag(2.4); Text("緩い (3.0)").tag(3.0)
+                        }.frame(width: 160)
+                    }
+
+                    Divider()
+
+                    // 権限
+                    HStack {
+                        Image(systemName: "mic").font(.caption)
+                        Text("マイク").font(.caption)
+                        Spacer()
+                        Button("開く") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                        }.buttonStyle(.link).font(.caption)
+                    }
+                    HStack {
+                        Image(systemName: "hand.raised").font(.caption)
+                        Text("アクセシビリティ").font(.caption)
+                        Spacer()
+                        Text(AXIsProcessTrusted() ? "✓" : "⚠").foregroundColor(AXIsProcessTrusted() ? .green : .orange)
+                        Button("開く") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                        }.buttonStyle(.link).font(.caption)
+                    }
                 }
-                HStack {
-                    Image(systemName: "hand.raised")
-                    Text("アクセシビリティ")
-                    Spacer()
-                    Text(AXIsProcessTrusted() ? "✓ 許可済み" : "⚠ 未許可")
-                        .foregroundColor(AXIsProcessTrusted() ? .green : .orange)
-                    Button("設定を開く") {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                    }.buttonStyle(.link)
-                }
-            } header: { Text("権限") }
+            }
         }
         .formStyle(.grouped)
     }
@@ -641,9 +669,70 @@ struct AITab: View {
                 if s.wakeWordEnabled {
                     WakeWordTemplateView()
                 }
-            } header: { Text("ウェイクワード (MFCC+DTW)") }
+            } header: { Text("ウェイクワード") }
+
+            Section {
+                Toggle("エージェントモード", isOn: $s.agentModeEnabled)
+                Text("「Safariを開いて」「5分タイマー」などの音声コマンドを実行")
+                    .font(.caption).foregroundColor(.secondary)
+            } header: { Text("エージェント") }
+
+            Section {
+                DisclosureGroup("アプリ別プロファイル") {
+                    AppProfilesInlineView()
+                }
+                DisclosureGroup("テキスト展開") {
+                    TextExpansionsInlineView()
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - App Profiles (inline for AI tab)
+struct AppProfilesInlineView: View {
+    @ObservedObject private var s = AppSettings.shared
+    var body: some View {
+        ForEach(s.appProfiles.indices, id: \.self) { i in
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(s.appProfiles[i].appName).font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text(s.appProfiles[i].bundleID).font(.system(size: 10)).foregroundColor(.secondary)
+                }
+                if !s.appProfiles[i].llmInstruction.isEmpty {
+                    Text(s.appProfiles[i].llmInstruction)
+                        .font(.system(size: 10)).foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        Button("アプリプロファイルを編集…") {
+            // Open full profiles editor (could be a sheet)
+        }
+        .font(.caption)
+        .disabled(true)
+    }
+}
+
+// MARK: - Text Expansions (inline for AI tab)
+struct TextExpansionsInlineView: View {
+    @ObservedObject private var s = AppSettings.shared
+    var body: some View {
+        if s.textExpansions.isEmpty {
+            Text("テキスト展開ルールはまだありません")
+                .font(.caption).foregroundColor(.secondary)
+        } else {
+            ForEach(Array(s.textExpansions.enumerated()), id: \.offset) { _, exp in
+                HStack {
+                    Text(exp.trigger).font(.system(size: 12, design: .monospaced))
+                    Text("→").foregroundColor(.secondary)
+                    Text(exp.expansion).font(.system(size: 12)).lineLimit(1)
+                }
+            }
+        }
     }
 }
 
@@ -653,7 +742,7 @@ struct WakeWordTemplateView: View {
     @State private var recording = false
     @State private var lastResult: Bool? = nil
     @State private var lastError = ""
-    @State private var threshold: Float = WakeWordEngine.shared.distThreshold > 0 ? WakeWordEngine.shared.distThreshold : 3.0
+    @State private var threshold: Float = WakeWordEngine.shared.distThreshold > 0 ? WakeWordEngine.shared.distThreshold : 2.0
     @State private var currentRound = 0  // 連続録音の何回目か
 
     private let minRequired = WakeWordEngine.minTemplates  // 最低3回

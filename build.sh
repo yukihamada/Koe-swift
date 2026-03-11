@@ -18,13 +18,30 @@ fi
 # Homebrew prefix (Apple Silicon: /opt/homebrew, Intel: /usr/local)
 BREW_PREFIX=$(brew --prefix 2>/dev/null || echo "/opt/homebrew")
 
-# whisper.cpp library paths (libinternal preferred, fallback to lib)
-WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/libinternal"
-if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
-    WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/lib"
-fi
-if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
-    WHISPER_LIB="$BREW_PREFIX/lib"
+# whisper.cpp library paths
+# Prefer custom CoreML-enabled build, fallback to Homebrew
+WHISPER_COREML_BUILD="/tmp/whisper.cpp/build"
+if [ -f "$WHISPER_COREML_BUILD/src/libwhisper.dylib" ] && [ -f "$WHISPER_COREML_BUILD/src/libwhisper.coreml.dylib" ]; then
+    echo "Using CoreML-enabled whisper.cpp build"
+    WHISPER_LIB="$WHISPER_COREML_BUILD/src"
+    GGML_LIB="$WHISPER_COREML_BUILD/ggml/src"
+    GGML_METAL_LIB="$WHISPER_COREML_BUILD/ggml/src/ggml-metal"
+    GGML_BLAS_LIB="$WHISPER_COREML_BUILD/ggml/src/ggml-blas"
+    GGML_CPU_LIB="$WHISPER_COREML_BUILD/ggml/src"
+    USE_COREML=1
+else
+    WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/libinternal"
+    if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
+        WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/lib"
+    fi
+    if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
+        WHISPER_LIB="$BREW_PREFIX/lib"
+    fi
+    GGML_LIB="$WHISPER_LIB"
+    GGML_METAL_LIB="$WHISPER_LIB"
+    GGML_BLAS_LIB="$WHISPER_LIB"
+    GGML_CPU_LIB="$WHISPER_LIB"
+    USE_COREML=0
 fi
 GGML_INCLUDE="$BREW_PREFIX/include"
 
@@ -56,15 +73,25 @@ else
     SWIFT_TARGET="arm64-apple-macos13.0"
 fi
 
+COREML_FLAGS=""
+if [ "$USE_COREML" = "1" ]; then
+    COREML_FLAGS="-L $WHISPER_LIB -lwhisper.coreml -framework CoreML"
+fi
+
 swiftc Sources/Koe/*.swift \
     -I Sources/CWhisper \
     -I Sources/CLlama \
     -L "$WHISPER_LIB" \
+    -L "$GGML_LIB" \
+    -L "$GGML_METAL_LIB" \
+    -L "$GGML_BLAS_LIB" \
+    -L "$GGML_CPU_LIB" \
     -L "$LLAMA_LIB" \
     -lwhisper \
     -lllama \
     -lggml \
     -lggml-base \
+    $COREML_FLAGS \
     -framework AppKit \
     -framework AVFoundation \
     -framework Speech \
@@ -82,10 +109,22 @@ swiftc Sources/Koe/*.swift \
 # Embed whisper + llama dylibs in app bundle for self-contained distribution
 FRAMEWORKS="$APP/Contents/Frameworks"
 mkdir -p "$FRAMEWORKS"
-for lib in libwhisper.dylib libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib; do
-    if [ -f "$WHISPER_LIB/$lib" ]; then
-        cp "$WHISPER_LIB/$lib" "$FRAMEWORKS/"
-    fi
+
+# Copy whisper dylibs
+for lib in libwhisper.dylib libwhisper.coreml.dylib; do
+    src="$WHISPER_LIB/$lib"
+    # Resolve symlinks to get actual file
+    if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
+    if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
+done
+
+# Copy ggml dylibs from potentially different directories
+for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB"; do
+    lib="${pair%%:*}"
+    dir="${pair##*:}"
+    src="$dir/$lib"
+    if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
+    if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
 done
 # llama.cpp dylib
 if [ -f "$LLAMA_LIB/libllama.dylib" ]; then
@@ -103,10 +142,14 @@ done
 
 # Fix inter-dylib references (libwhisper → libggml etc.)
 for lib in "$FRAMEWORKS"/*.dylib; do
-    for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libllama.dylib; do
+    for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libwhisper.coreml.dylib libllama.dylib; do
         # Try to change references from various possible original paths
         install_name_tool -change "$WHISPER_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
         install_name_tool -change "$LLAMA_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        install_name_tool -change "$GGML_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        install_name_tool -change "$GGML_METAL_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        install_name_tool -change "$GGML_BLAS_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        install_name_tool -change "$GGML_CPU_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
         install_name_tool -change "@rpath/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
         # Also handle versioned names
         for versioned in libwhisper.1.dylib libwhisper.1.7.5.dylib libllama.0.dylib; do

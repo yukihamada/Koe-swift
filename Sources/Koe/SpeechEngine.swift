@@ -151,6 +151,9 @@ class SpeechEngine {
         }
         let req = SFSpeechURLRecognitionRequest(url: url)
         req.shouldReportPartialResults = false
+        if #available(macOS 13, *) {
+            req.addsPunctuation = true
+        }
         if AppSettings.shared.recognitionEngine == .appleOnDevice {
             req.requiresOnDeviceRecognition = true
         }

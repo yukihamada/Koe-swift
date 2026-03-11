@@ -164,4 +164,64 @@ class CorrectionStore {
             return try? decoder.decode(CorrectionEntry.self, from: data)
         }
     }
+
+    /// 修正データから頻出の「正しい単語」を抽出し、whisperプロンプト用ヒントを生成。
+    /// 例: "認識" → "認識" が3回修正されていたら、ヒントワードとして返す。
+    func learningHint(limit: Int = 20) -> String {
+        let entries = loadAll()
+        guard !entries.isEmpty else { return "" }
+
+        // corrected テキストから単語を抽出し、頻度カウント
+        var wordFreq: [String: Int] = [:]
+        for entry in entries {
+            // 修正後テキストの特徴的な単語（3文字以上）を抽出
+            let words = extractKeywords(from: entry.corrected)
+            for word in words {
+                wordFreq[word, default: 0] += 1
+            }
+        }
+
+        // 2回以上出現した単語を頻度順にソートして返す
+        let hints = wordFreq
+            .filter { $0.value >= 2 }
+            .sorted { $0.value > $1.value }
+            .prefix(limit)
+            .map { $0.key }
+
+        return hints.joined(separator: "、")
+    }
+
+    /// テキストから特徴的なキーワードを抽出（ひらがなのみの短い単語は除外）
+    private func extractKeywords(from text: String) -> [String] {
+        // 簡易的にカタカナ・漢字を含む3文字以上の連続を抽出
+        var keywords: [String] = []
+        var current = ""
+        for char in text {
+            if char.isLetter || char.isNumber {
+                current.append(char)
+            } else {
+                if current.count >= 3, containsKanjiOrKatakana(current) {
+                    keywords.append(current)
+                }
+                current = ""
+            }
+        }
+        if current.count >= 3, containsKanjiOrKatakana(current) {
+            keywords.append(current)
+        }
+        return keywords
+    }
+
+    private func containsKanjiOrKatakana(_ s: String) -> Bool {
+        s.unicodeScalars.contains { scalar in
+            (0x4E00...0x9FFF).contains(scalar.value) ||  // CJK漢字
+            (0x30A0...0x30FF).contains(scalar.value) ||  // カタカナ
+            (0x0041...0x005A).contains(scalar.value) ||  // A-Z
+            (0x0061...0x007A).contains(scalar.value)     // a-z
+        }
+    }
+
+    var entryCount: Int {
+        loadAll().count
+    }
 }

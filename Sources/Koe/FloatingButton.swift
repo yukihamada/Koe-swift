@@ -27,27 +27,36 @@ class FloatingButton: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isMovableByWindowBackground = false
 
-        hostView = NSHostingView(rootView: FloatingButtonView(model: model) {
-            AppDelegate.shared?.toggleRecording()
-        })
+        hostView = NSHostingView(rootView: FloatingButtonView(model: model))
         hostView.wantsLayer = true
         hostView.layer?.backgroundColor = CGColor.clear
         contentView = hostView
     }
 
-    // MARK: - Drag to move
+    // MARK: - Drag to move & tap to toggle
+
+    private var isDragging = false
 
     override func mouseDown(with event: NSEvent) {
         dragOffset = event.locationInWindow
+        isDragging = false
     }
 
     override func mouseDragged(with event: NSEvent) {
+        isDragging = true
         let loc = event.locationInWindow
         let dx = loc.x - dragOffset.x
         let dy = loc.y - dragOffset.y
         let newOrigin = CGPoint(x: frame.origin.x + dx, y: frame.origin.y + dy)
         setFrameOrigin(newOrigin)
         FloatingButton.saveOrigin(newOrigin)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if !isDragging {
+            AppDelegate.shared?.toggleRecording()
+        }
+        isDragging = false
     }
 
     // MARK: - Show / Hide
@@ -86,7 +95,6 @@ class FloatingButtonModel: ObservableObject {
 
 struct FloatingButtonView: View {
     @ObservedObject var model: FloatingButtonModel
-    let onTap: () -> Void
 
     @State private var hovered = false
 
@@ -107,7 +115,6 @@ struct FloatingButtonView: View {
         .scaleEffect(hovered ? 1.08 : 1.0)
         .animation(.spring(response: 0.2), value: hovered)
         .onHover { hovered = $0 }
-        .onTapGesture { onTap() }
         .overlay(
             // 録音中: 赤いリングアニメ
             model.isRecording ? AnyView(PulsingRing()) : AnyView(EmptyView())

@@ -20,8 +20,8 @@ struct ContextCollector {
         let settings = AppSettings.shared
         var parts: [String] = []
 
-        // 0. システムコンテキスト: Macから音声入力していることをモデルに伝える
-        parts.append(isJapanese ? "macOS音声入力" : "macOS voice input")
+        // 0. 言語別システムプロンプト: 言語ごとに最適なヒントを設定
+        parts.append(languagePrompt(for: settings.language))
 
         // 1. アプリプロファイルのプロンプト（常に含む — ユーザーが明示的に設定したもの）
         if !profilePrompt.isEmpty {
@@ -46,9 +46,15 @@ struct ContextCollector {
             }
         }
 
+        // 4: 過去の修正データから学習したヒントワード
+        let learningHint = CorrectionStore.shared.learningHint()
+        if !learningHint.isEmpty {
+            parts.append(learningHint)
+        }
+
         let combined = parts.joined(separator: " ")
-        // whisper prompt は100文字以下が最適。長いと逆効果。
-        let trimmed = String(combined.prefix(100))
+        // whisper prompt は150文字以下が最適。長いと逆効果。
+        let trimmed = String(combined.prefix(150))
         return trimmed
     }
 
@@ -150,6 +156,35 @@ struct ContextCollector {
             "md.obsidian": "ノート マークダウン リンク",
         ]
         return hints[bundleID]
+    }
+
+    // MARK: - Language-specific prompt
+
+    /// 言語ごとに最適な initial_prompt を返す。
+    /// その言語のテキストを含めることで whisper がその言語として認識しやすくなる。
+    private static func languagePrompt(for langCode: String) -> String {
+        let prefix = langCode.components(separatedBy: "-").first ?? langCode
+        switch prefix {
+        case "ja": return "macOS音声入力。正確な日本語で書き起こしてください。"
+        case "en": return "macOS voice input. Transcribe accurately in English."
+        case "zh": return "macOS语音输入。请用中文准确转录。"
+        case "ko": return "macOS 음성 입력. 한국어로 정확하게 받아써주세요."
+        case "fr": return "Saisie vocale macOS. Transcrivez en français."
+        case "de": return "macOS Spracheingabe. Bitte auf Deutsch transkribieren."
+        case "es": return "Entrada de voz macOS. Transcriba con precisión en español."
+        case "it": return "Input vocale macOS. Trascrivi in italiano."
+        case "pt": return "Entrada de voz macOS. Transcreva em português."
+        case "ru": return "Голосовой ввод macOS. Транскрибируйте на русском языке."
+        case "hi": return "macOS ध्वनि इनपुट। हिन्दी में सटीक रूप से लिखें।"
+        case "th": return "การป้อนเสียง macOS ถอดความเป็นภาษาไทย"
+        case "vi": return "Nhập giọng nói macOS. Chép lại bằng tiếng Việt."
+        case "id": return "Input suara macOS. Transkripsikan dalam bahasa Indonesia."
+        case "nl": return "macOS spraakinvoer. Transcribeer in het Nederlands."
+        case "pl": return "Wprowadzanie głosowe macOS. Transkrybuj po polsku."
+        case "tr": return "macOS ses girişi. Türkçe olarak yazıya dökün."
+        case "ar": return "إدخال صوتي macOS. قم بالنسخ باللغة العربية."
+        default:   return "macOS voice input"
+        }
     }
 
     // MARK: - Clipboard (raw)

@@ -54,23 +54,28 @@ class SetupWindow: NSObject {
 
     // MARK: - Page 1: Onboarding
 
+    // Luxury color constants
+    private static let goldColor = NSColor(red: 0.78, green: 0.68, blue: 0.50, alpha: 1.0)
+    private static let champagneColor = NSColor(red: 0.90, green: 0.84, blue: 0.72, alpha: 1.0)
+    private static let deepCharcoal = NSColor(red: 0.10, green: 0.09, blue: 0.08, alpha: 1.0)
+
     private func showOnboarding() {
         onboardingView = NSView(frame: contentView.bounds)
         onboardingView.wantsLayer = true
 
         let w = contentView.bounds.width
 
-        // Large app icon
+        // Large app icon — elegant thin weight
         let iconLabel = NSTextField(labelWithString: "声")
-        iconLabel.font = .systemFont(ofSize: 72, weight: .bold)
+        iconLabel.font = .systemFont(ofSize: 72, weight: .ultraLight)
         iconLabel.textColor = .labelColor
         iconLabel.alignment = .center
         iconLabel.frame = NSRect(x: 0, y: 420, width: w, height: 90)
         onboardingView.addSubview(iconLabel)
 
-        // App name
+        // App name — refined lettering
         let appName = NSTextField(labelWithString: "Koe")
-        appName.font = .systemFont(ofSize: 36, weight: .bold)
+        appName.font = .systemFont(ofSize: 36, weight: .thin)
         appName.textColor = .labelColor
         appName.alignment = .center
         appName.frame = NSRect(x: 0, y: 385, width: w, height: 44)
@@ -81,13 +86,13 @@ class SetupWindow: NSObject {
             ? L10n.taglineAppleSilicon
             : L10n.taglineIntel
         let tagline = NSTextField(labelWithString: taglineText)
-        tagline.font = .systemFont(ofSize: 16)
+        tagline.font = .systemFont(ofSize: 14, weight: .light)
         tagline.textColor = .secondaryLabelColor
         tagline.alignment = .center
         tagline.frame = NSRect(x: 0, y: 360, width: w, height: 22)
         onboardingView.addSubview(tagline)
 
-        // Feature cards (Intel Mac では whisper.cpp Metal が使えないので表示を変える)
+        // Feature cards
         let features: [(String, String, String)]
         features = ArchUtil.isAppleSilicon ? L10n.featuresAppleSilicon : L10n.featuresIntel
 
@@ -102,18 +107,20 @@ class SetupWindow: NSObject {
             onboardingView.addSubview(card)
         }
 
-        // Start button
-        let startBtn = NSButton(frame: NSRect(x: (w - 200) / 2, y: 20, width: 200, height: 44))
+        // Start button — luxe dark with gold text
+        let startBtn = NSButton(frame: NSRect(x: (w - 220) / 2, y: 20, width: 220, height: 44))
         startBtn.bezelStyle = .rounded
         startBtn.title = L10n.startSetup
-        startBtn.font = .systemFont(ofSize: 15, weight: .semibold)
+        startBtn.font = .systemFont(ofSize: 14, weight: .medium)
         startBtn.target = self
         startBtn.action = #selector(onStartSetup)
         startBtn.keyEquivalent = "\r"
-        startBtn.contentTintColor = .white
+        startBtn.contentTintColor = Self.champagneColor
         startBtn.wantsLayer = true
-        startBtn.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        startBtn.layer?.cornerRadius = 10
+        startBtn.layer?.backgroundColor = Self.deepCharcoal.cgColor
+        startBtn.layer?.cornerRadius = 12
+        startBtn.layer?.borderWidth = 0.5
+        startBtn.layer?.borderColor = Self.goldColor.withAlphaComponent(0.3).cgColor
         onboardingView.addSubview(startBtn)
 
         contentView.addSubview(onboardingView)
@@ -123,22 +130,24 @@ class SetupWindow: NSObject {
         let card = NSView(frame: frame)
         card.wantsLayer = true
         card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        card.layer?.cornerRadius = 10
+        card.layer?.cornerRadius = 12
+        card.layer?.borderWidth = 0.5
+        card.layer?.borderColor = Self.goldColor.withAlphaComponent(0.1).cgColor
 
         let iconView = NSImageView(frame: NSRect(x: 16, y: 14, width: 26, height: 26))
-        let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .light)
         iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
-        iconView.contentTintColor = .controlAccentColor
+        iconView.contentTintColor = Self.goldColor
         card.addSubview(iconView)
 
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 14, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 14, weight: .medium)
         titleLabel.frame = NSRect(x: 52, y: 28, width: frame.width - 68, height: 20)
         card.addSubview(titleLabel)
 
         let descLabel = NSTextField(labelWithString: desc)
-        descLabel.font = .systemFont(ofSize: 12)
+        descLabel.font = .systemFont(ofSize: 12, weight: .light)
         descLabel.textColor = .secondaryLabelColor
         descLabel.frame = NSRect(x: 52, y: 8, width: frame.width - 68, height: 18)
         card.addSubview(descLabel)
@@ -165,12 +174,12 @@ class SetupWindow: NSObject {
         setupView.addSubview(headerBg)
 
         let icon = NSTextField(labelWithString: "声")
-        icon.font = .systemFont(ofSize: 36, weight: .bold)
+        icon.font = .systemFont(ofSize: 36, weight: .ultraLight)
         icon.frame = NSRect(x: 30, y: 460, width: 50, height: 44)
         setupView.addSubview(icon)
 
         let title = NSTextField(labelWithString: L10n.setupTitle)
-        title.font = .systemFont(ofSize: 24, weight: .bold)
+        title.font = .systemFont(ofSize: 24, weight: .thin)
         title.frame = NSRect(x: 85, y: 468, width: 300, height: 32)
         setupView.addSubview(title)
 
@@ -302,9 +311,9 @@ class SetupWindow: NSObject {
         currentStep = index
         for (i, dot) in stepIndicators.enumerated() {
             if i < index {
-                dot.layer?.backgroundColor = NSColor.systemGreen.cgColor
+                dot.layer?.backgroundColor = Self.goldColor.cgColor
             } else if i == index && active {
-                dot.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+                dot.layer?.backgroundColor = Self.goldColor.withAlphaComponent(0.7).cgColor
             } else {
                 dot.layer?.backgroundColor = NSColor.separatorColor.cgColor
             }
@@ -312,13 +321,13 @@ class SetupWindow: NSObject {
         for (i, label) in stepLabels.enumerated() {
             if i < index {
                 label.textColor = .labelColor
-                label.font = .systemFont(ofSize: 14)
+                label.font = .systemFont(ofSize: 14, weight: .light)
             } else if i == index {
                 label.textColor = .labelColor
-                label.font = .systemFont(ofSize: 14, weight: .semibold)
+                label.font = .systemFont(ofSize: 14, weight: .medium)
             } else {
                 label.textColor = .secondaryLabelColor
-                label.font = .systemFont(ofSize: 14)
+                label.font = .systemFont(ofSize: 14, weight: .light)
             }
         }
     }
@@ -616,25 +625,26 @@ class SetupWindow: NSObject {
 
         let w = newSize.width
 
-        // Header: checkmark + title
-        let checkmark = NSTextField(labelWithString: "\u{2705}")
-        checkmark.font = .systemFont(ofSize: 32)
-        checkmark.frame = NSRect(x: (w - 40) / 2, y: 540, width: 40, height: 40)
+        // Header: elegant checkmark
+        let checkmark = NSTextField(labelWithString: "\u{2713}")
+        checkmark.font = .systemFont(ofSize: 28, weight: .ultraLight)
+        checkmark.textColor = Self.goldColor
+        checkmark.frame = NSRect(x: (w - 40) / 2, y: 544, width: 40, height: 36)
         checkmark.alignment = .center
         tutorialView.addSubview(checkmark)
 
         let title = NSTextField(labelWithString: L10n.tutorialTitle)
-        title.font = .systemFont(ofSize: 26, weight: .bold)
+        title.font = .systemFont(ofSize: 24, weight: .thin)
         title.textColor = .labelColor
         title.alignment = .center
-        title.frame = NSRect(x: 0, y: 505, width: w, height: 36)
+        title.frame = NSRect(x: 0, y: 508, width: w, height: 36)
         tutorialView.addSubview(title)
 
         let subtitle = NSTextField(labelWithString: L10n.tutorialReady)
-        subtitle.font = .systemFont(ofSize: 14)
+        subtitle.font = .systemFont(ofSize: 13, weight: .light)
         subtitle.textColor = .secondaryLabelColor
         subtitle.alignment = .center
-        subtitle.frame = NSRect(x: 0, y: 482, width: w, height: 20)
+        subtitle.frame = NSRect(x: 0, y: 486, width: w, height: 20)
         tutorialView.addSubview(subtitle)
 
         // Feature cards
@@ -653,24 +663,26 @@ class SetupWindow: NSObject {
 
         // Tip
         let tip = NSTextField(labelWithString: L10n.tutorialTip)
-        tip.font = .systemFont(ofSize: 11)
+        tip.font = .systemFont(ofSize: 11, weight: .light)
         tip.textColor = .tertiaryLabelColor
         tip.alignment = .center
         tip.frame = NSRect(x: 30, y: 60, width: w - 60, height: 16)
         tutorialView.addSubview(tip)
 
-        // Try now button
-        let tryBtn = NSButton(frame: NSRect(x: (w - 200) / 2, y: 14, width: 200, height: 44))
+        // Try now button — luxe dark
+        let tryBtn = NSButton(frame: NSRect(x: (w - 220) / 2, y: 14, width: 220, height: 44))
         tryBtn.bezelStyle = .rounded
         tryBtn.title = L10n.tryNow
-        tryBtn.font = .systemFont(ofSize: 15, weight: .semibold)
+        tryBtn.font = .systemFont(ofSize: 14, weight: .medium)
         tryBtn.target = self
         tryBtn.action = #selector(onFinishTutorial)
         tryBtn.keyEquivalent = "\r"
         tryBtn.wantsLayer = true
-        tryBtn.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        tryBtn.contentTintColor = .white
-        tryBtn.layer?.cornerRadius = 10
+        tryBtn.layer?.backgroundColor = Self.deepCharcoal.cgColor
+        tryBtn.contentTintColor = Self.champagneColor
+        tryBtn.layer?.cornerRadius = 12
+        tryBtn.layer?.borderWidth = 0.5
+        tryBtn.layer?.borderColor = Self.goldColor.withAlphaComponent(0.3).cgColor
         tutorialView.addSubview(tryBtn)
 
         contentView.addSubview(tutorialView)
@@ -680,42 +692,44 @@ class SetupWindow: NSObject {
         let card = NSView(frame: frame)
         card.wantsLayer = true
         card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        card.layer?.cornerRadius = 12
+        card.layer?.cornerRadius = 14
+        card.layer?.borderWidth = 0.5
+        card.layer?.borderColor = Self.goldColor.withAlphaComponent(0.1).cgColor
 
-        // Icon circle
+        // Icon circle — gold tinted
         let iconBg = NSView(frame: NSRect(x: 14, y: 22, width: 36, height: 36))
         iconBg.wantsLayer = true
-        iconBg.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
+        iconBg.layer?.backgroundColor = Self.goldColor.withAlphaComponent(0.08).cgColor
         iconBg.layer?.cornerRadius = 18
         card.addSubview(iconBg)
 
         let iconView = NSImageView(frame: NSRect(x: 22, y: 30, width: 20, height: 20))
-        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .light)
         iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
-        iconView.contentTintColor = .controlAccentColor
+        iconView.contentTintColor = Self.goldColor
         card.addSubview(iconView)
 
         // Title
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 14, weight: .medium)
         titleLabel.frame = NSRect(x: 62, y: 46, width: frame.width - 78, height: 20)
         card.addSubview(titleLabel)
 
         // Description
         let descLabel = NSTextField(labelWithString: desc)
-        descLabel.font = .systemFont(ofSize: 12)
+        descLabel.font = .systemFont(ofSize: 12, weight: .light)
         descLabel.textColor = .secondaryLabelColor
         descLabel.frame = NSRect(x: 62, y: 28, width: frame.width - 78, height: 16)
         card.addSubview(descLabel)
 
-        // Shortcut badge
+        // Shortcut badge — gold themed
         let badge = NSTextField(labelWithString: shortcut)
-        badge.font = .systemFont(ofSize: 11, weight: .medium)
-        badge.textColor = .controlAccentColor
+        badge.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+        badge.textColor = Self.goldColor
         badge.alignment = .left
         badge.wantsLayer = true
-        badge.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
+        badge.backgroundColor = Self.goldColor.withAlphaComponent(0.06)
         badge.isBezeled = false
         badge.isEditable = false
         badge.frame = NSRect(x: 62, y: 8, width: frame.width - 78, height: 16)

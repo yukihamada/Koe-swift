@@ -27,7 +27,7 @@ class AutoTyper {
         }
     }
 
-    private func paste(_ text: String) {
+    func paste(_ text: String) {
         let pb = NSPasteboard.general
         let prev = pb.string(forType: .string)
         pb.clearContents()
@@ -131,6 +131,28 @@ class AutoTyper {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: ["koe-paste-hint"])
             }
+        }
+    }
+
+    // MARK: - Voice Edit Commands
+
+    /// Cmd+Z (元に戻す)
+    func postUndo() {
+        guard canUseCGEvent else { return }
+        postKey(keyCode: CGKeyCode(kVK_ANSI_Z), flags: .maskCommand)
+    }
+
+    /// Cmd+A → Delete (全選択して削除)
+    func postSelectAllDelete() {
+        guard canUseCGEvent else { return }
+        postKey(keyCode: CGKeyCode(kVK_ANSI_A), flags: .maskCommand)
+        Thread.sleep(forTimeInterval: 0.05)
+        let src = CGEventSource(stateID: .hidSystemState)
+        if let down = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Delete), keyDown: true),
+           let up   = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Delete), keyDown: false) {
+            down.post(tap: .cghidEventTap)
+            Thread.sleep(forTimeInterval: 0.01)
+            up.post(tap: .cghidEventTap)
         }
     }
 

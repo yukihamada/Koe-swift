@@ -12,7 +12,7 @@ class OverlayWindow: NSPanel {
     private var tipIndex = 0
 
     init() {
-        let w: CGFloat = 340, h: CGFloat = 80
+        let w: CGFloat = 320, h: CGFloat = 76
         let screen = NSScreen.main ?? NSScreen.screens[0]
         let rect = CGRect(
             x: screen.frame.midX - w / 2,
@@ -32,27 +32,23 @@ class OverlayWindow: NSPanel {
         let hosting = NSHostingView(rootView: OverlayView(model: stateModel))
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = CGColor.clear
-        hosting.layer?.cornerRadius = 16
+        hosting.layer?.cornerRadius = 18
         hosting.layer?.masksToBounds = true
         contentView = hosting
     }
 
     func setTranslateMode(_ on: Bool) {
         stateModel.isTranslateMode = on
+        if !on { stateModel.modeName = "" }
     }
 
     func show(state: OverlayState) {
         stateModel.state = state
         stateModel.visible = false
-        // 翻訳モード中はモード名を上書き
-        if stateModel.isTranslateMode && state == .recording {
-            stateModel.modeName = "翻訳中..."
-        } else {
-            // モード名を更新（none/correct以外の場合のみ表示）
-            let mode = AppSettings.shared.llmMode
-            let showMode = state == .recording && mode != .none && mode != .correct
-            stateModel.modeName = showMode ? mode.displayName : ""
-        }
+        // モード名を更新（none/correct以外の場合のみ表示）
+        let mode = AppSettings.shared.llmMode
+        let showMode = state == .recording && !stateModel.isTranslateMode && mode != .none
+        stateModel.modeName = showMode ? mode.displayName : ""
 
         // 認識中はヒントのローテーション開始
         if state == .recognizing {
@@ -105,6 +101,27 @@ class OverlayWindow: NSPanel {
     func updateLevel(_ level: Float) {
         stateModel.audioLevel = level
         stateModel.pushLevel(level)
+
+        // モード名をリアルタイム同期（設定変更を即反映）
+        let mode = AppSettings.shared.llmMode
+        let showMode = stateModel.state == .recording && !stateModel.isTranslateMode
+            && mode != .none && mode != .correct
+        let currentModeName = showMode ? mode.displayName : ""
+        if stateModel.modeName != currentModeName {
+            stateModel.modeName = currentModeName
+        }
+
+        // ノイズレベル判定（背景ノイズの平均から算出）
+        if AppSettings.shared.showNoiseLevel {
+            let avg = stateModel.levelHistory.suffix(20).reduce(0, +) / 20
+            if avg > 0.06 {
+                stateModel.noiseLevel = .poor
+            } else if avg > 0.03 {
+                stateModel.noiseLevel = .fair
+            } else {
+                stateModel.noiseLevel = .good
+            }
+        }
     }
 
     func showHint(_ text: String) {
@@ -140,9 +157,16 @@ class OverlayStateModel: ObservableObject {
     @Published var streamingText: String = ""
     @Published var isTranslateMode: Bool = false
     @Published var tipText: String = ""
+    @Published var noiseLevel: NoiseQuality = .good
     /// 直近のレベル履歴（波形描画用）
     @Published var levelHistory: [Float] = Array(repeating: 0, count: 40)
     var engineBadge: String { AppSettings.shared.recognitionEngine.badgeText }
+
+    enum NoiseQuality: String {
+        case good    = "good"     // 静か
+        case fair    = "fair"     // やや騒がしい
+        case poor    = "poor"     // 騒がしい
+    }
 
     func pushLevel(_ level: Float) {
         levelHistory.append(level)
@@ -215,89 +239,136 @@ class OverlayStateModel: ObservableObject {
 struct OverlayView: View {
     @ObservedObject var model: OverlayStateModel
 
+    // Luxury palette — warm gold / champagne / deep charcoal
+    private let goldAccent = Color(red: 0.78, green: 0.68, blue: 0.50)
+    private let champagne  = Color(red: 0.90, green: 0.84, blue: 0.72)
+    private let warmWhite  = Color(red: 0.95, green: 0.93, blue: 0.90)
+
     var body: some View {
-        VStack(spacing: 6) {
-            // ステータスバー: ドット + 波形/ドット + バッジ
-            HStack(spacing: 10) {
+        VStack(spacing: 4) {
+            // Status bar
+            HStack(spacing: 8) {
+                // Left: status dot
                 Circle()
                     .fill(dotColor)
-                    .frame(width: 7, height: 7)
-                    .shadow(color: dotColor.opacity(0.9), radius: 6)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: dotColor.opacity(0.6), radius: 6)
                     .modifier(DotPulse(active: model.state == .recording))
 
+                // Center: waveform / dots
                 ZStack {
                     WaveformView(levels: model.levelHistory)
                         .opacity(model.state == .recording ? 1 : 0)
                     ThreeDotsView()
                         .opacity(model.state == .recording ? 0 : 1)
                 }
-                .frame(width: 180, height: 22)
+                .frame(maxWidth: .infinity, maxHeight: 22)
 
-                Text(model.modeName)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white.opacity(model.modeName.isEmpty ? 0 : 0.5))
+                // Right: badges
+                HStack(spacing: 4) {
+                    if !model.modeName.isEmpty {
+                        Text(model.modeName)
+                            .font(.system(size: 8, weight: .medium, design: .rounded))
+                            .foregroundColor(champagne.opacity(0.6))
+                            .lineLimit(1)
+                    }
 
-                Spacer()
+                    if AppSettings.shared.showNoiseLevel && model.state == .recording {
+                        Image(systemName: noiseIcon)
+                            .font(.system(size: 7))
+                            .foregroundColor(noiseColor.opacity(0.8))
+                    }
 
-                Text(model.engineBadge)
-                    .font(.system(size: 8, weight: .bold, design: .monospaced))
-                    .foregroundColor(badgeColor.opacity(0.8))
-                    .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(badgeColor.opacity(0.15))
-                    .cornerRadius(4)
+                    Text(model.engineBadge)
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(goldAccent.opacity(0.6))
+                }
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(goldAccent.opacity(0.08))
+                .cornerRadius(5)
             }
-            .padding(.horizontal, 20)
-            .frame(height: 36)
+            .padding(.horizontal, 16)
+            .frame(height: 32)
 
-            // テキスト表示エリア（完全固定高さ、ZStackで重ねて切替）
+            // Text area
             ZStack {
                 Text(model.streamingText.isEmpty ? " " : model.streamingText)
-                    .font(.system(size: 12, weight: .regular))
-                    .foregroundColor(.white.opacity(0.7))
+                    .font(.system(size: 12, weight: .regular, design: .rounded))
+                    .foregroundColor(warmWhite.opacity(0.7))
                     .lineLimit(2)
                     .truncationMode(.head)
                     .multilineTextAlignment(.center)
                     .opacity(!model.streamingText.isEmpty && model.state == .recording ? 1 : 0)
 
                 Text(model.tipText.isEmpty ? " " : model.tipText)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.4))
-                    .lineLimit(2)
+                    .font(.system(size: 10, weight: .light, design: .rounded))
+                    .foregroundColor(champagne.opacity(0.3))
+                    .lineLimit(1)
                     .multilineTextAlignment(.center)
                     .opacity(!model.tipText.isEmpty && model.streamingText.isEmpty ? 1 : 0)
 
                 Text(model.state == .recording ? "話してください..." : "認識中...")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(.white.opacity(0.2))
+                    .font(.system(size: 11, weight: .light, design: .rounded))
+                    .tracking(1.0)
+                    .foregroundColor(champagne.opacity(0.2))
                     .opacity(model.streamingText.isEmpty && model.tipText.isEmpty ? 1 : 0)
             }
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)
-            .frame(height: 28)
+            .frame(height: 30)
         }
         .padding(.vertical, 6)
-        .frame(width: 340, height: 80)
+        .frame(width: 320, height: 76)
         .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color(white: 0.07, opacity: 0.93))
-                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(dotColor.opacity(0.3), lineWidth: 0.7))
+            ZStack {
+                // Deep charcoal base with subtle warmth
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color(red: 0.06, green: 0.05, blue: 0.05, opacity: 0.95))
+                // Subtle gold border
+                RoundedRectangle(cornerRadius: 18)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [goldAccent.opacity(0.25), goldAccent.opacity(0.08)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.5
+                    )
+            }
         )
+        .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 8)
         .opacity(model.visible ? 1 : 0)
     }
 
     private var dotColor: Color {
         if model.isTranslateMode {
-            return Color(red: 0.30, green: 0.60, blue: 1.0)  // blue tint for translate
+            return Color(red: 0.55, green: 0.70, blue: 0.85)  // muted blue for translate
         }
         return model.state == .recording
-            ? Color(red: 1.0, green: 0.27, blue: 0.30)
-            : Color(red: 0.40, green: 0.74, blue: 1.0)
+            ? Color(red: 0.85, green: 0.55, blue: 0.40)  // warm amber
+            : goldAccent
+    }
+
+    private var noiseIcon: String {
+        switch model.noiseLevel {
+        case .good: return "checkmark.circle.fill"
+        case .fair: return "exclamationmark.triangle.fill"
+        case .poor: return "xmark.circle.fill"
+        }
+    }
+
+    private var noiseColor: Color {
+        switch model.noiseLevel {
+        case .good: return .green
+        case .fair: return .orange
+        case .poor: return .red
+        }
     }
 
     private var badgeColor: Color {
         AppSettings.shared.recognitionEngine.isLocal
-            ? Color(red: 0.3, green: 0.85, blue: 0.5)
-            : Color(red: 0.5, green: 0.7, blue: 1.0)
+            ? Color(red: 0.55, green: 0.75, blue: 0.55)  // muted sage
+            : goldAccent
     }
 }
 
@@ -335,20 +406,23 @@ struct WaveformView: View {
 
     var body: some View {
         Canvas { ctx, size in
-            let barW: CGFloat = 2.5, gap: CGFloat = 2.0
+            let barW: CGFloat = 2.0, gap: CGFloat = 2.0
             let totalW = CGFloat(barCount) * (barW + gap) - gap
             let sx = (size.width - totalW) / 2
             let midY = size.height / 2
 
             for i in 0..<barCount {
                 let lvl = Double(i < levels.count ? max(0.02, levels[i]) : 0.02)
-                let h = max(2.5, CGFloat(2 + lvl * 20))
+                let h = max(2.0, CGFloat(2 + lvl * 18))
                 let rect = CGRect(x: sx + CGFloat(i) * (barW + gap), y: midY - h / 2, width: barW, height: h)
-                let alpha = 0.4 + lvl * 0.6
+                let alpha = 0.3 + lvl * 0.5
+                // Warm gold gradient
                 let r = Double(i) / Double(barCount - 1)
-                let g = 0.15 + abs(r - 0.5) * 0.55
+                let red = 0.78 + abs(r - 0.5) * 0.12
+                let green = 0.60 + abs(r - 0.5) * 0.15
+                let blue = 0.35 + abs(r - 0.5) * 0.15
                 ctx.fill(Path(roundedRect: rect, cornerRadius: barW / 2),
-                         with: .color(Color(red: 1, green: g, blue: 0.22).opacity(alpha)))
+                         with: .color(Color(red: red, green: green, blue: blue).opacity(alpha)))
             }
         }
     }
@@ -357,25 +431,26 @@ struct WaveformView: View {
 // MARK: - Three dots (recognizing)
 
 struct ThreeDotsView: View {
+    // Champagne / gold / warm tones
     private let colors: [Color] = [
-        Color(red: 0.40, green: 0.74, blue: 1.0),
-        Color(red: 0.55, green: 0.62, blue: 1.0),
-        Color(red: 0.70, green: 0.50, blue: 1.0),
+        Color(red: 0.78, green: 0.68, blue: 0.50),
+        Color(red: 0.85, green: 0.75, blue: 0.58),
+        Color(red: 0.70, green: 0.60, blue: 0.45),
     ]
 
     var body: some View {
         TimelineView(.animation) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 ForEach(0..<3) { i in
-                    let phase = Double(i) * 0.22
-                    let v = (sin(t * 4.5 + phase * .pi * 2) + 1) / 2  // 0…1
+                    let phase = Double(i) * 0.25
+                    let v = (sin(t * 3.0 + phase * .pi * 2) + 1) / 2  // 0…1, slower
                     Circle()
                         .fill(colors[i])
-                        .frame(width: 7, height: 7)
-                        .scaleEffect(0.55 + v * 0.6)
-                        .opacity(0.4 + v * 0.6)
-                        .offset(y: CGFloat(-v * 5))
+                        .frame(width: 5, height: 5)
+                        .scaleEffect(0.6 + v * 0.5)
+                        .opacity(0.35 + v * 0.5)
+                        .offset(y: CGFloat(-v * 3))
                 }
             }
         }

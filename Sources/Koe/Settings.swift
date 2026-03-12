@@ -359,6 +359,18 @@ class AppSettings: ObservableObject {
     @Published var appProfiles: [AppProfile]    { didSet { saveJSON(appProfiles,    key: "appProfiles") } }
     @Published var textExpansions: [TextExpansion] { didSet { saveJSON(textExpansions, key: "textExpansions"); rebuildExpansionMap() } }
 
+    // Filler removal (えー、あの、えっと等の自動除去)
+    @Published var fillerRemovalEnabled: Bool { didSet { ud.set(fillerRemovalEnabled, forKey: "fillerRemovalEnabled") } }
+
+    // Punctuation style (句読点スタイル)
+    @Published var punctuationStyle: String { didSet { ud.set(punctuationStyle, forKey: "punctuationStyle") } }
+
+    // Command Mode (音声でテキスト編集)
+    @Published var commandModeEnabled: Bool { didSet { ud.set(commandModeEnabled, forKey: "commandModeEnabled") } }
+
+    // Noise level display (環境ノイズレベル表示)
+    @Published var showNoiseLevel: Bool { didSet { ud.set(showNoiseLevel, forKey: "showNoiseLevel") } }
+
     private let ud = UserDefaults.standard
 
     // MARK: Computed
@@ -469,7 +481,7 @@ class AppSettings: ObservableObject {
         llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""
         llmModel    = ud.string(forKey: "llmModel") ?? "auto"
         llmCustomPrompt = ud.string(forKey: "llmCustomPrompt") ?? ""
-        llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .none
+        llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .correct
         llmMemorySaveMode = ud.object(forKey: "llmMemorySaveMode") as? Bool ?? false  // デフォルトOFF（常時読み込み）
         superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
         agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF
@@ -487,6 +499,10 @@ class AppSettings: ObservableObject {
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []
         appProfiles = (ud.data(forKey: "appProfiles").flatMap { try? JSONDecoder().decode([AppProfile].self, from: $0) }) ?? AppSettings.defaultProfiles()
+        fillerRemovalEnabled = ud.object(forKey: "fillerRemovalEnabled") as? Bool ?? true  // デフォルトON
+        punctuationStyle = ud.string(forKey: "punctuationStyle") ?? "japanese"
+        commandModeEnabled = ud.object(forKey: "commandModeEnabled") as? Bool ?? true  // デフォルトON
+        showNoiseLevel = ud.object(forKey: "showNoiseLevel") as? Bool ?? true  // デフォルトON
         rebuildExpansionMap()
     }
 

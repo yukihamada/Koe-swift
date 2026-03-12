@@ -86,6 +86,10 @@ struct MeetingOverlayView: View {
 
     @State private var pulse = false
 
+    private let goldAccent = Color(red: 0.78, green: 0.68, blue: 0.50)
+    private let warmAmber  = Color(red: 0.85, green: 0.55, blue: 0.40)
+    private let champagne  = Color(red: 0.90, green: 0.84, blue: 0.72)
+
     var body: some View {
         HStack(spacing: 6) {
             if model.isFormatting {
@@ -93,39 +97,51 @@ struct MeetingOverlayView: View {
                     .scaleEffect(0.5)
                     .frame(width: 12, height: 12)
                 Text("整形中...")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
+                    .font(.system(size: 11, weight: .light, design: .rounded))
+                    .tracking(0.5)
+                    .foregroundColor(champagne.opacity(0.8))
             } else {
                 Circle()
-                    .fill(Color.red)
-                    .frame(width: 7, height: 7)
+                    .fill(warmAmber)
+                    .frame(width: 5, height: 5)
                     .scaleEffect(pulse ? 1.3 : 1.0)
-                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: pulse)
+                    .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: pulse)
                     .onAppear { pulse = true }
 
                 Text("議事録")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
+                    .font(.system(size: 11, weight: .light, design: .rounded))
+                    .tracking(1.0)
+                    .foregroundColor(champagne.opacity(0.8))
 
                 Text("\(model.charCount)文字")
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.6))
+                    .font(.system(size: 10, weight: .light, design: .monospaced))
+                    .foregroundColor(goldAccent.opacity(0.5))
 
                 Spacer()
 
                 Image(systemName: "stop.circle.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.4))
+                    .font(.system(size: 11))
+                    .foregroundColor(goldAccent.opacity(0.3))
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 12)
         .frame(width: 160, height: 36)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(white: 0.08, opacity: 0.92))
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(
-                    model.isFormatting ? Color.blue.opacity(0.3) : Color.red.opacity(0.3),
-                    lineWidth: 0.7))
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(red: 0.06, green: 0.05, blue: 0.05, opacity: 0.95))
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: model.isFormatting
+                                ? [goldAccent.opacity(0.2), goldAccent.opacity(0.05)]
+                                : [warmAmber.opacity(0.2), warmAmber.opacity(0.05)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.5
+                    )
+            }
         )
+        .shadow(color: .black.opacity(0.3), radius: 12, x: 0, y: 4)
     }
 }

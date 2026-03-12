@@ -1,0 +1,5 @@
+module CWhisper {
+    header "shim.h"
+    link "whisper"
+    export *
+}

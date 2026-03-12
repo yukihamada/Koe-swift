@@ -1,0 +1,579 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0FA1E862F1AF05B85E253B84 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4383DC38247B4FA6EBA7FA39 /* SettingsView.swift */; };
+		2C39265DF9AFB6BDE16BD28A /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */; };
+		3BE11845D9D03FAB0987653C /* ggml-metal.metal in Resources */ = {isa = PBXBuildFile; fileRef = E8D4209A6A834882CE32721D /* ggml-metal.metal */; };
+		5CDA08B2FE4E8C5997D3CEAB /* KoeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D55DE66037B9F07C1D4B8 /* KoeApp.swift */; };
+		610BFD0D1A29374852F89C54 /* KoeKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		812046C1066046DB4AD21A17 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C51A3984455E5BB24AD147E /* ShareViewController.swift */; };
+		89379325393A13D064595214 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC84C5A1752EC621A7C1A395 /* ModelManager.swift */; };
+		A6294D582FD26E196F250BF6 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E63620C74D2B0550DA79AB /* KeyboardViewController.swift */; };
+		B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2E4A00EF6AE47584C718C989 /* Assets.xcassets */; };
+		C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E264AF883E006A40D11232 /* ContentView.swift */; };
+		C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EBB747CA810EF9BD3F04A0EE /* WhisperContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */; };
+		F0FBBD063E22B911B51FA246 /* RecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		75083A38598FB390B6D6606F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 147F84EDE1426B6A609CE119 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 880DFEA185D7FBA5AB58B19A;
+			remoteInfo = KoeShareExt;
+		};
+		C635B3F23E738F7801E1E8FF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 147F84EDE1426B6A609CE119 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F94FB96A04856D5C697A03E9;
+			remoteInfo = KoeKeyboard;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		22911DA5C3FC91BBCBD34AAF /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				610BFD0D1A29374852F89C54 /* KoeKeyboard.appex in Embed Foundation Extensions */,
+				C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		15ECBF7536F71D44433AD11D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		21E264AF883E006A40D11232 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		2E4A00EF6AE47584C718C989 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		345D55DE66037B9F07C1D4B8 /* KoeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeApp.swift; sourceTree = "<group>"; };
+		4383DC38247B4FA6EBA7FA39 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		4B4DAB2B36C306843ED46D8B /* Koe.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Koe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		53E63620C74D2B0550DA79AB /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		5C51A3984455E5BB24AD147E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeShareExt.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AC84C5A1752EC621A7C1A395 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
+		CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperContext.swift; sourceTree = "<group>"; };
+		D0721A07D8532CB3CED06F01 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
+		E8D4209A6A834882CE32721D /* ggml-metal.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = "ggml-metal.metal"; sourceTree = "<group>"; };
+		EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		09D835E73F82C8647D08F5D7 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				2E4A00EF6AE47584C718C989 /* Assets.xcassets */,
+				21E264AF883E006A40D11232 /* ContentView.swift */,
+				E8D4209A6A834882CE32721D /* ggml-metal.metal */,
+				EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */,
+				345D55DE66037B9F07C1D4B8 /* KoeApp.swift */,
+				AC84C5A1752EC621A7C1A395 /* ModelManager.swift */,
+				DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */,
+				4383DC38247B4FA6EBA7FA39 /* SettingsView.swift */,
+				CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		0E29870BB9EE6BA426C38196 /* KoeKeyboard */ = {
+			isa = PBXGroup;
+			children = (
+				D0721A07D8532CB3CED06F01 /* Info.plist */,
+				53E63620C74D2B0550DA79AB /* KeyboardViewController.swift */,
+			);
+			path = KoeKeyboard;
+			sourceTree = "<group>";
+		};
+		2A73ED5F60ADF95293C716A2 /* KoeShareExt */ = {
+			isa = PBXGroup;
+			children = (
+				15ECBF7536F71D44433AD11D /* Info.plist */,
+				5C51A3984455E5BB24AD147E /* ShareViewController.swift */,
+			);
+			path = KoeShareExt;
+			sourceTree = "<group>";
+		};
+		BCB5D93540A2093763BEE9A1 = {
+			isa = PBXGroup;
+			children = (
+				0E29870BB9EE6BA426C38196 /* KoeKeyboard */,
+				2A73ED5F60ADF95293C716A2 /* KoeShareExt */,
+				09D835E73F82C8647D08F5D7 /* Sources */,
+				DCAED6271EA27370B344D452 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		DCAED6271EA27370B344D452 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4B4DAB2B36C306843ED46D8B /* Koe.app */,
+				5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */,
+				5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3BAF886740CB96D509EC9EC3 /* Koe */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 97267E18672A4925968517C6 /* Build configuration list for PBXNativeTarget "Koe" */;
+			buildPhases = (
+				9C1A51471912C1D7BC97C43A /* Sources */,
+				94EE63702224A8A4ADE28AF2 /* Resources */,
+				22911DA5C3FC91BBCBD34AAF /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1E03D5883CA1D66935B0F72D /* PBXTargetDependency */,
+				59AA66DF8C396797E349A016 /* PBXTargetDependency */,
+			);
+			name = Koe;
+			packageProductDependencies = (
+			);
+			productName = Koe;
+			productReference = 4B4DAB2B36C306843ED46D8B /* Koe.app */;
+			productType = "com.apple.product-type.application";
+		};
+		880DFEA185D7FBA5AB58B19A /* KoeShareExt */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6BDB88D4920E4E28C6FBF4AF /* Build configuration list for PBXNativeTarget "KoeShareExt" */;
+			buildPhases = (
+				A7882405BEDCF38DA9DB96B1 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KoeShareExt;
+			packageProductDependencies = (
+			);
+			productName = KoeShareExt;
+			productReference = 5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		F94FB96A04856D5C697A03E9 /* KoeKeyboard */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8C53B5525C62D8F5BA68C8C7 /* Build configuration list for PBXNativeTarget "KoeKeyboard" */;
+			buildPhases = (
+				8BCA411DC88FDC89D6763591 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KoeKeyboard;
+			packageProductDependencies = (
+			);
+			productName = KoeKeyboard;
+			productReference = 5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		147F84EDE1426B6A609CE119 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1620;
+				TargetAttributes = {
+					3BAF886740CB96D509EC9EC3 = {
+						DevelopmentTeam = 5BV85JW8US;
+						ProvisioningStyle = Automatic;
+					};
+					880DFEA185D7FBA5AB58B19A = {
+						DevelopmentTeam = 5BV85JW8US;
+						ProvisioningStyle = Automatic;
+					};
+					F94FB96A04856D5C697A03E9 = {
+						DevelopmentTeam = 5BV85JW8US;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 1B06E32D5428516BCDA73115 /* Build configuration list for PBXProject "Koe" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = BCB5D93540A2093763BEE9A1;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 54;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3BAF886740CB96D509EC9EC3 /* Koe */,
+				F94FB96A04856D5C697A03E9 /* KoeKeyboard */,
+				880DFEA185D7FBA5AB58B19A /* KoeShareExt */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		94EE63702224A8A4ADE28AF2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */,
+				3BE11845D9D03FAB0987653C /* ggml-metal.metal in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8BCA411DC88FDC89D6763591 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A6294D582FD26E196F250BF6 /* KeyboardViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9C1A51471912C1D7BC97C43A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */,
+				2C39265DF9AFB6BDE16BD28A /* HistoryView.swift in Sources */,
+				5CDA08B2FE4E8C5997D3CEAB /* KoeApp.swift in Sources */,
+				89379325393A13D064595214 /* ModelManager.swift in Sources */,
+				F0FBBD063E22B911B51FA246 /* RecordingManager.swift in Sources */,
+				0FA1E862F1AF05B85E253B84 /* SettingsView.swift in Sources */,
+				EBB747CA810EF9BD3F04A0EE /* WhisperContext.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7882405BEDCF38DA9DB96B1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				812046C1066046DB4AD21A17 /* ShareViewController.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1E03D5883CA1D66935B0F72D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F94FB96A04856D5C697A03E9 /* KoeKeyboard */;
+			targetProxy = C635B3F23E738F7801E1E8FF /* PBXContainerItemProxy */;
+		};
+		59AA66DF8C396797E349A016 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 880DFEA185D7FBA5AB58B19A /* KoeShareExt */;
+			targetProxy = 75083A38598FB390B6D6606F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		44B563D6CE433CCE0A83C46A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Koe.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
+				MARKETING_VERSION = 1.0.0;
+				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
+				OTHER_LDFLAGS = "-lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;
+				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		4703FA69FEA5866FBE08BEC4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KoeShareExt/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		5E307589B8997484E77C3AB7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 5BV85JW8US;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		6780441EEA05DDBE5F16CC3B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KoeKeyboard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		792FA1C28CBF76AD9FE6BD99 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KoeKeyboard/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		7B84BFAB69C6C79E034E08F2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KoeShareExt/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		BC79F00D28ECA5958E4BD819 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 5BV85JW8US;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		F38425A5D12BBFB155CE9CCA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Koe.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
+				MARKETING_VERSION = 1.0.0;
+				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
+				OTHER_LDFLAGS = "-lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit";
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;
+				SDKROOT = iphoneos;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1B06E32D5428516BCDA73115 /* Build configuration list for PBXProject "Koe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5E307589B8997484E77C3AB7 /* Debug */,
+				BC79F00D28ECA5958E4BD819 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6BDB88D4920E4E28C6FBF4AF /* Build configuration list for PBXNativeTarget "KoeShareExt" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4703FA69FEA5866FBE08BEC4 /* Debug */,
+				7B84BFAB69C6C79E034E08F2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8C53B5525C62D8F5BA68C8C7 /* Build configuration list for PBXNativeTarget "KoeKeyboard" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6780441EEA05DDBE5F16CC3B /* Debug */,
+				792FA1C28CBF76AD9FE6BD99 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		97267E18672A4925968517C6 /* Build configuration list for PBXNativeTarget "Koe" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F38425A5D12BBFB155CE9CCA /* Debug */,
+				44B563D6CE433CCE0A83C46A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 147F84EDE1426B6A609CE119 /* Project object */;
+}

@@ -1,0 +1,69 @@
+name: Koe-macOS
+options:
+  bundleIdPrefix: com.yuki
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "16.2"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: 5BV85JW8US
+    CODE_SIGN_STYLE: Automatic
+
+schemes:
+  Koe:
+    build:
+      targets:
+        Koe: all
+    archive:
+      config: Release
+
+targets:
+  Koe:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/Koe
+        excludes:
+          - "**/ggml-metal.metal"
+      - path: lib-macos/ggml-metal.metal
+        buildPhase: resources
+      - path: AppIcon.icns
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.mac
+        INFOPLIST_FILE: Info-macOS.plist
+        MARKETING_VERSION: "2.2.5"
+        CURRENT_PROJECT_VERSION: "1"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        ARCHS: "arm64"
+        ONLY_ACTIVE_ARCH: "NO"
+        SWIFT_INCLUDE_PATHS: "$(PROJECT_DIR)/Sources/CWhisper $(PROJECT_DIR)/Sources/CLlama"
+        MTL_HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/lib-macos"
+        LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/lib-macos"
+        OTHER_LDFLAGS: >-
+          -lwhisper
+          -lwhisper.coreml
+          -lggml
+          -lggml-base
+          -lggml-cpu
+          -lggml-metal
+          -lggml-blas
+          -lllama
+          -lstdc++
+          -framework Accelerate
+          -framework Metal
+          -framework MetalKit
+          -framework CoreML
+          -framework AppKit
+          -framework AVFoundation
+          -framework Speech
+          -framework SwiftUI
+          -framework AudioToolbox
+          -framework CoreAudio
+          -framework UserNotifications
+          -framework ServiceManagement
+        CODE_SIGN_ENTITLEMENTS: Koe-macOS.entitlements
+        ENABLE_HARDENED_RUNTIME: "YES"

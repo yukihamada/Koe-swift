@@ -1,0 +1,89 @@
+default_platform(:mac)
+
+platform :mac do
+  desc "Create app in App Store Connect"
+  lane :create_app do
+    api_key = app_store_connect_api_key(
+      key_id: "Q85J75484M",
+      issuer_id: "e0d22675-afb3-45f0-a821-06b477f44da0",
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_Q85J75484M.p8"),
+      in_house: false
+    )
+
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(hash: api_key)
+
+    # Find bundle ID
+    bundle_ids = Spaceship::ConnectAPI::BundleId.all.select { |b| b.identifier == "com.yuki.koe.mac" }
+    if bundle_ids.empty?
+      UI.user_error!("Bundle ID com.yuki.koe.mac not found. Register it in Developer Portal first.")
+    end
+    bundle_id = bundle_ids.first
+
+    # Create app
+    app = Spaceship::ConnectAPI::App.create(
+      name: "Koe — Voice Input",
+      bundle_id: bundle_id.id,
+      sku: "koe-macos-001",
+      primary_locale: "en-US",
+      platforms: [Spaceship::ConnectAPI::Platform::MAC_OS]
+    )
+    UI.success("Created app: #{app.name} (#{app.bundle_id})")
+  end
+
+  desc "Build and upload to Mac App Store"
+  lane :release do
+    api_key = app_store_connect_api_key(
+      key_id: "Q85J75484M",
+      issuer_id: "e0d22675-afb3-45f0-a821-06b477f44da0",
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_Q85J75484M.p8"),
+      in_house: false
+    )
+
+    build_num = Time.now.strftime("%Y%m%d%H%M")
+
+    build_app(
+      project: "Koe-macOS.xcodeproj",
+      scheme: "Koe",
+      configuration: "Release",
+      export_method: "app-store",
+      destination: "generic/platform=macOS",
+      clean: true,
+      output_directory: "./build-macos",
+      output_name: "Koe.pkg",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: "5BV85JW8US"
+      },
+      xcargs: "-allowProvisioningUpdates -authenticationKeyPath '#{File.expand_path("~/.appstoreconnect/private_keys/AuthKey_Q85J75484M.p8")}' -authenticationKeyID 'Q85J75484M' -authenticationKeyIssuerID 'e0d22675-afb3-45f0-a821-06b477f44da0' CURRENT_PROJECT_VERSION=#{build_num}"
+    )
+
+    upload_to_app_store(
+      skip_screenshots: true,
+      skip_metadata: true,
+      precheck_include_in_app_purchases: false,
+      force: true,
+      api_key: api_key
+    )
+  end
+
+  desc "Build only (no upload)"
+  lane :build do
+    build_num = Time.now.strftime("%Y%m%d%H%M")
+
+    build_app(
+      project: "Koe-macOS.xcodeproj",
+      scheme: "Koe",
+      configuration: "Release",
+      export_method: "app-store",
+      destination: "generic/platform=macOS",
+      clean: true,
+      output_directory: "./build-macos",
+      output_name: "Koe.pkg",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: "5BV85JW8US"
+      },
+      xcargs: "CURRENT_PROJECT_VERSION=#{build_num}"
+    )
+  end
+end

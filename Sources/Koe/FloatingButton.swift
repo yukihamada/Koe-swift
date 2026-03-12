@@ -98,50 +98,66 @@ struct FloatingButtonView: View {
 
     @State private var hovered = false
 
+    // Luxury palette
+    private let goldAccent = Color(red: 0.78, green: 0.68, blue: 0.50)
+    private let warmAmber  = Color(red: 0.85, green: 0.55, blue: 0.40)
+    private let deepChar   = Color(red: 0.08, green: 0.07, blue: 0.06)
+
     var body: some View {
         ZStack {
+            // Outer shadow ring for depth
             Circle()
-                .fill(bgColor)
-                .overlay(Circle().strokeBorder(borderColor, lineWidth: 1.2))
-                .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 3)
+                .fill(
+                    model.isRecording
+                        ? LinearGradient(
+                            colors: [warmAmber, Color(red: 0.70, green: 0.40, blue: 0.30)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing)
+                        : LinearGradient(
+                            colors: [deepChar, Color(red: 0.12, green: 0.11, blue: 0.10)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing)
+                )
+                .overlay(
+                    Circle().strokeBorder(
+                        LinearGradient(
+                            colors: model.isRecording
+                                ? [warmAmber.opacity(0.6), warmAmber.opacity(0.2)]
+                                : [goldAccent.opacity(0.25), goldAccent.opacity(0.05)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.8
+                    )
+                )
+                .shadow(color: .black.opacity(0.5), radius: 12, x: 0, y: 4)
 
             Image(systemName: model.isRecording ? "stop.fill" : "mic.fill")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(iconColor)
+                .font(.system(size: 18, weight: .light))
+                .foregroundColor(model.isRecording ? .white : goldAccent)
                 .scaleEffect(model.isRecording ? 0.85 : 1.0)
-                .animation(.spring(response: 0.25), value: model.isRecording)
+                .animation(.easeInOut(duration: 0.3), value: model.isRecording)
         }
         .frame(width: 52, height: 52)
-        .scaleEffect(hovered ? 1.08 : 1.0)
-        .animation(.spring(response: 0.2), value: hovered)
+        .scaleEffect(hovered ? 1.06 : 1.0)
+        .animation(.easeInOut(duration: 0.25), value: hovered)
         .onHover { hovered = $0 }
         .overlay(
-            // 録音中: 赤いリングアニメ
             model.isRecording ? AnyView(PulsingRing()) : AnyView(EmptyView())
         )
     }
-
-    private var bgColor: Color {
-        model.isRecording
-            ? Color(red: 0.95, green: 0.18, blue: 0.18)
-            : Color(white: 0.12, opacity: 0.92)
-    }
-    private var borderColor: Color {
-        model.isRecording ? .red.opacity(0.6) : .white.opacity(0.15)
-    }
-    private var iconColor: Color { .white }
 }
 
 struct PulsingRing: View {
     @State private var scale: CGFloat = 1.0
-    @State private var opacity: Double = 0.6
+    @State private var opacity: Double = 0.4
+
+    // Warm amber pulse instead of red
+    private let pulseColor = Color(red: 0.85, green: 0.55, blue: 0.40)
 
     var body: some View {
         Circle()
-            .strokeBorder(Color.red.opacity(opacity), lineWidth: 2.5)
+            .strokeBorder(pulseColor.opacity(opacity), lineWidth: 1.5)
             .scaleEffect(scale)
             .onAppear {
-                withAnimation(.easeOut(duration: 1.0).repeatForever(autoreverses: false)) {
+                withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) {
                     scale = 1.6; opacity = 0
                 }
             }

@@ -209,7 +209,7 @@ final class LlamaContext {
     // MARK: - Chat completion
 
     /// system + user メッセージからテキスト生成
-    func generate(system: String, user: String, maxTokens: Int = 256,
+    func generate(system: String, user: String, maxTokens: Int = 1024,
                   completion: @escaping (String?) -> Void) {
         guard isLoaded, let model = model, let ctx = ctx else {
             completion(nil); return
@@ -259,9 +259,8 @@ final class LlamaContext {
             llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05, 1))
             llama_sampler_chain_add(smpl, llama_sampler_init_greedy())
 
-            // Generate tokens
-            var output = ""
-            var inThink = false   // Qwen3 thinking mode: skip <think>...</think>
+            // Generate tokens — accumulate raw output, strip <think>...</think> at end
+            var rawOutput = ""
 
             for _ in 0..<maxTokens {
                 let tokenID = llama_sampler_sample(smpl, ctx, -1)
@@ -272,13 +271,7 @@ final class LlamaContext {
                 let len = llama_token_to_piece(vocab, tokenID, &buf, 256, 0, false)
                 if len > 0 {
                     let piece = String(cString: buf)
-
-                    // Handle <think>...</think> tags
-                    if piece.contains("<think>") { inThink = true; continue }
-                    if piece.contains("</think>") { inThink = false; continue }
-                    if !inThink {
-                        output += piece
-                    }
+                    rawOutput += piece
                 }
 
                 // Decode next token
@@ -287,9 +280,22 @@ final class LlamaContext {
                 if llama_decode(ctx, batch) != 0 { break }
             }
 
+            // Strip Qwen3 <think>...</think> blocks (handles token boundary splits)
+            var output = rawOutput
+            while let thinkStart = output.range(of: "<think>") {
+                if let thinkEnd = output.range(of: "</think>", range: thinkStart.upperBound..<output.endIndex) {
+                    output.removeSubrange(thinkStart.lowerBound..<thinkEnd.upperBound)
+                } else {
+                    // <think> without closing </think> — remove everything from <think> onward
+                    output.removeSubrange(thinkStart.lowerBound..<output.endIndex)
+                    break
+                }
+            }
+
             llama_sampler_free(smpl)
 
             let elapsed = CFAbsoluteTimeGetCurrent() - start
+            klog("Llama: raw output (\(rawOutput.count) chars): '\(rawOutput.prefix(120))'")
             let result = output.trimmingCharacters(in: .whitespacesAndNewlines)
             klog("Llama: generated in \(String(format: "%.2f", elapsed))s → '\(result.prefix(80))'")
 

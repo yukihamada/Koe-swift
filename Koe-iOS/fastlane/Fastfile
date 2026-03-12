@@ -1,0 +1,35 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and upload to TestFlight"
+  lane :beta do
+    api_key = app_store_connect_api_key(
+      key_id: "Q85J75484M",
+      issuer_id: "e0d22675-afb3-45f0-a821-06b477f44da0",
+      key_filepath: File.expand_path("~/.appstoreconnect/private_keys/AuthKey_Q85J75484M.p8"),
+      in_house: false
+    )
+
+    build_num = Time.now.strftime("%Y%m%d%H%M")
+
+    build_app(
+      project: "Koe.xcodeproj",
+      scheme: "Koe",
+      export_method: "app-store",
+      destination: "generic/platform=iOS",
+      clean: true,
+      output_directory: "./build",
+      output_name: "Koe.ipa",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: "5BV85JW8US"
+      },
+      xcargs: "-allowProvisioningUpdates -authenticationKeyPath '#{File.expand_path("~/.appstoreconnect/private_keys/AuthKey_Q85J75484M.p8")}' -authenticationKeyID 'Q85J75484M' -authenticationKeyIssuerID 'e0d22675-afb3-45f0-a821-06b477f44da0' CURRENT_PROJECT_VERSION=#{build_num}"
+    )
+
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true,
+      api_key: api_key
+    )
+  end
+end

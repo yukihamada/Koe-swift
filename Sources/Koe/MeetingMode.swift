@@ -168,8 +168,63 @@ class MeetingMode: ObservableObject {
             NSWorkspace.shared.open(formattedURL)
         }
 
+        // SRT字幕ファイルを生成
+        exportSRT(outputDir: outputDir)
+
         // フォルダも開く
         NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: outputDir.path)
+    }
+
+    // MARK: - SRT/VTT Export
+
+    /// SRT字幕ファイルとしてエクスポート
+    private func exportSRT(outputDir: URL) {
+        guard !rawEntries.isEmpty else { return }
+        var srt = ""
+        for (i, entry) in rawEntries.enumerated() {
+            // "[HH:mm:ss] text" format
+            let parts = entry.split(separator: "]", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let timeStr = String(parts[0].dropFirst()) // remove "["
+            let text = parts[1].trimmingCharacters(in: .whitespaces)
+            // Approximate: each entry is ~5 seconds
+            let startSec = i * 5
+            let endSec = (i + 1) * 5
+            srt += "\(i + 1)\n"
+            srt += "\(srtTime(startSec)) --> \(srtTime(endSec))\n"
+            srt += "\(text)\n\n"
+        }
+        let srtURL = outputDir.appendingPathComponent("議事録.srt")
+        try? srt.write(to: srtURL, atomically: true, encoding: .utf8)
+
+        // VTT version
+        var vtt = "WEBVTT\n\n"
+        for (i, entry) in rawEntries.enumerated() {
+            let parts = entry.split(separator: "]", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+            let text = parts[1].trimmingCharacters(in: .whitespaces)
+            let startSec = i * 5
+            let endSec = (i + 1) * 5
+            vtt += "\(vttTime(startSec)) --> \(vttTime(endSec))\n"
+            vtt += "\(text)\n\n"
+        }
+        let vttURL = outputDir.appendingPathComponent("議事録.vtt")
+        try? vtt.write(to: vttURL, atomically: true, encoding: .utf8)
+        klog("MeetingMode: SRT/VTT exported")
+    }
+
+    private func srtTime(_ seconds: Int) -> String {
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        let s = seconds % 60
+        return String(format: "%02d:%02d:%02d,000", h, m, s)
+    }
+
+    private func vttTime(_ seconds: Int) -> String {
+        let h = seconds / 3600
+        let m = (seconds % 3600) / 60
+        let s = seconds % 60
+        return String(format: "%02d:%02d:%02d.000", h, m, s)
     }
 
     /// テキストを追記（音声URLがあれば音声も保存）

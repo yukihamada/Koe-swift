@@ -809,14 +809,61 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleRecognitionResult(_ raw: String, profile: AppProfile?) {
         isRecognizing = false
-        // Whisperが返す改行を除去（明示的に指示がない限り改行なし）
+        let recordingDuration = recordingStart.map { Date().timeIntervalSince($0) } ?? 0
+
+        // Whisperが返す改行を除去（音声フォーマットコマンドで明示的に挿入する）
         let cleaned = raw.replacingOccurrences(of: "\n", with: " ")
                          .replacingOccurrences(of: "\r", with: "")
                          .trimmingCharacters(in: .whitespaces)
-        let expanded = AppSettings.shared.expand(cleaned)
+
+        // フィラーワード除去（えー、あの、えっと等）
+        let defillered: String
+        if AppSettings.shared.fillerRemovalEnabled {
+            defillered = VoiceCommands.removeFillers(cleaned, language: AppSettings.shared.language)
+            if defillered != cleaned {
+                klog("FillerRemoval: '\(cleaned)' → '\(defillered)'")
+            }
+        } else {
+            defillered = cleaned
+        }
+
+        let expanded = AppSettings.shared.expand(defillered)
+        // 音声フォーマットコマンドを適用（「改行」→\n、「句読点」→。等）
+        var formatted = VoiceCommands.applyFormatting(expanded)
+
+        // 句読点スタイル変換
+        if let style = VoiceCommands.PunctuationStyle(rawValue: AppSettings.shared.punctuationStyle) {
+            formatted = VoiceCommands.applyPunctuationStyle(formatted, style: style)
+        }
+
+        // 音声編集コマンド: 「削除」「取り消し」等
+        if let editCmd = VoiceCommands.detectEditCommand(formatted) {
+            switch editCmd {
+            case .undo:
+                klog("VoiceCommand: undo")
+                typer.postUndo()
+            case .deleteAll:
+                klog("VoiceCommand: deleteAll")
+                typer.postSelectAllDelete()
+            }
+            overlay?.hide()
+            postRecognitionCleanup()
+            return
+        }
+
+        // Command Mode: 選択テキストの書き換え指示を検出
+        if AppSettings.shared.commandModeEnabled,
+           let cmdAction = VoiceCommands.detectCommandMode(formatted) {
+            switch cmdAction {
+            case .rewrite(let prompt):
+                klog("CommandMode: rewrite with prompt")
+                handleCommandModeRewrite(prompt: prompt)
+            }
+            return
+        }
 
         // Agent mode: detect and execute voice commands instead of typing
-        if AppSettings.shared.agentModeEnabled, let command = AgentMode.shared.detectCommand(expanded) {
+        if AppSettings.shared.agentModeEnabled, let command = AgentMode.shared.detectCommand(formatted) {
             klog("Agent: detected command — \(command.description)")
             if !isMeetingAutoRecording { overlay?.show(state: .recognizing) }
             AgentMode.shared.execute(command) { [weak self] result in
@@ -849,7 +896,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             instruction = profile?.llmInstruction ?? ""
         }
-        LLMProcessor.shared.process(text: expanded, instruction: instruction, appBundleID: activeAppBundleID) { [weak self] final in
+        LLMProcessor.shared.process(text: formatted, instruction: instruction, appBundleID: activeAppBundleID) { [weak self] final in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.overlay?.hide()
@@ -873,6 +920,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                     HistoryStore.shared.add(final)
+                    VoiceStats.shared.recordSession(charCount: final.count, durationSeconds: recordingDuration)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
                     CorrectionStore.shared.trackDelivery(original: final, appBundleID: self.activeAppBundleID)
                     self.publishHandoffActivity(text: final)
@@ -883,6 +931,52 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     if AppSettings.shared.notifyOnComplete {
                         self.sendNotification(text: final)
                     }
+                }
+                self.postRecognitionCleanup()
+            }
+        }
+    }
+
+    /// Command Mode: 選択テキストをLLMで書き換える
+    private func handleCommandModeRewrite(prompt: String) {
+        // アクセシビリティで選択テキストを取得
+        guard AXIsProcessTrusted() else {
+            klog("CommandMode: no accessibility permission")
+            overlay?.hide()
+            postRecognitionCleanup()
+            return
+        }
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedElement: AnyObject?
+        AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        guard let element = focusedElement else {
+            klog("CommandMode: no focused element")
+            overlay?.hide()
+            postRecognitionCleanup()
+            return
+        }
+        var selectedValue: AnyObject?
+        AXUIElementCopyAttributeValue(element as! AXUIElement, kAXSelectedTextAttribute as CFString, &selectedValue)
+        let selectedText = (selectedValue as? String) ?? ""
+        if selectedText.isEmpty {
+            klog("CommandMode: no selected text")
+            overlay?.hide()
+            sendNotification(text: "テキストを選択してからコマンドを使ってください")
+            postRecognitionCleanup()
+            return
+        }
+        klog("CommandMode: rewriting '\(selectedText.prefix(40))' with prompt")
+        overlay?.show(state: .recognizing)
+        let fullPrompt = "\(prompt)\n\n対象テキスト:\n\(selectedText)"
+        LLMProcessor.shared.process(text: selectedText, instruction: fullPrompt, appBundleID: activeAppBundleID) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.overlay?.hide()
+                if !result.isEmpty && result != selectedText {
+                    // 選択テキストをペーストで置換
+                    self.typer.paste(result)
+                    klog("CommandMode: replaced with '\(result.prefix(40))'")
+                    HistoryStore.shared.add("[書換] \(result)")
                 }
                 self.postRecognitionCleanup()
             }

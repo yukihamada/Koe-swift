@@ -6,7 +6,7 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
     convenience init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 540, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 580),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -28,18 +28,383 @@ class SettingsWindowController: NSWindowController, NSWindowDelegate {
     }
 }
 
+// MARK: - Luxury Design Tokens
+private enum Lux {
+    static let gold      = Color(red: 0.78, green: 0.68, blue: 0.50)
+    static let champagne = Color(red: 0.90, green: 0.84, blue: 0.72)
+    static let charcoal  = Color(red: 0.10, green: 0.09, blue: 0.08)
+}
+
 struct SettingsRootView: View {
+    @State private var selectedPersona: Persona?
+
     var body: some View {
-        TabView {
-            GeneralTab()
-                .tabItem { Label("一般", systemImage: "gear") }
-            AITab()
-                .tabItem { Label("AI", systemImage: "brain.head.profile") }
-            HistoryTab()
-                .tabItem { Label("履歴", systemImage: "clock.arrow.circlepath") }
+        VStack(spacing: 0) {
+            // Persona quick-select bar
+            PersonaBar(selectedPersona: $selectedPersona)
+
+            TabView {
+                GeneralTab()
+                    .tabItem { Label("一般", systemImage: "gear") }
+                VoiceTab()
+                    .tabItem { Label("音声", systemImage: "waveform") }
+                AITab()
+                    .tabItem { Label("AI", systemImage: "brain.head.profile") }
+                AutomationTab()
+                    .tabItem { Label("自動化", systemImage: "bolt.fill") }
+                StatsTab()
+                    .tabItem { Label("統計", systemImage: "chart.bar.fill") }
+                HistoryTab()
+                    .tabItem { Label("履歴", systemImage: "clock.arrow.circlepath") }
+            }
         }
         .padding(16)
-        .frame(width: 540, height: 520)
+        .frame(width: 580, height: 580)
+        .sheet(item: $selectedPersona) { persona in
+            PersonaDetailView(persona: persona) { selectedPersona = nil }
+        }
+    }
+}
+
+// MARK: - Persona System
+
+struct Persona: Identifiable {
+    let id: String
+    let name: String
+    let icon: String
+    let subtitle: String
+    let description: String
+    let settings: PersonaSettings
+}
+
+struct PersonaSettings {
+    let language: String
+    let llmEnabled: Bool
+    let llmMode: String          // maps to LLMMode raw
+    let agentMode: Bool
+    let streamingPreview: Bool
+    let silenceWait: Double
+    let beamSearch: Bool
+    let superMode: Bool
+    let customPrompt: String
+    let tips: [String]
+}
+
+enum PersonaCatalog {
+    static let all: [Persona] = [
+        Persona(
+            id: "business",
+            name: "ビジネス",
+            icon: "briefcase.fill",
+            subtitle: "メール・議事録・報告書",
+            description: "ビジネス文書に最適化。敬語の誤り修正、句読点の自動挿入、フォーマルな文体への整形を行います。",
+            settings: PersonaSettings(
+                language: "ja-JP",
+                llmEnabled: true,
+                llmMode: "formal",
+                agentMode: false,
+                streamingPreview: false,
+                silenceWait: 1.5,
+                beamSearch: true,
+                superMode: true,
+                customPrompt: "ビジネス文書として適切な敬語・句読点・改行に整形してください。箇条書きは「・」で統一。",
+                tips: [
+                    "「改行」で段落を分けられます",
+                    "「句点」「読点」で句読点を挿入",
+                    "Super Modeでアプリに合わせた出力",
+                    "メールアプリではより丁寧な文体に"
+                ]
+            )
+        ),
+        Persona(
+            id: "engineer",
+            name: "エンジニア",
+            icon: "chevron.left.forwardslash.chevron.right",
+            subtitle: "コード・コメント・ドキュメント",
+            description: "プログラミング用語を正確に認識。変数名やAPI名の誤変換を防ぎ、技術文書に適した出力を生成します。",
+            settings: PersonaSettings(
+                language: "ja-JP",
+                llmEnabled: true,
+                llmMode: "custom",
+                agentMode: true,
+                streamingPreview: true,
+                silenceWait: 2.0,
+                beamSearch: true,
+                superMode: true,
+                customPrompt: "技術文書・コードコメントとして整形。プログラミング用語は英語のまま保持。カタカナ語は原語に近い表記に。",
+                tips: [
+                    "エージェントモードで「ターミナルでgit status」",
+                    "Super ModeでIDE検知→コメント形式を自動調整",
+                    "「タブ」でインデント挿入",
+                    "コードエディタではコメント形式に最適化"
+                ]
+            )
+        ),
+        Persona(
+            id: "creator",
+            name: "クリエイター",
+            icon: "paintbrush.fill",
+            subtitle: "文章・SNS・ブログ",
+            description: "自然で読みやすい文体に整形。文章のリズムを保ちながら、適切な句読点と改行を挿入します。",
+            settings: PersonaSettings(
+                language: "ja-JP",
+                llmEnabled: true,
+                llmMode: "custom",
+                agentMode: false,
+                streamingPreview: true,
+                silenceWait: 2.0,
+                beamSearch: false,
+                superMode: false,
+                customPrompt: "自然で読みやすい文体に整形。話し言葉のニュアンスを活かしつつ、読みやすく。過度なフォーマル化は避ける。",
+                tips: [
+                    "「改行」「段落」で構成を整える",
+                    "「かぎかっこ開き」「閉じ」で会話文を挿入",
+                    "「はてな」「ビックリマーク」で記号入力",
+                    "ゆっくりモードで長文も正確に"
+                ]
+            )
+        ),
+        Persona(
+            id: "student",
+            name: "学生",
+            icon: "graduationcap.fill",
+            subtitle: "レポート・ノート・メモ",
+            description: "レポートやノート向け。学術用語を正確に認識し、論理的な文章構成をサポートします。",
+            settings: PersonaSettings(
+                language: "ja-JP",
+                llmEnabled: true,
+                llmMode: "custom",
+                agentMode: false,
+                streamingPreview: false,
+                silenceWait: 1.5,
+                beamSearch: true,
+                superMode: false,
+                customPrompt: "レポート・学術文書として整形。「である」調に統一。専門用語は正確に。",
+                tips: [
+                    "「段落」で段落分け",
+                    "高精度モードで専門用語を正確に",
+                    "文脈引き継ぎで長いレポートも一貫性を維持",
+                    "履歴タブで過去のメモを検索"
+                ]
+            )
+        ),
+        Persona(
+            id: "multilingual",
+            name: "多言語",
+            icon: "globe",
+            subtitle: "英語・翻訳・国際会議",
+            description: "多言語対応に最適化。英語の音声認識や、日英混在の文章を適切に処理します。",
+            settings: PersonaSettings(
+                language: "en-US",
+                llmEnabled: true,
+                llmMode: "custom",
+                agentMode: false,
+                streamingPreview: false,
+                silenceWait: 1.5,
+                beamSearch: true,
+                superMode: false,
+                customPrompt: "Fix grammar and punctuation. Preserve the original language. For mixed Japanese-English text, keep each language segment natural.",
+                tips: [
+                    "メニューバーから言語を素早く切り替え",
+                    "「スペース」で英単語間のスペースを挿入",
+                    "Beam Searchで多言語を正確に認識",
+                    "コンテキスト認識で言語を自動判定"
+                ]
+            )
+        ),
+    ]
+}
+
+// MARK: - Persona Bar (top of settings)
+
+struct PersonaBar: View {
+    @Binding var selectedPersona: Persona?
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Text("プリセット")
+                    .font(.system(size: 11, weight: .light))
+                    .foregroundColor(.secondary)
+                    .tracking(0.5)
+
+                Spacer()
+
+                ForEach(PersonaCatalog.all) { persona in
+                    Button {
+                        selectedPersona = persona
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: persona.icon)
+                                .font(.system(size: 9))
+                            Text(persona.name)
+                                .font(.system(size: 10, weight: .light))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(Color(NSColor.controlBackgroundColor))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 5)
+                                .stroke(Lux.gold.opacity(0.3), lineWidth: 0.5)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+    }
+}
+
+// MARK: - Persona Detail View
+
+struct PersonaDetailView: View {
+    let persona: Persona
+    let onDismiss: () -> Void
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var applied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: 12) {
+                Image(systemName: persona.icon)
+                    .font(.system(size: 28, weight: .thin))
+                    .foregroundColor(Lux.gold)
+                    .frame(width: 48, height: 48)
+                    .background(
+                        Circle()
+                            .fill(Lux.gold.opacity(0.08))
+                    )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(persona.name)
+                        .font(.system(size: 20, weight: .light))
+                        .tracking(1)
+                    Text(persona.subtitle)
+                        .font(.system(size: 12, weight: .light))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            .padding(20)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Description
+                    Text(persona.description)
+                        .font(.system(size: 13))
+                        .foregroundColor(.secondary)
+                        .lineSpacing(4)
+
+                    // Settings preview
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 8) {
+                            settingRow("言語", persona.settings.language == "ja-JP" ? "日本語" : "English")
+                            settingRow("LLM後処理", persona.settings.llmEnabled ? "有効" : "無効")
+                            settingRow("高精度モード", persona.settings.beamSearch ? "ON" : "OFF")
+                            settingRow("エージェントモード", persona.settings.agentMode ? "ON" : "OFF")
+                            settingRow("Super Mode", persona.settings.superMode ? "ON" : "OFF")
+                            settingRow("待ち時間", "\(String(format: "%.1f", persona.settings.silenceWait))秒")
+                            if !persona.settings.customPrompt.isEmpty {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("カスタムプロンプト").font(.system(size: 10, weight: .medium))
+                                    Text(persona.settings.customPrompt)
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(3)
+                                }
+                            }
+                        }
+                        .padding(4)
+                    } label: {
+                        Label("適用される設定", systemImage: "gearshape.2")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Lux.gold)
+                    }
+
+                    // Tips
+                    GroupBox {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(persona.settings.tips, id: \.self) { tip in
+                                HStack(alignment: .top, spacing: 6) {
+                                    Text("·")
+                                        .foregroundColor(Lux.gold)
+                                        .font(.system(size: 14, weight: .light))
+                                    Text(tip)
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(4)
+                    } label: {
+                        Label("使いこなしヒント", systemImage: "lightbulb")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Lux.gold)
+                    }
+                }
+                .padding(20)
+            }
+
+            Divider()
+
+            // Actions
+            HStack {
+                Button("閉じる") { onDismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Spacer()
+                if applied {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                        Text("適用しました")
+                            .font(.system(size: 12))
+                            .foregroundColor(.green)
+                    }
+                }
+                Button("この設定を適用") {
+                    applyPersona(persona)
+                    applied = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        onDismiss()
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(applied)
+            }
+            .padding(16)
+        }
+        .frame(width: 420, height: 520)
+    }
+
+    private func settingRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.system(size: 10, weight: .medium))
+            Spacer()
+            Text(value).font(.system(size: 10)).foregroundColor(.secondary)
+        }
+    }
+
+    private func applyPersona(_ p: Persona) {
+        let s = p.settings
+        settings.language = s.language
+        settings.llmEnabled = s.llmEnabled
+        settings.agentModeEnabled = s.agentMode
+        settings.streamingPreviewEnabled = s.streamingPreview
+        settings.silenceAutoStopSeconds = s.silenceWait
+        settings.whisperBeamSearch = s.beamSearch
+        settings.superModeEnabled = s.superMode
+        if !s.customPrompt.isEmpty {
+            settings.llmCustomPrompt = s.customPrompt
+        }
+        klog("Persona applied: \(p.name)")
     }
 }
 
@@ -84,7 +449,7 @@ struct AgentTab: View {
     }
 }
 
-// MARK: - General Tab
+// MARK: - General Tab (基本: ショートカット、言語、動作)
 
 struct GeneralTab: View {
     @ObservedObject private var settings = AppSettings.shared
@@ -101,9 +466,15 @@ struct GeneralTab: View {
 
     var body: some View {
         Form {
-            // ===== 基本設定 =====
             Section {
-                // ショートカット (1行にまとめ)
+                // Language — most frequently changed
+                Picker("言語", selection: $settings.language) {
+                    ForEach(AppSettings.quickLanguages, id: \.code) { lang in
+                        Text("\(lang.flag) \(lang.name)").tag(lang.code)
+                    }
+                }
+
+                // Shortcut
                 HStack {
                     Text("ショートカット")
                     Spacer()
@@ -138,8 +509,121 @@ struct GeneralTab: View {
                     }
                 }
                 .onChange(of: settings.recordingMode) { _ in AppDelegate.shared?.reregisterHotkey() }
+            } header: {
+                Label("基本", systemImage: "keyboard")
+                    .foregroundColor(Lux.gold)
+            }
 
-                Picker("エンジン", selection: $settings.recognitionEngine) {
+            Section {
+                Toggle("ログイン時に自動起動", isOn: $settings.launchAtLogin)
+                Toggle("クリップボードにコピー", isOn: $settings.autoCopyToClipboard)
+                Toggle("完了時に通知", isOn: $settings.notifyOnComplete)
+                Toggle("フローティングボタン", isOn: $settings.floatingButtonEnabled)
+
+                HStack {
+                    Text("入力モード")
+                    Spacer()
+                    Picker("", selection: $settings.streamingPreviewEnabled) {
+                        Text("声入力").tag(true)
+                        Text("直接入力").tag(false)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
+                }
+
+                Toggle("左⌘→英語 / 右⌘→日本語", isOn: $settings.cmdIMESwitchEnabled)
+                Toggle("環境ノイズレベル表示", isOn: $settings.showNoiseLevel)
+            } header: {
+                Label("動作", systemImage: "slider.horizontal.3")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
+                DisclosureGroup("メニューバーの言語") {
+                    Text("チェックした言語がメニューバーに表示されます").font(.system(size: 10)).foregroundColor(.secondary)
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 2) {
+                        ForEach(AppSettings.quickLanguages, id: \.code) { lang in
+                            Toggle("\(lang.flag) \(lang.name)", isOn: Binding(
+                                get: { settings.menuBarLanguageCodes.contains(lang.code) },
+                                set: { on in
+                                    if on {
+                                        if !settings.menuBarLanguageCodes.contains(lang.code) {
+                                            settings.menuBarLanguageCodes.append(lang.code)
+                                        }
+                                    } else {
+                                        settings.menuBarLanguageCodes.removeAll { $0 == lang.code }
+                                    }
+                                }
+                            )).font(.system(size: 11))
+                        }
+                    }
+                }
+
+                DisclosureGroup("権限") {
+                    HStack {
+                        Image(systemName: "mic").font(.caption)
+                        Text("マイク").font(.caption)
+                        Spacer()
+                        Button("開く") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+                        }.buttonStyle(.link).font(.caption)
+                    }
+                    HStack {
+                        Image(systemName: "hand.raised").font(.caption)
+                        Text("アクセシビリティ").font(.caption)
+                        Spacer()
+                        Text(AXIsProcessTrusted() ? "OK" : "未許可").foregroundColor(AXIsProcessTrusted() ? Lux.gold : .orange)
+                            .font(.caption)
+                        Button("開く") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                        }.buttonStyle(.link).font(.caption)
+                    }
+                }
+
+                // Version
+                HStack {
+                    Text("バージョン").font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Text("v\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")")
+                        .font(.caption).foregroundColor(.secondary)
+                }
+            } header: {
+                Label("その他", systemImage: "ellipsis.circle")
+                    .foregroundColor(Lux.gold)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func startRecording() {
+        isRecordingKey = true
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if !flags.isEmpty || event.keyCode >= 96 {
+                self.settings.shortcutKeyCode  = Int(event.keyCode)
+                self.settings.shortcutModifiers = flags.rawValue
+                AppDelegate.shared?.reregisterHotkey()
+                self.stopRecording()
+            }
+            return nil
+        }
+    }
+
+    private func stopRecording() {
+        isRecordingKey = false
+        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+    }
+}
+
+// MARK: - Voice Tab (音声: エンジン、モデル、認識パラメータ)
+
+struct VoiceTab: View {
+    @ObservedObject private var settings = AppSettings.shared
+
+    var body: some View {
+        Form {
+            Section {
+                Picker("認識エンジン", selection: $settings.recognitionEngine) {
                     ForEach(RecognitionEngine.allCases, id: \.self) { engine in
                         Text(engine.displayName).tag(engine)
                     }
@@ -157,158 +641,197 @@ struct GeneralTab: View {
                         SecureFieldWithReveal(text: $settings.whisperAPIKey, placeholder: "sk-...")
                     }
                 }
+            } header: {
+                Label("エンジン", systemImage: "waveform")
+                    .foregroundColor(Lux.gold)
+            }
 
-                Picker("言語", selection: $settings.language) {
-                    ForEach(AppSettings.quickLanguages, id: \.code) { lang in
-                        Text("\(lang.flag) \(lang.name)").tag(lang.code)
+            Section {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("高精度モード (Beam Search)", isOn: $settings.whisperBeamSearch)
+                    Text("精度が上がりますが少し遅くなります")
+                        .font(.system(size: 10)).foregroundColor(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle("文脈を引き継ぐ", isOn: $settings.whisperUseContext)
+                    Text("長い文章で固有名詞や文体が安定します")
+                        .font(.system(size: 10)).foregroundColor(.secondary)
+                }
+                HStack {
+                    Text("話し終わりの待ち時間")
+                    Spacer()
+                    Picker("", selection: $settings.silenceAutoStopSeconds) {
+                        Text("速い (1.0s)").tag(1.0); Text("普通 (1.5s)").tag(1.5); Text("ゆっくり (2.0s)").tag(2.0)
+                        Text("長め (3.0s)").tag(3.0); Text("最長 (5.0s)").tag(5.0)
+                    }.frame(width: 160)
+                }
+                HStack {
+                    Text("認識のゆらぎ")
+                        .help("0で最も確実な結果、高いと多様な候補から選びます")
+                    Spacer()
+                    Picker("", selection: $settings.whisperTemperature) {
+                        Text("確実 (0)").tag(0.0); Text("少し柔軟 (0.2)").tag(0.2); Text("柔軟 (0.4)").tag(0.4)
+                    }.frame(width: 160)
+                }
+                HStack {
+                    Text("あいまい判定")
+                        .help("低いと不確かな認識結果を棄却します")
+                    Spacer()
+                    Picker("", selection: $settings.whisperEntropyThreshold) {
+                        Text("厳しい (2.0)").tag(2.0); Text("普通 (2.4)").tag(2.4); Text("緩い (3.0)").tag(3.0)
+                    }.frame(width: 160)
+                }
+            } header: {
+                Label("認識チューニング", systemImage: "tuningfork")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
+                Toggle("フィラー自動除去", isOn: $settings.fillerRemovalEnabled)
+                Text("「えー」「あの」「えっと」等の言い淀みを自動的に除去します")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+
+                Picker("句読点スタイル", selection: $settings.punctuationStyle) {
+                    ForEach(VoiceCommands.PunctuationStyle.allCases, id: \.rawValue) { style in
+                        Text(style.displayName).tag(style.rawValue)
                     }
                 }
-            } header: { Text("基本") }
 
-            // ===== 動作 =====
+                Toggle("Command Mode", isOn: $settings.commandModeEnabled)
+                Text("「丁寧にして」「箇条書きにして」等で選択テキストをAIで書き換え")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+            } header: {
+                Label("テキスト処理", systemImage: "text.badge.checkmark")
+                    .foregroundColor(Lux.gold)
+            }
+
             Section {
-                Toggle("ログイン時に自動起動", isOn: $settings.launchAtLogin)
-                Toggle("クリップボードにコピー", isOn: $settings.autoCopyToClipboard)
-                Toggle("完了時に通知", isOn: $settings.notifyOnComplete)
-                Toggle("フローティングボタン", isOn: $settings.floatingButtonEnabled)
-            } header: { Text("動作") }
-
-            // ===== オプション (折りたたみ) =====
-            Section {
-                DisclosureGroup("オプション") {
-                    // 入力モード
-                    HStack {
-                        Text("入力モード")
-                        Spacer()
-                        Picker("", selection: $settings.streamingPreviewEnabled) {
-                            Text("声入力").tag(true)
-                            Text("直接入力").tag(false)
-                        }
-                        .pickerStyle(.segmented)
-                        .frame(width: 160)
-                    }
-
-                    // IME切替
-                    Toggle("左⌘→英語 / 右⌘→日本語", isOn: $settings.cmdIMESwitchEnabled)
-
-                    Divider()
-
-                    // メニューバー言語
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("メニューバーの言語").font(.system(size: 11, weight: .medium))
-                        Text("チェックした言語がメニューバーに表示されます").font(.system(size: 10)).foregroundColor(.secondary)
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 2) {
-                            ForEach(AppSettings.quickLanguages, id: \.code) { lang in
-                                Toggle("\(lang.flag) \(lang.name)", isOn: Binding(
-                                    get: { settings.menuBarLanguageCodes.contains(lang.code) },
-                                    set: { on in
-                                        if on {
-                                            if !settings.menuBarLanguageCodes.contains(lang.code) {
-                                                settings.menuBarLanguageCodes.append(lang.code)
-                                            }
-                                        } else {
-                                            settings.menuBarLanguageCodes.removeAll { $0 == lang.code }
-                                        }
-                                    }
-                                )).font(.system(size: 11))
-                            }
-                        }
-                    }
-
-                    Divider()
-
-                    // コンテキスト認識
-                    Toggle("コンテキスト認識", isOn: $settings.contextAwareEnabled)
-                    if settings.contextAwareEnabled {
-                        Toggle("アプリ別ヒント", isOn: $settings.contextUseAppHint)
-                        Toggle("クリップボード活用", isOn: $settings.contextUseClipboard)
-                    }
-                    TextField("カスタムプロンプト", text: $settings.contextCustomPrompt)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11))
-
-                    Divider()
-
-                    // 認識エンジン設定
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("高精度モード (Beam Search)", isOn: $settings.whisperBeamSearch)
-                        Text("精度が上がりますが少し遅くなります")
-                            .font(.system(size: 10)).foregroundColor(.secondary)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        Toggle("文脈を引き継ぐ", isOn: $settings.whisperUseContext)
-                        Text("長い文章で固有名詞や文体が安定します")
-                            .font(.system(size: 10)).foregroundColor(.secondary)
-                    }
-                    HStack {
-                        Text("話し終わりの待ち時間")
-                        Spacer()
-                        Picker("", selection: $settings.silenceAutoStopSeconds) {
-                            Text("速い (1.0s)").tag(1.0); Text("普通 (1.5s)").tag(1.5); Text("ゆっくり (2.0s)").tag(2.0)
-                            Text("長め (3.0s)").tag(3.0); Text("最長 (5.0s)").tag(5.0)
-                        }.frame(width: 160)
-                    }
-                    HStack {
-                        Text("認識のゆらぎ")
-                            .help("0で最も確実な結果、高いと多様な候補から選びます")
-                        Spacer()
-                        Picker("", selection: $settings.whisperTemperature) {
-                            Text("確実 (0)").tag(0.0); Text("少し柔軟 (0.2)").tag(0.2); Text("柔軟 (0.4)").tag(0.4)
-                        }.frame(width: 160)
-                    }
-                    HStack {
-                        Text("あいまい判定")
-                            .help("低いと不確かな認識結果を棄却します")
-                        Spacer()
-                        Picker("", selection: $settings.whisperEntropyThreshold) {
-                            Text("厳しい (2.0)").tag(2.0); Text("普通 (2.4)").tag(2.4); Text("緩い (3.0)").tag(3.0)
-                        }.frame(width: 160)
-                    }
-
-                    Divider()
-
-                    // 権限
-                    HStack {
-                        Image(systemName: "mic").font(.caption)
-                        Text("マイク").font(.caption)
-                        Spacer()
-                        Button("開く") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-                        }.buttonStyle(.link).font(.caption)
-                    }
-                    HStack {
-                        Image(systemName: "hand.raised").font(.caption)
-                        Text("アクセシビリティ").font(.caption)
-                        Spacer()
-                        Text(AXIsProcessTrusted() ? "✓" : "⚠").foregroundColor(AXIsProcessTrusted() ? .green : .orange)
-                        Button("開く") {
-                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                        }.buttonStyle(.link).font(.caption)
-                    }
+                Toggle("コンテキスト認識", isOn: $settings.contextAwareEnabled)
+                if settings.contextAwareEnabled {
+                    Toggle("アプリ別ヒント", isOn: $settings.contextUseAppHint)
+                    Toggle("クリップボード活用", isOn: $settings.contextUseClipboard)
                 }
+                TextField("カスタムプロンプト", text: $settings.contextCustomPrompt)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+            } header: {
+                Label("コンテキスト", systemImage: "text.viewfinder")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
+                LearningDictionaryView()
+            } header: {
+                Label("学習辞書", systemImage: "book.closed")
+                    .foregroundColor(Lux.gold)
             }
         }
         .formStyle(.grouped)
     }
+}
 
-    private func startRecording() {
-        isRecordingKey = true
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
-            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            // Require at least one modifier (or pure function key)
-            if !flags.isEmpty || event.keyCode >= 96 {
-                self.settings.shortcutKeyCode  = Int(event.keyCode)
-                self.settings.shortcutModifiers = flags.rawValue
-                AppDelegate.shared?.reregisterHotkey()
-                self.stopRecording()
+// MARK: - Learning Dictionary View (自動学習辞書)
+
+struct LearningDictionaryView: View {
+    @State private var entries: [CorrectionEntry] = []
+    @State private var keywords: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Image(systemName: entries.isEmpty ? "brain" : "brain.head.profile")
+                    .foregroundColor(entries.isEmpty ? .secondary : Lux.gold)
+                Text("\(entries.count) 件の修正から学習中")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
-            return nil
+
+            if !keywords.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("学習済みキーワード:")
+                        .font(.system(size: 10, weight: .medium))
+                    FlowLayout(spacing: 4) {
+                        ForEach(keywords, id: \.self) { word in
+                            Text(word)
+                                .font(.system(size: 10))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Lux.gold.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                    }
+                }
+            } else {
+                Text("音声入力を使うと、修正パターンを自動的に学習して精度が向上します")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+            }
+
+            if !entries.isEmpty {
+                DisclosureGroup("最近の修正 (\(min(entries.count, 5))件)") {
+                    ForEach(entries.prefix(5), id: \.date) { entry in
+                        HStack(alignment: .top, spacing: 4) {
+                            Text(entry.original)
+                                .font(.system(size: 10))
+                                .foregroundColor(.red.opacity(0.7))
+                                .lineLimit(1)
+                                .strikethrough()
+                            Text("→")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                            Text(entry.corrected)
+                                .font(.system(size: 10))
+                                .foregroundColor(.green)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .font(.caption)
+            }
+        }
+        .onAppear {
+            entries = CorrectionStore.shared.loadAll().suffix(20).reversed()
+            let hint = CorrectionStore.shared.learningHint(limit: 30)
+            keywords = hint.isEmpty ? [] : hint.components(separatedBy: "、")
+        }
+    }
+}
+
+/// 簡易FlowLayout（キーワードタグ表示用）
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = layout(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = layout(proposal: proposal, subviews: subviews)
+        for (idx, pos) in result.positions.enumerated() where idx < subviews.count {
+            subviews[idx].place(at: CGPoint(x: bounds.minX + pos.x, y: bounds.minY + pos.y), proposal: .unspecified)
         }
     }
 
-    private func stopRecording() {
-        isRecordingKey = false
-        if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxW = proposal.width ?? 400
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowH: CGFloat = 0
+
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > maxW && x > 0 {
+                x = 0
+                y += rowH + spacing
+                rowH = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowH = max(rowH, size.height)
+            x += size.width + spacing
+        }
+
+        return (CGSize(width: maxW, height: y + rowH), positions)
     }
 }
 
@@ -599,7 +1122,6 @@ struct AITab: View {
                             }
                         }
 
-                        // プロバイダ説明
                         Group {
                             switch s.llmProvider {
                             case .chatweb:
@@ -617,7 +1139,6 @@ struct AITab: View {
                         .font(.caption2).foregroundColor(.secondary)
                     }
 
-                    // カスタムモード時のみプロンプト編集を表示
                     if s.llmMode == .custom {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("カスタムプロンプト")
@@ -630,22 +1151,21 @@ struct AITab: View {
                                 Text("空欄の場合はデフォルト（誤字修正・句読点追加）が使用されます")
                                     .font(.caption2).foregroundColor(.secondary)
                             }
-                            Button("クリア") {
-                                s.llmCustomPrompt = ""
-                            }
-                            .buttonStyle(.link)
-                            .font(.caption2)
-                            .disabled(s.llmCustomPrompt.isEmpty)
+                            Button("クリア") { s.llmCustomPrompt = "" }
+                                .buttonStyle(.link).font(.caption2)
+                                .disabled(s.llmCustomPrompt.isEmpty)
                         }
                     }
-                    Text("アプリタブで対象アプリごとに個別の指示も設定できます").font(.caption).foregroundColor(.secondary)
                 }
-            } header: { Text("LLM後処理") }
+            } header: {
+                Label("LLM後処理", systemImage: "brain.head.profile")
+                    .foregroundColor(Lux.gold)
+            }
 
             Section {
                 Toggle("Super Mode（画面コンテキスト認識）", isOn: $s.superModeEnabled)
                 if s.superModeEnabled {
-                    Text("アクティブなアプリ名や選択中のテキストをLLMに渡し、文脈に合った出力を生成します。アクセシビリティ権限が必要です。")
+                    Text("アクティブなアプリ名や選択中のテキストをLLMに渡し、文脈に合った出力を生成します。")
                         .font(.caption).foregroundColor(.secondary)
                     if !AXIsProcessTrusted() {
                         HStack {
@@ -659,34 +1179,82 @@ struct AITab: View {
                         }
                     }
                 } else {
-                    Text("有効にすると、使用中のアプリや選択テキストに応じてLLMが最適なフォーマットで出力します")
+                    Text("使用中のアプリや選択テキストに応じてLLMが最適なフォーマットで出力します")
                         .font(.caption2).foregroundColor(.secondary)
                 }
-            } header: { Text("Super Mode") }
+            } header: {
+                Label("Super Mode", systemImage: "sparkles")
+                    .foregroundColor(Lux.gold)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
 
+// MARK: - Automation Tab (自動化: ウェイクワード、エージェント、プロファイル、テキスト展開)
+
+struct AutomationTab: View {
+    @ObservedObject private var s = AppSettings.shared
+    var body: some View {
+        Form {
             Section {
                 Toggle("ウェイクワードで録音開始", isOn: $s.wakeWordEnabled)
                 if s.wakeWordEnabled {
                     WakeWordTemplateView()
                 }
-            } header: { Text("ウェイクワード") }
+            } header: {
+                Label("ウェイクワード", systemImage: "ear")
+                    .foregroundColor(Lux.gold)
+            }
 
             Section {
                 Toggle("エージェントモード", isOn: $s.agentModeEnabled)
                 Text("「Safariを開いて」「5分タイマー」などの音声コマンドを実行")
                     .font(.caption).foregroundColor(.secondary)
-            } header: { Text("エージェント") }
+                if s.agentModeEnabled {
+                    DisclosureGroup("対応コマンド") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            agentRow("アプリを開く", "Safariを開いて")
+                            agentRow("検索", "天気を検索")
+                            agentRow("スクリーンショット", "スクショ撮って")
+                            agentRow("タイマー", "5分タイマー")
+                            agentRow("ターミナル", "ターミナルでls")
+                            agentRow("ショートカット", "集中モードを実行")
+                        }
+                    }
+                }
+            } header: {
+                Label("エージェント", systemImage: "bolt.fill")
+                    .foregroundColor(Lux.gold)
+            }
 
             Section {
-                DisclosureGroup("アプリ別プロファイル") {
+                DisclosureGroup("アプリ別プロファイル (\(s.appProfiles.count)件)") {
                     AppProfilesInlineView()
                 }
-                DisclosureGroup("テキスト展開") {
+            } header: {
+                Label("アプリ連携", systemImage: "app.badge")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
+                DisclosureGroup("テキスト展開 (\(s.textExpansions.count)件)") {
                     TextExpansionsInlineView()
                 }
+            } header: {
+                Label("テキスト展開", systemImage: "text.word.spacing")
+                    .foregroundColor(Lux.gold)
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func agentRow(_ cmd: String, _ example: String) -> some View {
+        HStack {
+            Text(cmd).font(.system(size: 12, weight: .medium))
+            Spacer()
+            Text(example).font(.caption).foregroundColor(.secondary)
+        }
     }
 }
 
@@ -1316,6 +1884,207 @@ struct SecureFieldWithReveal: View {
                     .foregroundColor(.secondary)
             }
             .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - Stats Tab (統計ダッシュボード)
+
+struct StatsTab: View {
+    @ObservedObject private var stats = VoiceStats.shared
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                // Today's summary
+                HStack(spacing: 12) {
+                    StatCard(
+                        icon: "character.cursor.ibeam",
+                        value: "\(stats.todayCharCount)",
+                        label: "今日の文字数",
+                        color: Lux.gold
+                    )
+                    StatCard(
+                        icon: "clock",
+                        value: stats.savedTimeDisplay,
+                        label: "節約時間",
+                        color: .green
+                    )
+                    StatCard(
+                        icon: "mic.fill",
+                        value: "\(stats.todaySessionCount)",
+                        label: "セッション",
+                        color: .blue
+                    )
+                    StatCard(
+                        icon: "flame.fill",
+                        value: "\(stats.streak)日",
+                        label: "連続使用",
+                        color: .orange
+                    )
+                }
+
+                // Weekly chart
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("週間推移")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Lux.gold)
+
+                        WeeklyChart(data: stats.weeklyChars, labels: stats.weeklyLabels)
+                            .frame(height: 100)
+                    }
+                    .padding(4)
+                }
+
+                // Totals
+                GroupBox {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Text("累計文字数")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(stats.totalCharCount) 文字")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        HStack {
+                            Text("累計セッション")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(stats.totalSessionCount) 回")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        HStack {
+                            Text("累計節約時間")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                            Spacer()
+                            Text(stats.totalSavedTimeDisplay)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.green)
+                        }
+                        HStack {
+                            Text("学習済み修正")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(CorrectionStore.shared.entryCount) 件")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                    }
+                    .padding(4)
+                } label: {
+                    Label("累計", systemImage: "sum")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(Lux.gold)
+                }
+
+                // Typing speed comparison
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("タイピング比較")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Lux.gold)
+
+                        HStack(spacing: 0) {
+                            // 音声入力
+                            VStack(spacing: 2) {
+                                Text("音声")
+                                    .font(.system(size: 9)).foregroundColor(.secondary)
+                                Text("~150")
+                                    .font(.system(size: 16, weight: .light, design: .rounded))
+                                Text("文字/分")
+                                    .font(.system(size: 8)).foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+
+                            Text("vs")
+                                .font(.system(size: 10)).foregroundColor(.secondary)
+
+                            // タイピング
+                            VStack(spacing: 2) {
+                                Text("タイピング")
+                                    .font(.system(size: 9)).foregroundColor(.secondary)
+                                Text("~80")
+                                    .font(.system(size: 16, weight: .light, design: .rounded))
+                                    .foregroundColor(.secondary)
+                                Text("文字/分")
+                                    .font(.system(size: 8)).foregroundColor(.secondary)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+
+                        Text("音声入力はタイピングの約1.9倍の速度")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
+                    .padding(4)
+                }
+            }
+            .padding(12)
+        }
+    }
+}
+
+struct StatCard: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundColor(color)
+            Text(value)
+                .font(.system(size: 18, weight: .light, design: .rounded))
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(color.opacity(0.2), lineWidth: 0.5)
+        )
+    }
+}
+
+struct WeeklyChart: View {
+    let data: [Int]
+    let labels: [String]
+
+    private var maxVal: Int { max(data.max() ?? 1, 1) }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            ForEach(0..<data.count, id: \.self) { i in
+                VStack(spacing: 2) {
+                    if data[i] > 0 {
+                        Text("\(data[i])")
+                            .font(.system(size: 8))
+                            .foregroundColor(.secondary)
+                    }
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(
+                            LinearGradient(
+                                colors: [Lux.gold.opacity(0.6), Lux.gold],
+                                startPoint: .bottom, endPoint: .top
+                            )
+                        )
+                        .frame(height: max(CGFloat(data[i]) / CGFloat(maxVal) * 70, data[i] > 0 ? 4 : 1))
+
+                    Text(labels[i])
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+            }
         }
     }
 }

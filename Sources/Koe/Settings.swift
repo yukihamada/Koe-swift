@@ -481,7 +481,7 @@ class AppSettings: ObservableObject {
         llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""
         llmModel    = ud.string(forKey: "llmModel") ?? "auto"
         llmCustomPrompt = ud.string(forKey: "llmCustomPrompt") ?? ""
-        llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .correct
+        llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .none
         llmMemorySaveMode = ud.object(forKey: "llmMemorySaveMode") as? Bool ?? false  // デフォルトOFF（常時読み込み）
         superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
         agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF

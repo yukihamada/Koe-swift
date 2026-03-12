@@ -259,8 +259,10 @@ final class LlamaContext {
             llama_sampler_chain_add(smpl, llama_sampler_init_min_p(0.05, 1))
             llama_sampler_chain_add(smpl, llama_sampler_init_greedy())
 
-            // Generate tokens — accumulate raw output, strip <think>...</think> at end
+            // Generate tokens — track thinking vs answer phases for early exit
             var rawOutput = ""
+            var thinkingDone = false
+            var answerTokenCount = 0
 
             for _ in 0..<maxTokens {
                 let tokenID = llama_sampler_sample(smpl, ctx, -1)
@@ -272,6 +274,16 @@ final class LlamaContext {
                 if len > 0 {
                     let piece = String(cString: buf)
                     rawOutput += piece
+
+                    // Track phases: once </think> appears, count answer tokens
+                    if !thinkingDone && rawOutput.contains("</think>") {
+                        thinkingDone = true
+                    }
+                    if thinkingDone {
+                        answerTokenCount += 1
+                        // 回答が十分長くなったら早期終了（入力の2倍 or 最低200トークン）
+                        if answerTokenCount > max(200, nTokens * 2) { break }
+                    }
                 }
 
                 // Decode next token

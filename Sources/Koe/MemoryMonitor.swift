@@ -31,20 +31,18 @@ enum MemoryMonitor {
     }
 
     /// モデルロードに必要な推定メモリ (MB)
-    /// ファイルサイズ + Metal GPU バッファ + KVキャッシュ + ggml初期化オーバーヘッド
     static func estimatedMemoryMB(modelSizeMB: Int, contextSize: Int = 2048) -> Int {
-        // モデルウェイト × 1.5 (GPU バッファ + Metal overhead) + KVキャッシュ + Metal初期化 (~500MB)
+        // モデルウェイト × 1.2 + KVキャッシュ + 初期化オーバーヘッド (~200MB)
         let kvCacheMB = contextSize / 8
-        let metalOverhead = 500  // Metal library init + residency sets
-        return Int(Double(modelSizeMB) * 1.5) + kvCacheMB + metalOverhead
+        return Int(Double(modelSizeMB) * 1.2) + kvCacheMB + 200
     }
 
-    /// ロード可能かチェック。Whisperも既にMetalを使っているため余裕を多めに。
+    /// ロード可能かチェック
     static func canLoad(modelSizeMB: Int, contextSize: Int = 2048) -> Bool {
         let needed = estimatedMemoryMB(modelSizeMB: modelSizeMB, contextSize: contextSize)
         let available = availableMemoryMB
-        let safetyMarginMB = 2048  // 2GB はシステム + Whisper用に確保
-        let canFit = available - needed > safetyMarginMB
+        let safetyMarginMB = 512  // 512MB はシステム用に確保
+        let canFit = available > needed + safetyMarginMB
         klog("Memory: available=\(available)MB needed=\(needed)MB safety=\(safetyMarginMB)MB → \(canFit ? "OK" : "NG")")
         return canFit
     }
@@ -90,7 +88,7 @@ enum MemoryMonitor {
     static func warningText(modelSizeMB: Int) -> String? {
         let needed = estimatedMemoryMB(modelSizeMB: modelSizeMB)
         let available = availableMemoryMB
-        if available - needed < 2048 {
+        if available - needed < 512 {
             return "⚠ メモリ不足の可能性 (空き\(available)MB, 必要~\(needed)MB)。クラッシュする場合は他のアプリを閉じるか、より小さいモデルを選択してください。"
         }
         return nil

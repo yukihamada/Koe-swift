@@ -23,8 +23,9 @@ class LLMProcessor {
             completion(text); return
         }
 
-        // モードが「なし」の場合はLLM処理をスキップ（アプリ別指示がある場合を除く）
+        // モードが「なし」でアプリ別指示もなければスキップ
         if s.llmMode == .none && instruction.isEmpty {
+            klog("LLM: skipped (mode=none)")
             completion(text); return
         }
 
@@ -100,8 +101,11 @@ class LLMProcessor {
     }
 
     private func runLocalGeneration(text: String, instruction: String, completion: @escaping (String) -> Void) {
-        klog("LLM: local processing...")
-        LlamaContext.shared.generate(system: instruction, user: text, maxTokens: 1024) { [weak self] result in
+        // thinking tokens (≈300) + 回答用（入力の2倍 or 最低200）
+        let answerBudget = max(200, text.count)
+        let tokens = min(1024, 400 + answerBudget)
+        klog("LLM: local processing (maxTokens=\(tokens))...")
+        LlamaContext.shared.generate(system: instruction, user: text, maxTokens: tokens) { [weak self] result in
             if let result, !result.isEmpty {
                 klog("LLM local done: '\(result.prefix(80))'")
                 completion(result)

@@ -9,9 +9,7 @@ IDENTIFIER="com.yuki.koe"
 SIGN_ID="F1EFBA93D51A3F2204A9E25679E1D77BA22DC59C"
 
 echo "==> Building Koe.app..."
-bash build.sh 2>/dev/null || true
-pkill -9 Koe 2>/dev/null || true
-sleep 0.3
+bash build.sh --no-launch 2>/dev/null || true
 
 echo "==> Creating installer package (v$VERSION)..."
 

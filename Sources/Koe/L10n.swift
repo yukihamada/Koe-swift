@@ -383,6 +383,74 @@ enum L10n {
         }
     }
 
+    // MARK: - Tutorial (Post-Setup Guide)
+
+    static var tutorialTitle: String {
+        switch lang {
+        case "ja": return "使い方ガイド"
+        case "zh": return "使用指南"
+        case "ko": return "사용 가이드"
+        default:   return "How to Use"
+        }
+    }
+
+    static var tutorialReady: String {
+        switch lang {
+        case "ja": return "準備完了！さっそく使ってみましょう"
+        case "zh": return "准备就绪！让我们开始吧"
+        case "ko": return "준비 완료! 바로 사용해 보세요"
+        default:   return "All set! Let's get started"
+        }
+    }
+
+    /// チュートリアルの機能カード: (SF Symbol, タイトル, 説明, ショートカット or ヒント)
+    static var tutorialCards: [(icon: String, title: String, desc: String, shortcut: String)] {
+        switch lang {
+        case "ja": return [
+            ("mic.fill", "音声入力", "どのアプリでも声でテキスト入力", "⌥⌘V 長押し"),
+            ("doc.text.fill", "議事録モード", "会議の音声を自動で文字起こし・整形", "⌥⌘M"),
+            ("globe", "20以上の言語", "日本語・英語・中国語など幅広く対応", "設定で切替"),
+            ("gearshape.fill", "カスタマイズ", "ショートカット・言語・アプリ別設定", "メニューバーから"),
+        ]
+        case "zh": return [
+            ("mic.fill", "语音输入", "在任何应用中用声音输入文字", "长按 ⌥⌘V"),
+            ("doc.text.fill", "会议记录模式", "自动转录和整理会议音频", "⌥⌘M"),
+            ("globe", "20+种语言", "支持日语、英语、中文等多种语言", "在设置中切换"),
+            ("gearshape.fill", "自定义", "快捷键、语言、按应用设置", "从菜单栏"),
+        ]
+        case "ko": return [
+            ("mic.fill", "음성 입력", "모든 앱에서 음성으로 텍스트 입력", "⌥⌘V 길게 누르기"),
+            ("doc.text.fill", "회의록 모드", "회의 음성을 자동 전사 및 정리", "⌥⌘M"),
+            ("globe", "20개 이상의 언어", "일본어, 영어, 중국어 등 폭넓게 지원", "설정에서 전환"),
+            ("gearshape.fill", "사용자 설정", "단축키, 언어, 앱별 설정", "메뉴바에서"),
+        ]
+        default: return [
+            ("mic.fill", "Voice Input", "Type with your voice in any app", "Hold ⌥⌘V"),
+            ("doc.text.fill", "Meeting Notes", "Auto-transcribe & format meetings", "⌥⌘M"),
+            ("globe", "20+ Languages", "Japanese, English, Chinese and more", "Switch in Settings"),
+            ("gearshape.fill", "Customize", "Shortcuts, languages, per-app settings", "From menu bar"),
+        ]
+        }
+    }
+
+    static var tutorialTip: String {
+        switch lang {
+        case "ja": return "メニューバーの「声」アイコンからいつでも設定を変更できます"
+        case "zh": return "随时可以从菜单栏的\"声\"图标更改设置"
+        case "ko": return "메뉴바의 \"声\" 아이콘에서 언제든 설정을 변경할 수 있습니다"
+        default:   return "You can change settings anytime from the \"声\" icon in the menu bar"
+        }
+    }
+
+    static var tryNow: String {
+        switch lang {
+        case "ja": return "試してみる"
+        case "zh": return "立即试用"
+        case "ko": return "지금 사용해보기"
+        default:   return "Try It Now"
+        }
+    }
+
     static var openSystemSettings: String {
         switch lang {
         case "ja": return "システム設定を開く"

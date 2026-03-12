@@ -1,10 +1,49 @@
+## Build artifacts
 *.o
 *.d
+*.a
+*.dylib
+build/
+DerivedData/
+*.xcarchive
+*.xcarchive/
+
+## macOS app bundles & installers
+Koe.app/
+*.app/
+*.dmg
+*.pkg
+*.zip
+Koe-Installer.dmg
+
+## iOS build artifacts
+Koe-iOS/build/
+*.ipa
+*.dSYM.zip
+
+## Xcode
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+## macOS build
+build-macos/
+
+## System files
 .DS_Store
-Koe.app/Contents/MacOS/Koe
+koe_debug.log
+
+## Icons (generated)
 *.icns
 icon_1024.png
 Koe.iconset/
-koe_debug.log
+
+## Other targets
 site/target/
 Koe-windows/target/
+
+## Secrets & credentials
+.env
+*.mobileprovision
+*.p12
+*.cer

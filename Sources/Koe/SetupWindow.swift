@@ -591,28 +591,147 @@ class SetupWindow: NSObject {
         }
     }
 
-    // MARK: - Step 4: Done
+    // MARK: - Step 4: Done → Tutorial
 
     private func runStep4_Done() {
         let doneStep = showLLMStep ? 4 : 3
         setStep(doneStep)
 
-        statusLabel.stringValue = L10n.setupComplete
-        detailLabel.stringValue = L10n.usageGuide
-        detailLabel.maximumNumberOfLines = 2
+        // セットアップ画面を消してチュートリアル画面を表示
+        setupView.removeFromSuperview()
+        showTutorial()
+    }
 
-        actionButton.title = L10n.letsGo
-        actionButton.isHidden = false
-        actionButton.wantsLayer = true
-        actionButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        actionButton.contentTintColor = .white
-        actionButton.layer?.cornerRadius = 8
+    // MARK: - Page 3: Tutorial
+
+    private var tutorialView: NSView!
+
+    private func showTutorial() {
+        // ウィンドウを少し大きく
+        let newSize = NSSize(width: 520, height: 600)
+        window.setContentSize(newSize)
+
+        tutorialView = NSView(frame: NSRect(origin: .zero, size: newSize))
+        tutorialView.wantsLayer = true
+
+        let w = newSize.width
+
+        // Header: checkmark + title
+        let checkmark = NSTextField(labelWithString: "\u{2705}")
+        checkmark.font = .systemFont(ofSize: 32)
+        checkmark.frame = NSRect(x: (w - 40) / 2, y: 540, width: 40, height: 40)
+        checkmark.alignment = .center
+        tutorialView.addSubview(checkmark)
+
+        let title = NSTextField(labelWithString: L10n.tutorialTitle)
+        title.font = .systemFont(ofSize: 26, weight: .bold)
+        title.textColor = .labelColor
+        title.alignment = .center
+        title.frame = NSRect(x: 0, y: 505, width: w, height: 36)
+        tutorialView.addSubview(title)
+
+        let subtitle = NSTextField(labelWithString: L10n.tutorialReady)
+        subtitle.font = .systemFont(ofSize: 14)
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.alignment = .center
+        subtitle.frame = NSRect(x: 0, y: 482, width: w, height: 20)
+        tutorialView.addSubview(subtitle)
+
+        // Feature cards
+        let cards = L10n.tutorialCards
+        for (i, card) in cards.enumerated() {
+            let y = CGFloat(390 - i * 90)
+            let cardView = createTutorialCard(
+                icon: card.icon,
+                title: card.title,
+                desc: card.desc,
+                shortcut: card.shortcut,
+                frame: NSRect(x: 30, y: y, width: w - 60, height: 78)
+            )
+            tutorialView.addSubview(cardView)
+        }
+
+        // Tip
+        let tip = NSTextField(labelWithString: L10n.tutorialTip)
+        tip.font = .systemFont(ofSize: 11)
+        tip.textColor = .tertiaryLabelColor
+        tip.alignment = .center
+        tip.frame = NSRect(x: 30, y: 60, width: w - 60, height: 16)
+        tutorialView.addSubview(tip)
+
+        // Try now button
+        let tryBtn = NSButton(frame: NSRect(x: (w - 200) / 2, y: 14, width: 200, height: 44))
+        tryBtn.bezelStyle = .rounded
+        tryBtn.title = L10n.tryNow
+        tryBtn.font = .systemFont(ofSize: 15, weight: .semibold)
+        tryBtn.target = self
+        tryBtn.action = #selector(onFinishTutorial)
+        tryBtn.keyEquivalent = "\r"
+        tryBtn.wantsLayer = true
+        tryBtn.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        tryBtn.contentTintColor = .white
+        tryBtn.layer?.cornerRadius = 10
+        tutorialView.addSubview(tryBtn)
+
+        contentView.addSubview(tutorialView)
+    }
+
+    private func createTutorialCard(icon: String, title: String, desc: String, shortcut: String, frame: NSRect) -> NSView {
+        let card = NSView(frame: frame)
+        card.wantsLayer = true
+        card.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        card.layer?.cornerRadius = 12
+
+        // Icon circle
+        let iconBg = NSView(frame: NSRect(x: 14, y: 22, width: 36, height: 36))
+        iconBg.wantsLayer = true
+        iconBg.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
+        iconBg.layer?.cornerRadius = 18
+        card.addSubview(iconBg)
+
+        let iconView = NSImageView(frame: NSRect(x: 22, y: 30, width: 20, height: 20))
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold)
+        iconView.image = NSImage(systemSymbolName: icon, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        iconView.contentTintColor = .controlAccentColor
+        card.addSubview(iconView)
+
+        // Title
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 15, weight: .semibold)
+        titleLabel.frame = NSRect(x: 62, y: 46, width: frame.width - 78, height: 20)
+        card.addSubview(titleLabel)
+
+        // Description
+        let descLabel = NSTextField(labelWithString: desc)
+        descLabel.font = .systemFont(ofSize: 12)
+        descLabel.textColor = .secondaryLabelColor
+        descLabel.frame = NSRect(x: 62, y: 28, width: frame.width - 78, height: 16)
+        card.addSubview(descLabel)
+
+        // Shortcut badge
+        let badge = NSTextField(labelWithString: shortcut)
+        badge.font = .systemFont(ofSize: 11, weight: .medium)
+        badge.textColor = .controlAccentColor
+        badge.alignment = .left
+        badge.wantsLayer = true
+        badge.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08)
+        badge.isBezeled = false
+        badge.isEditable = false
+        badge.frame = NSRect(x: 62, y: 8, width: frame.width - 78, height: 16)
+        card.addSubview(badge)
+
+        return card
+    }
+
+    @objc private func onFinishTutorial() {
+        window.close()
+        completion?()
     }
 
     @objc private func onAction() {
         let micStep = showLLMStep ? 2 : 1
         let accStep = showLLMStep ? 3 : 2
-        let doneStep = showLLMStep ? 4 : 3
 
         switch currentStep {
         case 0:
@@ -621,9 +740,6 @@ class SetupWindow: NSObject {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
         case accStep:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-        case doneStep:
-            window.close()
-            completion?()
         default:
             break
         }

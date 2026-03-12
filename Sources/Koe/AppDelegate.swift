@@ -21,6 +21,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var carbonSpaceHotKeyRef: EventHotKeyRef?
     private var carbonEscHotKeyRef: EventHotKeyRef?
     private var carbonCmdKHotKeyRef: EventHotKeyRef?
+    private var carbonMeetingHotKeyRef: EventHotKeyRef?
+    private var meetingOverlay: MeetingOverlayWindow?
     private var levelTimer: Timer?
     private var isRecording      = false
     private var recordingStart:  Date?
@@ -36,6 +38,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var speechDetected = false
     private var silenceStart: Date?
+    /// 議事録の自動録音かどうか（手動録音ならfalse → テキスト入力する）
+    private var isMeetingAutoRecording = false
 
     // Space key extension
     private var spaceHeld    = false
@@ -360,9 +364,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if hotKeyID.id == 1 || hotKeyID.id == 5 {
                 // メインホットキー or ⌘K pressed
                 DispatchQueue.main.async {
-                    if isToggle {
+                    // 議事録自動録音中にホットキー → 自動録音を中断して手動録音に切替
+                    if delegate.isRecording && delegate.isMeetingAutoRecording && MeetingMode.shared.isActive {
+                        delegate.cancelRecording()
+                        delegate.isMeetingAutoRecording = false
+                        delegate.startRecording()
+                    } else if isToggle {
                         delegate.isRecording ? delegate.stopAndRecognize() : delegate.startRecording()
                     } else if !delegate.isRecording {
+                        delegate.isMeetingAutoRecording = false
                         delegate.startRecording()
                     }
                 }
@@ -393,6 +403,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         klog("Space: recording extended (Carbon)")
                     }
                 }
+            } else if hotKeyID.id == 6 {
+                // ⌥⌘M pressed → 議事録トグル
+                DispatchQueue.main.async { delegate.toggleMeetingMode() }
             } else if hotKeyID.id == 4 {
                 // ESC pressed → キャンセル
                 DispatchQueue.main.async {
@@ -415,9 +428,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let isToggle = AppSettings.shared.recordingMode == .toggle
 
             if (hotKeyID.id == 1 || hotKeyID.id == 5) && !isToggle && delegate.isRecording {
-                DispatchQueue.main.async { delegate.stopAndRecognize() }
+                delegate.stopAndRecognize()
             } else if hotKeyID.id == 2 && !isToggle && delegate.isRecording && delegate.isTranslateMode {
-                DispatchQueue.main.async { delegate.stopAndRecognize() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.0) {
+                    guard delegate.isRecording else { return }
+                    delegate.stopAndRecognize()
+                }
             } else if hotKeyID.id == 3 && delegate.isRecording && delegate.spaceHeld {
                 // Space released → 変換
                 DispatchQueue.main.async {
@@ -451,6 +467,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let ctrlKStatus = RegisterEventHotKey(UInt32(kVK_ANSI_K), UInt32(controlKey),
                                                ctrlKID, GetApplicationEventTarget(), 0, &carbonCmdKHotKeyRef)
         klog("Carbon hotkey ⌃K: status=\(ctrlKStatus)")
+
+        // ⌥⌘M 議事録トグル
+        if let ref = carbonMeetingHotKeyRef {
+            UnregisterEventHotKey(ref)
+            carbonMeetingHotKeyRef = nil
+        }
+        var meetingID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 6)
+        let meetingStatus = RegisterEventHotKey(UInt32(kVK_ANSI_M),
+                                                 UInt32(cmdKey | optionKey),
+                                                 meetingID, GetApplicationEventTarget(), 0, &carbonMeetingHotKeyRef)
+        klog("Carbon hotkey ⌥⌘M: status=\(meetingStatus)")
     }
 
     /// 録音中のみ有効な Space/ESC ホットキーを登録
@@ -637,8 +664,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         speculativeResult = nil
         speculationID    += 1  // 前回の投機を無効化
         setIcon(recording: true)
-        if overlay == nil { overlay = OverlayWindow() }
-        overlay?.show(state: .recording)
+        if !isMeetingAutoRecording {
+            if overlay == nil { overlay = OverlayWindow() }
+            overlay?.show(state: .recording)
+        }
         recorder.start()
         registerRecordingHotKeys()  // Space/ESC を Carbon Hot Key で登録
         isStreamingInFlight = false
@@ -687,9 +716,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         lastAudioURL = audioURL
-        overlay?.clearHint()
-        overlay?.show(state: .recognizing)
+        if !isMeetingAutoRecording {
+            overlay?.clearHint()
+            overlay?.show(state: .recognizing)
+        }
         isRecognizing = true
+
+        // 議事録自動録音中は認識と並行して即録音再開（音声の取りこぼし防止）
+        if isMeetingAutoRecording && MeetingMode.shared.isActive {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                guard let self, MeetingMode.shared.isActive, !self.isRecording else { return }
+                klog("MeetingMode: parallel recording start")
+                self.startRecording()
+            }
+        }
 
         let profile = AppSettings.shared.profile(for: activeAppBundleID)
 
@@ -715,10 +755,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     klog("diarize result: \(segments.count) segments, \(Set(segments.map { $0.speaker }).count) speakers")
                     HistoryStore.shared.add(fullText)
                     MeetingMode.shared.appendSpeakerSegments(segments, audioURL: self.lastAudioURL)
-                    if AppSettings.shared.streamingPreviewEnabled {
-                        self.typer.typeInto(fullText, bundleID: self.activeAppBundleID)
-                    } else {
-                        self.typer.finalizeStreaming(fullText, bundleID: self.activeAppBundleID)
+                    // 議事録自動録音中はファイル保存のみ（テキスト入力しない）
+                    if !self.isMeetingAutoRecording {
+                        if AppSettings.shared.streamingPreviewEnabled {
+                            self.typer.typeInto(fullText, bundleID: self.activeAppBundleID)
+                        } else {
+                            self.typer.finalizeStreaming(fullText, bundleID: self.activeAppBundleID)
+                        }
                     }
                     CorrectionStore.shared.trackDelivery(original: fullText, appBundleID: self.activeAppBundleID)
                     self.publishHandoffActivity(text: fullText)
@@ -775,7 +818,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Agent mode: detect and execute voice commands instead of typing
         if AppSettings.shared.agentModeEnabled, let command = AgentMode.shared.detectCommand(expanded) {
             klog("Agent: detected command — \(command.description)")
-            overlay?.show(state: .recognizing)
+            if !isMeetingAutoRecording { overlay?.show(state: .recognizing) }
             AgentMode.shared.execute(command) { [weak self] result in
                 DispatchQueue.main.async {
                     guard let self else { return }
@@ -812,11 +855,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlay?.hide()
                 klog("final: '\(final)'")
                 if !final.isEmpty {
-                    // Apple Speechで先行入力済みなら、BackSpaceで消してwhisper結果に置換
-                    if let preliminary = self.appleSpechPreliminary {
+                    // 議事録自動録音中はファイル保存のみ（テキスト入力しない）
+                    if self.isMeetingAutoRecording {
+                        self.appleSpechPreliminary = nil
+                    } else if let preliminary = self.appleSpechPreliminary {
+                        // Apple Speechで先行入力済みなら、BackSpaceで消してwhisper結果に置換
                         klog("Replacing Apple Speech '\(preliminary)' → whisper '\(final)'")
                         if preliminary != final {
-                            // 先行入力を削除してからwhisper結果を入力
                             self.typer.deleteAndReplace(oldText: preliminary, newText: final, bundleID: self.activeAppBundleID)
                         }
                         self.appleSpechPreliminary = nil
@@ -848,10 +893,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func postRecognitionCleanup() {
         rebuildMenu()
         if MeetingMode.shared.isActive {
-            // 議事録モード中は自動で次の録音を開始（1秒待ってから）
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            // 議事録モード中は即座に次の録音を開始（認識と並行）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 guard let self, MeetingMode.shared.isActive, !self.isRecording else { return }
                 klog("MeetingMode: auto-starting next recording")
+                self.isMeetingAutoRecording = true
                 self.startRecording()
             }
         } else if AppSettings.shared.wakeWordEnabled {
@@ -1086,20 +1132,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func toggleMeetingMode() {
+    @objc func toggleMeetingMode() {
         let wasActive = MeetingMode.shared.isActive
         MeetingMode.shared.toggle()
         rebuildMenu()
         if MeetingMode.shared.isActive {
+            // 議事録オーバーレイ表示
+            if meetingOverlay == nil {
+                meetingOverlay = MeetingOverlayWindow()
+            }
+            meetingOverlay?.showMeeting()
             // 議事録開始時に自動で最初の録音を開始
             if !isRecording {
                 klog("MeetingMode: auto-starting first recording")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                     guard let self, MeetingMode.shared.isActive, !self.isRecording else { return }
+                    self.isMeetingAutoRecording = true
                     self.startRecording()
                 }
             }
         } else if wasActive {
+            // 議事録オーバーレイ非表示
+            meetingOverlay?.hideMeeting()
             // 議事録停止時に録音中なら停止
             if isRecording {
                 klog("MeetingMode: stopping recording")

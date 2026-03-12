@@ -111,12 +111,13 @@ class CorrectionStore {
         let a = Array(s1), b = Array(s2)
         if a.isEmpty && b.isEmpty { return 1.0 }
         if a.isEmpty || b.isEmpty { return 0.0 }
-        let matchDist = max(a.count, b.count) / 2 - 1
+        let matchDist = max(1, max(a.count, b.count) / 2 - 1)
         var aMatched = [Bool](repeating: false, count: a.count)
         var bMatched = [Bool](repeating: false, count: b.count)
         var matches = 0, transpositions = 0
         for i in 0..<a.count {
             let lo = max(0, i - matchDist), hi = min(b.count - 1, i + matchDist)
+            guard lo <= hi else { continue }
             for j in lo...hi {
                 guard !bMatched[j], a[i] == b[j] else { continue }
                 aMatched[i] = true; bMatched[j] = true; matches += 1; break
@@ -166,27 +167,47 @@ class CorrectionStore {
     }
 
     /// 修正データから頻出の「正しい単語」を抽出し、whisperプロンプト用ヒントを生成。
-    /// 例: "認識" → "認識" が3回修正されていたら、ヒントワードとして返す。
-    func learningHint(limit: Int = 20) -> String {
+    /// bundleID指定時はそのアプリの修正データを優先し、グローバルデータで補完。
+    func learningHint(for bundleID: String? = nil, limit: Int = 20) -> String {
         let entries = loadAll()
         guard !entries.isEmpty else { return "" }
 
-        // corrected テキストから単語を抽出し、頻度カウント
-        var wordFreq: [String: Int] = [:]
+        // アプリ別の頻度カウント（指定時）
+        var appFreq: [String: Int] = [:]
+        var globalFreq: [String: Int] = [:]
+
         for entry in entries {
-            // 修正後テキストの特徴的な単語（3文字以上）を抽出
             let words = extractKeywords(from: entry.corrected)
+            let isTargetApp = bundleID != nil && entry.appBundleID == bundleID
             for word in words {
-                wordFreq[word, default: 0] += 1
+                globalFreq[word, default: 0] += 1
+                if isTargetApp {
+                    appFreq[word, default: 0] += 1
+                }
             }
         }
 
-        // 2回以上出現した単語を頻度順にソートして返す
-        let hints = wordFreq
-            .filter { $0.value >= 2 }
-            .sorted { $0.value > $1.value }
-            .prefix(limit)
-            .map { $0.key }
+        // アプリ別ヒントを優先、残り枠をグローバルで埋める
+        var hints: [String] = []
+        if !appFreq.isEmpty {
+            let appHints = appFreq
+                .filter { $0.value >= 1 }  // アプリ別は1回でも採用
+                .sorted { $0.value > $1.value }
+                .prefix(limit)
+                .map { $0.key }
+            hints.append(contentsOf: appHints)
+        }
+
+        let remaining = limit - hints.count
+        if remaining > 0 {
+            let appSet = Set(hints)
+            let globalHints = globalFreq
+                .filter { $0.value >= 2 && !appSet.contains($0.key) }
+                .sorted { $0.value > $1.value }
+                .prefix(remaining)
+                .map { $0.key }
+            hints.append(contentsOf: globalHints)
+        }
 
         return hints.joined(separator: "、")
     }
@@ -213,11 +234,10 @@ class CorrectionStore {
     }
 
     private func containsKanjiOrKatakana(_ s: String) -> Bool {
+        // 漢字またはカタカナを含む場合のみ採用（英字のみの単語はwhisperを混乱させるため除外）
         s.unicodeScalars.contains { scalar in
             (0x4E00...0x9FFF).contains(scalar.value) ||  // CJK漢字
-            (0x30A0...0x30FF).contains(scalar.value) ||  // カタカナ
-            (0x0041...0x005A).contains(scalar.value) ||  // A-Z
-            (0x0061...0x007A).contains(scalar.value)     // a-z
+            (0x30A0...0x30FF).contains(scalar.value)     // カタカナ
         }
     }
 

@@ -174,7 +174,7 @@ final class LlamaContext {
             var cparams = llama_context_default_params()
             cparams.n_ctx = 2048      // 後処理には十分
             cparams.n_batch = 512
-            cparams.n_threads = UInt32(max(2, ProcessInfo.processInfo.activeProcessorCount / 2))
+            cparams.n_threads = Int32(max(2, ProcessInfo.processInfo.activeProcessorCount / 2))
 
             guard let context = llama_init_from_model(mdl, cparams) else {
                 llama_model_free(mdl)

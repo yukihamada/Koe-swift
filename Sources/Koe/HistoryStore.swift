@@ -5,21 +5,25 @@ struct HistoryEntry: Codable, Identifiable {
     let text: String
     let date: Date
     var isFavorite: Bool = false
+    /// 紐付く音声ファイルのID（AudioArchive で保存）
+    var audioFileID: String?
 
-    // Backward-compatible decoding: isFavorite may be missing in old data
+    // Backward-compatible decoding: isFavorite/audioFileID may be missing in old data
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         text = try container.decode(String.self, forKey: .text)
         date = try container.decode(Date.self, forKey: .date)
         isFavorite = try container.decodeIfPresent(Bool.self, forKey: .isFavorite) ?? false
+        audioFileID = try container.decodeIfPresent(String.self, forKey: .audioFileID)
     }
 
-    init(text: String, date: Date, isFavorite: Bool = false) {
+    init(text: String, date: Date, isFavorite: Bool = false, audioFileID: String? = nil) {
         self.id = UUID()
         self.text = text
         self.date = date
         self.isFavorite = isFavorite
+        self.audioFileID = audioFileID
     }
 }
 
@@ -39,8 +43,8 @@ class HistoryStore: ObservableObject {
 
     private init() { load() }
 
-    func add(_ text: String) {
-        let entry = HistoryEntry(text: text, date: Date())
+    func add(_ text: String, audioFileID: String? = nil) {
+        let entry = HistoryEntry(text: text, date: Date(), audioFileID: audioFileID)
         DispatchQueue.main.async {
             self.entries.insert(entry, at: 0)
             if self.entries.count > self.maxEntries { self.entries.removeLast(self.entries.count - self.maxEntries) }

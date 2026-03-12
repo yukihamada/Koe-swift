@@ -6,10 +6,14 @@ class MeetingMode: ObservableObject {
 
     @Published var isActive = false
     @Published var entryCount = 0
+    @Published var charCount = 0
+    @Published var isFormatting = false
     private var outputURL: URL?
     private var audioDir: URL?
     private var fileHandle: FileHandle?
     private var startDate: Date?
+    /// LLM整形用に生テキストを蓄積
+    private var rawEntries: [String] = []
 
     func toggle() {
         if isActive { stop() } else { start() }
@@ -39,6 +43,8 @@ class MeetingMode: ObservableObject {
 
         isActive = true
         entryCount = 0
+        charCount = 0
+        rawEntries = []
         klog("MeetingMode: started \(baseDir.lastPathComponent)")
 
         let header = """
@@ -52,24 +58,118 @@ class MeetingMode: ObservableObject {
 
     func stop() {
         // フッター追加
+        var durationText = ""
         if let start = startDate {
             let duration = Int(Date().timeIntervalSince(start))
             let min = duration / 60
             let sec = duration % 60
-            let footer = "\n---\n終了: \(Date())\n所要時間: \(min)分\(sec)秒\n発言数: \(entryCount)件\n"
+            durationText = "\(min)分\(sec)秒"
+            let footer = "\n---\n終了: \(Date())\n所要時間: \(durationText)\n発言数: \(entryCount)件\n"
             fileHandle?.write(Data(footer.utf8))
         }
 
         try? fileHandle?.close()
         fileHandle = nil
         isActive = false
+        let savedEntries = rawEntries
+        let savedDir = outputURL
+        let savedCount = entryCount
         startDate = nil
         klog("MeetingMode: stopped (\(entryCount)件)")
 
-        if let url = outputURL {
-            // フォルダをFinderで開く
+        // LLMで整形
+        if !savedEntries.isEmpty, let dir = savedDir {
+            formatWithLLM(entries: savedEntries, duration: durationText,
+                          count: savedCount, outputDir: dir)
+        } else if let url = outputURL {
             NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: url.path)
         }
+    }
+
+    // MARK: - LLM整形
+
+    private func formatWithLLM(entries: [String], duration: String,
+                                count: Int, outputDir: URL) {
+        isFormatting = true
+        let rawText = entries.joined(separator: "\n")
+        klog("MeetingMode: formatting \(entries.count) entries with LLM...")
+
+        let systemPrompt = """
+        あなたは議事録整形アシスタントです。以下の音声認識テキストを整形してください。
+
+        ルール:
+        - 誤字・脱字を修正
+        - 句読点を適切に追加
+        - 話題ごとに段落分け
+        - 重要なポイントや決定事項があれば「## 要点」としてまとめる
+        - タイムスタンプは残す
+        - 話者情報があれば活かす
+        - 元の意味を変えない
+        - Markdown形式で出力
+        """
+
+        let userPrompt = """
+        所要時間: \(duration)
+        発言数: \(count)件
+
+        --- 生テキスト ---
+        \(rawText)
+        """
+
+        // ローカルLLMのみ使用（リモートには送らない）
+        let llm = LlamaContext.shared
+        guard let localModel = llm.selectedModel, llm.isDownloaded(localModel) else {
+            klog("MeetingMode: no local LLM available, skipping formatting")
+            finishFormatting(nil, outputDir: outputDir)
+            return
+        }
+
+        klog("MeetingMode: using local LLM (\(localModel.name))")
+
+        let doGenerate = { [weak self] in
+            llm.generate(system: systemPrompt, user: userPrompt, maxTokens: 1024) { result in
+                DispatchQueue.main.async {
+                    if let text = result, !text.isEmpty {
+                        klog("MeetingMode: local LLM done (\(text.count) chars)")
+                        self?.finishFormatting(text, outputDir: outputDir)
+                    } else {
+                        klog("MeetingMode: local LLM returned empty")
+                        self?.finishFormatting(nil, outputDir: outputDir)
+                    }
+                }
+            }
+        }
+
+        if llm.isLoaded {
+            doGenerate()
+        } else {
+            llm.loadModel { [weak self] ok in
+                if ok {
+                    doGenerate()
+                } else {
+                    klog("MeetingMode: local LLM load failed")
+                    DispatchQueue.main.async {
+                        self?.finishFormatting(nil, outputDir: outputDir)
+                    }
+                }
+            }
+        }
+    }
+
+    private func finishFormatting(_ formatted: String?, outputDir: URL) {
+        isFormatting = false
+
+        if let text = formatted {
+            // 整形済みファイルを保存
+            let formattedURL = outputDir.appendingPathComponent("議事録_整形済み.md")
+            try? text.write(to: formattedURL, atomically: true, encoding: .utf8)
+            klog("MeetingMode: formatted file saved")
+            // 整形済みファイルを開く
+            NSWorkspace.shared.open(formattedURL)
+        }
+
+        // フォルダも開く
+        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: outputDir.path)
     }
 
     /// テキストを追記（音声URLがあれば音声も保存）
@@ -98,6 +198,8 @@ class MeetingMode: ObservableObject {
         let speakerLabel = speaker.map { " [話者\($0 + 1)]" } ?? ""
         let line = "[\(timeStr)]\(speakerLabel) \(text)\(audioNote)\n"
         fileHandle?.write(Data(line.utf8))
+        rawEntries.append("[\(timeStr)]\(speakerLabel) \(text)")
+        charCount += text.count
     }
 
     /// 話者分離付きセグメントを一括追記
@@ -135,6 +237,8 @@ class MeetingMode: ObservableObject {
             entryCount += 1
             let line = "[\(timeStr)] [話者\(entry.speaker + 1)] \(entry.text)\(audioNote)\n"
             fileHandle?.write(Data(line.utf8))
+            rawEntries.append("[\(timeStr)] [話者\(entry.speaker + 1)] \(entry.text)")
+            charCount += entry.text.count
             // audioNote は最初のエントリのみ
             audioNote = ""
         }

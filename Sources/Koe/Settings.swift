@@ -469,11 +469,11 @@ class AppSettings: ObservableObject {
         llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""
         llmModel    = ud.string(forKey: "llmModel") ?? "auto"
         llmCustomPrompt = ud.string(forKey: "llmCustomPrompt") ?? ""
-        llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .correct
+        llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .none
         llmMemorySaveMode = ud.object(forKey: "llmMemorySaveMode") as? Bool ?? false  // デフォルトOFF（常時読み込み）
         superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
         agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF
-        streamingPreviewEnabled = ud.object(forKey: "streamingPreviewEnabled") as? Bool ?? true  // デフォルトON
+        streamingPreviewEnabled = ud.object(forKey: "streamingPreviewEnabled") as? Bool ?? false  // デフォルトOFF: Apple Speechでリアルタイム入力
         whisperBestOf = ud.object(forKey: "whisperBestOf") as? Int ?? 1
         whisperEntropyThreshold = ud.object(forKey: "whisperEntropyThreshold") as? Double ?? 2.4
         whisperTemperature = ud.object(forKey: "whisperTemperature") as? Double ?? 0.0

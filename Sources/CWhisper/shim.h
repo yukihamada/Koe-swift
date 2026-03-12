@@ -1,5 +1,6 @@
 // CWhisper shim — expose only the whisper C API functions needed by Swift
 // This avoids pulling in ggml.h and all its transitive dependencies.
+// IMPORTANT: struct layouts must match whisper.h exactly
 
 #ifndef CWHISPER_SHIM_H
 #define CWHISPER_SHIM_H
@@ -15,6 +16,8 @@ extern "C" {
 // Opaque types
 struct whisper_context;
 
+typedef int32_t whisper_token;
+
 // Sampling strategies
 enum whisper_sampling_strategy {
     WHISPER_SAMPLING_GREEDY,
@@ -29,12 +32,22 @@ struct whisper_context_params {
     bool  dtw_token_timestamps;
     int   dtw_aheads_preset;
     int   dtw_n_top;
-    void *dtw_aheads_heads;   // simplified
+    void *dtw_aheads_heads;
     size_t dtw_aheads_n_heads;
     size_t dtw_mem_size;
 };
 
-// Callback types (unused in our wrapper, but needed for struct layout)
+// VAD params
+struct whisper_vad_params {
+    float threshold;
+    int   min_speech_duration_ms;
+    int   min_silence_duration_ms;
+    float max_speech_duration_s;
+    int   speech_pad_ms;
+    float samples_overlap;
+};
+
+// Callback types (needed for struct layout)
 typedef void (*whisper_new_segment_callback)(struct whisper_context *ctx, void *state, int n_new, void *user_data);
 typedef void (*whisper_progress_callback)(struct whisper_context *ctx, void *state, int progress, void *user_data);
 typedef bool (*whisper_encoder_begin_callback)(struct whisper_context *ctx, void *state, void *user_data);
@@ -77,7 +90,8 @@ struct whisper_full_params {
     const char *suppress_regex;
 
     const char *initial_prompt;
-    const int32_t *prompt_tokens;
+    bool carry_initial_prompt;
+    const whisper_token *prompt_tokens;
     int prompt_n_tokens;
 
     const char *language;
@@ -117,6 +131,11 @@ struct whisper_full_params {
     size_t n_grammar_rules;
     size_t i_start_rule;
     float  grammar_penalty;
+
+    // VAD
+    bool         vad;
+    const char * vad_model_path;
+    struct whisper_vad_params vad_params;
 };
 
 // --- API functions ---

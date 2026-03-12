@@ -16,46 +16,28 @@ struct ContextCollector {
     }
 
     /// 現在のコンテキストを収集して prompt 用テキストを生成
+    ///
+    /// whisper の initial_prompt は「前の発話テキスト」として扱われる。
+    /// 重要: プロンプトが長すぎると認識精度が大幅に低下する。
+    /// 短い日本語キーワードのみが効果的。
     static func collect(appBundleID: String, profilePrompt: String) -> String {
-        let settings = AppSettings.shared
         var parts: [String] = []
 
-        // 0. 言語別システムプロンプト: 言語ごとに最適なヒントを設定
-        parts.append(languagePrompt(for: settings.language))
-
-        // 1. アプリプロファイルのプロンプト（常に含む — ユーザーが明示的に設定したもの）
-        if !profilePrompt.isEmpty {
-            parts.append(profilePrompt)
-        }
-
-        // 2. ユーザーのカスタムプロンプト（常に含む）
-        if !settings.contextCustomPrompt.isEmpty {
-            parts.append(settings.contextCustomPrompt)
-        }
-
-        // 3: コンテキスト認識が有効な場合のみ
-        if settings.contextAwareEnabled {
-            // アプリヒント（日本語キーワードのみ）
-            if settings.contextUseAppHint, let hint = appHint(bundleID: appBundleID) {
-                parts.append(hint)
-            }
-
-            // クリップボードから日本語キーワード抽出（デフォルトOFF）
-            if settings.contextUseClipboard, let keywords = japaneseKeywords(from: clipboardText()) {
-                parts.append(keywords)
-            }
-        }
-
-        // 4: 過去の修正データから学習したヒントワード
-        let learningHint = CorrectionStore.shared.learningHint()
+        // アプリ別学習データ（修正履歴から頻出単語）
+        let learningHint = CorrectionStore.shared.learningHint(for: appBundleID)
         if !learningHint.isEmpty {
             parts.append(learningHint)
         }
 
-        let combined = parts.joined(separator: " ")
-        // whisper prompt は150文字以下が最適。長いと逆効果。
-        let trimmed = String(combined.prefix(150))
-        return trimmed
+        // ユーザーカスタムプロンプト（設定画面で明示指定したもののみ）
+        let settings = AppSettings.shared
+        if !settings.contextCustomPrompt.isEmpty {
+            parts.append(settings.contextCustomPrompt)
+        }
+
+        // プロンプトは短いほど精度が高い。最大100文字に制限。
+        let combined = parts.joined(separator: "、")
+        return String(combined.prefix(100))
     }
 
     // MARK: - Super Mode (LLM用リッチコンテキスト)

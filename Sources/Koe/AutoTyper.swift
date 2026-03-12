@@ -33,7 +33,10 @@ class AutoTyper {
         pb.clearContents()
         pb.setString(text, forType: .string)
 
-        if canUseCGEvent {
+        let trusted = canUseCGEvent
+        klog("AutoTyper: paste '\(text.prefix(40))' canUseCGEvent=\(trusted)")
+
+        if trusted {
             postKey(keyCode: CGKeyCode(kVK_ANSI_V), flags: .maskCommand)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
                 pb.clearContents()
@@ -41,6 +44,7 @@ class AutoTyper {
             }
         } else {
             // アクセシビリティなし: クリップボードに置くだけ（復元しない）
+            klog("AutoTyper: no accessibility — clipboard only")
             showClipboardHint()
         }
     }

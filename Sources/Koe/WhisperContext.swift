@@ -99,7 +99,7 @@ final class WhisperContext {
     }
 
     private func makeParams(settings ws: WhisperSettings, timestamps: Bool = false) -> whisper_full_params {
-        // greedy (best_of=1) で高速認識。whisper-cliのデフォルトに近い設定。
+        // whisper-cliのデフォルトに合わせた設定（best_of=5が精度の鍵）
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         params.n_threads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
         params.print_progress = false
@@ -109,12 +109,16 @@ final class WhisperContext {
         params.no_timestamps = !timestamps
         params.single_segment = false
         params.suppress_blank = true
-        params.suppress_nst = true
+        params.suppress_nst = false
         params.token_timestamps = timestamps
-        params.no_context = true  // 常にtrue: 投機実行のコンテキスト汚染を防ぐ
-        params.greedy.best_of = ws.bestOf
-        params.entropy_thold = ws.entropyThreshold
-        params.logprob_thold = -1.0
+        params.no_context = true  // 投機実行のコンテキスト汚染を防ぐ
+        params.greedy.best_of = 5  // whisper-cliデフォルト（1だと後半が認識されない）
+        params.entropy_thold = 2.4   // whisper-cliデフォルト
+        params.logprob_thold = -1.0  // whisper-cliデフォルト
+        params.no_speech_thold = 0.6 // whisper-cliデフォルト
+        params.temperature = 0.0     // whisper-cliデフォルト
+        params.temperature_inc = 0.2 // whisper-cliデフォルト
+        params.vad = false
         return params
     }
 
@@ -168,34 +172,45 @@ final class WhisperContext {
                 return
             }
 
-            // whisper.cppに生データをそのまま渡す（DSP処理は認識精度を下げるため無効化）
-            let processed = samples
+            // 長い音声はチャンク分割（8秒超の場合）
+            // kotoba-whisperは長い音声で認識精度が落ちるため、短めのチャンクで処理
+            let chunkSize = 16000 * 8   // 8秒分のサンプル
+            let overlap = 16000         // 1秒オーバーラップ（文の切れ目を拾う）
+            var fullText = ""
 
-            // Run inference
-            let result = processed.withUnsafeBufferPointer { buf -> String? in
-                guard let ptr = buf.baseAddress else { return nil }
-                let ret = whisper_full(ctx, params, ptr, Int32(processed.count))
-                guard ret == 0 else {
-                    klog("WhisperContext: whisper_full returned \(ret)")
-                    return nil
-                }
+            if samples.count <= chunkSize + 16000 {
+                // 9秒以下: そのまま一括処理
+                let result = self.runWhisperFull(ctx: ctx, params: params, samples: samples)
+                let nSeg = whisper_full_n_segments(ctx)
+                klog("WhisperContext: \(nSeg) segments from \(samples.count) samples")
+                fullText = result ?? ""
+            } else {
+                // 12秒超: チャンク分割で処理
+                var offset = 0
+                var chunkIndex = 0
+                while offset < samples.count {
+                    let end = min(offset + chunkSize, samples.count)
+                    let chunk = Array(samples[offset..<end])
+                    chunkIndex += 1
 
-                let nSegments = whisper_full_n_segments(ctx)
-                klog("WhisperContext: \(nSegments) segments from \(processed.count) samples")
-                var text = ""
-                for i in 0..<nSegments {
-                    if let seg = whisper_full_get_segment_text(ctx, i) {
-                        text += String(cString: seg)
+                    if let result = self.runWhisperFull(ctx: ctx, params: params, samples: chunk) {
+                        let nSeg = whisper_full_n_segments(ctx)
+                        klog("WhisperContext: chunk \(chunkIndex) (\(chunk.count) samples) → \(nSeg) seg → '\(result.prefix(40))'")
+                        if !result.isEmpty && result != "." {
+                            fullText += result
+                        }
                     }
+
+                    offset += chunkSize - overlap
                 }
-                return text.trimmingCharacters(in: .whitespacesAndNewlines)
             }
 
             let elapsed = CFAbsoluteTimeGetCurrent() - start
-            let samplesSec = String(format: "%.1f", Double(processed.count) / 16000.0)
-            klog("WhisperContext: transcribed \(samplesSec)s audio in \(String(format: "%.3f", elapsed))s → '\(result ?? "")'")
+            let samplesSec = String(format: "%.1f", Double(samples.count) / 16000.0)
+            let result = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+            klog("WhisperContext: transcribed \(samplesSec)s audio in \(String(format: "%.3f", elapsed))s → '\(result.isEmpty ? "(empty)" : String(result.prefix(80)))'")
 
-            DispatchQueue.main.async { completion(result) }
+            DispatchQueue.main.async { completion(result.isEmpty ? nil : result) }
         }
     }
 
@@ -364,6 +379,29 @@ final class WhisperContext {
             }
 
             DispatchQueue.main.async { completion(segments) }
+        }
+    }
+
+    // MARK: - Whisper inference helper
+
+    /// whisper_full を実行してテキストを返す（チャンク分割の共通処理）
+    private func runWhisperFull(ctx: OpaquePointer, params: whisper_full_params, samples: [Float]) -> String? {
+        var p = params
+        return samples.withUnsafeBufferPointer { buf -> String? in
+            guard let ptr = buf.baseAddress else { return nil }
+            let ret = whisper_full(ctx, p, ptr, Int32(samples.count))
+            guard ret == 0 else {
+                klog("WhisperContext: whisper_full returned \(ret)")
+                return nil
+            }
+            let nSegments = whisper_full_n_segments(ctx)
+            var text = ""
+            for i in 0..<nSegments {
+                if let seg = whisper_full_get_segment_text(ctx, i) {
+                    text += String(cString: seg)
+                }
+            }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 

@@ -265,23 +265,24 @@ class AgentMode {
         }
     }
 
-    // セキュリティ: 許可されたコマンドのホワイトリスト
+    // セキュリティ: 許可されたコマンドのホワイトリスト（読み取り専用 + 安全な操作のみ）
     private static let allowedCommands = Set([
         "ls", "pwd", "date", "cal", "uptime", "whoami", "hostname",
         "df", "du", "top", "ps", "sw_vers", "system_profiler",
-        "say", "afplay", "open", "pbcopy", "pbpaste",
-        "curl", "ping", "dig", "nslookup", "ifconfig",
-        "echo", "cat", "head", "tail", "wc", "sort", "uniq", "grep",
-        "defaults", "diskutil", "pmset", "caffeinate",
+        "say", "afplay", "pbpaste",
+        "ping", "dig", "nslookup", "ifconfig",
+        "echo", "head", "tail", "wc", "sort", "uniq",
+        "pmset", "caffeinate",
     ])
 
     private func isSafeCommand(_ cmd: String) -> Bool {
         // 危険なパターンを拒否
         let dangerous = ["rm ", "rm\t", "rmdir", "sudo", "chmod", "chown",
                          "mkfs", "dd ", "kill", "pkill", "killall",
-                         "> /", ">> /", "| sh", "| bash", "| zsh",
+                         ">", ">>", "| ", "| sh", "| bash", "| zsh",
                          "`", "$(",  "&&", "||", ";",
-                         "/etc/", "/var/", "/usr/", "/System/"]
+                         "/etc/", "/var/", "/usr/", "/System/",
+                         "~", "..", "curl", "wget", "open ", "defaults"]
         for d in dangerous {
             if cmd.contains(d) { return false }
         }

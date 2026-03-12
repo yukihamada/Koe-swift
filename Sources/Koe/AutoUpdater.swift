@@ -225,7 +225,7 @@ class AutoUpdater {
             try fm.moveItem(at: currentURL, to: backupURL)
             try fm.moveItem(at: newApp, to: currentURL)
 
-            // Verify signature
+            // Verify signature — 検証失敗時はバックアップを復元して中断
             let verify = Process()
             verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
             verify.arguments = ["--verify", "--deep", "--strict", currentURL.path]
@@ -233,16 +233,14 @@ class AutoUpdater {
             try? verify.run()
             verify.waitUntilExit()
             if verify.terminationStatus != 0 {
-                let sign = Process()
-                sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
-                sign.arguments = ["--force", "--sign", "-", "--deep", currentURL.path]
-                sign.standardOutput = FileHandle.nullDevice
-                sign.standardError = FileHandle.nullDevice
-                try? sign.run()
-                sign.waitUntilExit()
+                klog("AutoUpdater: signature verification FAILED, rolling back")
+                try? fm.removeItem(at: currentURL)
+                try? fm.moveItem(at: backupURL, to: currentURL)
+                try? fm.removeItem(at: tmpDir)
+                return
             }
 
-            klog("AutoUpdater: installed, relaunching")
+            klog("AutoUpdater: signature verified, relaunching")
 
             let relaunch = Process()
             relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")

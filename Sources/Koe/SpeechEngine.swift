@@ -61,8 +61,8 @@ class SpeechEngine {
                     klog("whisper embedded done: '\(text)'")
                     onDone(text)
                 } else {
-                    klog("whisper embedded failed, trying server fallback")
-                    self.whisperServerFallback(url: url, lang: lang, prompt: prompt, onDone: onDone)
+                    klog("whisper embedded failed, trying subprocess")
+                    self.whisperSubprocess(url: url, lang: lang, prompt: prompt, onDone: onDone)
                 }
             }
             return

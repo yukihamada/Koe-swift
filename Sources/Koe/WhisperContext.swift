@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import Accelerate
 import CWhisper
 
@@ -106,13 +107,13 @@ final class WhisperContext {
         params.print_special = false
         params.print_realtime = false
         params.print_timestamps = false
-        params.no_timestamps = !timestamps
+        params.no_timestamps = false   // whisper-cliデフォルト
         params.single_segment = false
-        params.suppress_blank = true
+        params.suppress_blank = true   // whisper-cliデフォルト
         params.suppress_nst = false
         params.token_timestamps = timestamps
-        params.no_context = true  // 投機実行のコンテキスト汚染を防ぐ
-        params.greedy.best_of = 5  // whisper-cliデフォルト（1だと後半が認識されない）
+        params.no_context = false  // whisper-cliデフォルト
+        params.greedy.best_of = 5     // whisper-cliデフォルト（精度の鍵）
         params.entropy_thold = 2.4   // whisper-cliデフォルト
         params.logprob_thold = -1.0  // whisper-cliデフォルト
         params.no_speech_thold = 0.6 // whisper-cliデフォルト
@@ -145,24 +146,17 @@ final class WhisperContext {
             self.cancelFlag.pointee = false
 
             // WAV → Float32 PCM
-            guard let samples = Self.loadWAV(url: url) else {
+            guard var samples = Self.loadWAV(url: url) else {
                 klog("WhisperContext: failed to read WAV")
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
 
-            // Setup params
-            var params = self.makeParams(settings: ws)
-
-            // Language
-            let langCStr = language == "auto" ? nil : (language as NSString).utf8String
-            params.language = langCStr
-            params.detect_language = (language == "auto")
-
-            // Prompt
-            let promptCStr = prompt.isEmpty ? nil : (prompt as NSString).utf8String
-            params.initial_prompt = promptCStr
-
+            // 音量情報（デバッグ用）
+            let peak = samples.map { abs($0) }.max() ?? 0
+            let rms = sqrt(samples.map { $0 * $0 }.reduce(0, +) / Float(max(samples.count, 1)))
+            let nThreads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
+            klog("WhisperContext: [bridge] lang=\(language) samples=\(samples.count) rms=\(String(format:"%.4f",rms)) peak=\(String(format:"%.4f",peak)) threads=\(nThreads)")
             let start = CFAbsoluteTimeGetCurrent()
 
             // 音声がなければスキップ (生データで判定)
@@ -172,45 +166,35 @@ final class WhisperContext {
                 return
             }
 
-            // 長い音声はチャンク分割（8秒超の場合）
-            // kotoba-whisperは長い音声で認識精度が落ちるため、短めのチャンクで処理
-            let chunkSize = 16000 * 8   // 8秒分のサンプル
-            let overlap = 16000         // 1秒オーバーラップ（文の切れ目を拾う）
-            var fullText = ""
+            // C bridge経由で認識（struct layout問題を回避）
+            let bufSize = 8192
+            var outputBuf = [CChar](repeating: 0, count: bufSize)
+            let langC = language == "auto" ? nil : language
+            let promptC = prompt.isEmpty ? nil : prompt
 
-            if samples.count <= chunkSize + 16000 {
-                // 9秒以下: そのまま一括処理
-                let result = self.runWhisperFull(ctx: ctx, params: params, samples: samples)
-                let nSeg = whisper_full_n_segments(ctx)
-                klog("WhisperContext: \(nSeg) segments from \(samples.count) samples")
-                fullText = result ?? ""
-            } else {
-                // 12秒超: チャンク分割で処理
-                var offset = 0
-                var chunkIndex = 0
-                while offset < samples.count {
-                    let end = min(offset + chunkSize, samples.count)
-                    let chunk = Array(samples[offset..<end])
-                    chunkIndex += 1
-
-                    if let result = self.runWhisperFull(ctx: ctx, params: params, samples: chunk) {
-                        let nSeg = whisper_full_n_segments(ctx)
-                        klog("WhisperContext: chunk \(chunkIndex) (\(chunk.count) samples) → \(nSeg) seg → '\(result.prefix(40))'")
-                        if !result.isEmpty && result != "." {
-                            fullText += result
-                        }
-                    }
-
-                    offset += chunkSize - overlap
-                }
+            let nSeg = samples.withUnsafeBufferPointer { buf -> Int32 in
+                guard let ptr = buf.baseAddress else { return -1 }
+                return whisper_bridge_transcribe(
+                    ctx, ptr, Int32(samples.count),
+                    langC, promptC,
+                    nThreads,
+                    Int32(ws.bestOf),
+                    true,   // suppress_blank
+                    ws.temperature,
+                    ws.temperatureInc,
+                    ws.entropyThreshold,
+                    -1.0,   // logprob_thold
+                    0.6,    // no_speech_thold
+                    &outputBuf, Int32(bufSize)
+                )
             }
 
             let elapsed = CFAbsoluteTimeGetCurrent() - start
             let samplesSec = String(format: "%.1f", Double(samples.count) / 16000.0)
-            let result = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
-            klog("WhisperContext: transcribed \(samplesSec)s audio in \(String(format: "%.3f", elapsed))s → '\(result.isEmpty ? "(empty)" : String(result.prefix(80)))'")
+            let text = String(cString: outputBuf).trimmingCharacters(in: .whitespacesAndNewlines)
+            klog("WhisperContext: [bridge] \(nSeg) segments in \(String(format: "%.3f", elapsed))s → '\(text.isEmpty ? "(empty)" : String(text.prefix(80)))'")
 
-            DispatchQueue.main.async { completion(result.isEmpty ? nil : result) }
+            DispatchQueue.main.async { completion(text.isEmpty ? nil : text) }
         }
     }
 
@@ -230,41 +214,33 @@ final class WhisperContext {
                 return
             }
 
-            var params = self.makeParams(settings: ws)
-
-            let langCStr = language == "auto" ? nil : (language as NSString).utf8String
-            params.language = langCStr
-            params.detect_language = (language == "auto")
-            let promptCStr = prompt.isEmpty ? nil : (prompt as NSString).utf8String
-            params.initial_prompt = promptCStr
-
-            // abort_callback: メイン認識が来たら実行中の推論を即座に中断
+            // C bridge経由で投機実行（abort_flag対応）
             let flagPtr = self.cancelFlag
-            params.abort_callback = { userData -> Bool in
-                guard let ptr = userData?.assumingMemoryBound(to: Bool.self) else { return false }
-                return ptr.pointee
+            let bufSize = 8192
+            var outputBuf = [CChar](repeating: 0, count: bufSize)
+            let langC = language == "auto" ? nil : language
+            let promptC = prompt.isEmpty ? nil : prompt
+            let nThreads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
+
+            let nSeg = samples.withUnsafeBufferPointer { buf -> Int32 in
+                guard let ptr = buf.baseAddress else { return -1 }
+                return whisper_bridge_transcribe_abortable(
+                    ctx, ptr, Int32(samples.count),
+                    langC, promptC,
+                    nThreads,
+                    Int32(ws.bestOf),
+                    flagPtr,
+                    &outputBuf, Int32(bufSize)
+                )
             }
-            params.abort_callback_user_data = UnsafeMutableRawPointer(flagPtr)
 
-            // whisper.cppに生データをそのまま渡す
-            let processed = samples
-
-            let result = processed.withUnsafeBufferPointer { buf -> String? in
-                guard let ptr = buf.baseAddress else { return nil }
-                let ret = whisper_full(ctx, params, ptr, Int32(processed.count))
-                if ret != 0 {
-                    klog("WhisperContext: speculation aborted or failed (ret=\(ret))")
-                    return nil
-                }
-
-                let nSegments = whisper_full_n_segments(ctx)
-                var text = ""
-                for i in 0..<nSegments {
-                    if let seg = whisper_full_get_segment_text(ctx, i) {
-                        text += String(cString: seg)
-                    }
-                }
-                return text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let result: String?
+            if nSeg < 0 {
+                klog("WhisperContext: speculation aborted or failed (ret=\(nSeg))")
+                result = nil
+            } else {
+                let text = String(cString: outputBuf).trimmingCharacters(in: .whitespacesAndNewlines)
+                result = text.isEmpty ? nil : text
             }
             DispatchQueue.main.async { completion(result) }
         }
@@ -302,11 +278,13 @@ final class WhisperContext {
             // tinydiarize 有効化
             params.tdrz_enable = true
 
-            let langCStr = language == "auto" ? nil : (language as NSString).utf8String
-            params.language = langCStr
-            params.detect_language = (language == "auto")
-            let promptCStr = prompt.isEmpty ? nil : (prompt as NSString).utf8String
-            params.initial_prompt = promptCStr
+            let langCStr = language == "auto" ? nil : strdup(language)
+            defer { langCStr.map { free($0) } }
+            params.language = langCStr.map { UnsafePointer($0) }
+            params.detect_language = false  // detect_language=trueはハングする
+            let promptCStr = prompt.isEmpty ? nil : strdup(prompt)
+            defer { promptCStr.map { free($0) } }
+            params.initial_prompt = promptCStr.map { UnsafePointer($0) }
 
             let start = CFAbsoluteTimeGetCurrent()
 
@@ -395,6 +373,7 @@ final class WhisperContext {
                 return nil
             }
             let nSegments = whisper_full_n_segments(ctx)
+            klog("WhisperContext: whisper_full ret=\(ret) nSegments=\(nSegments)")
             var text = ""
             for i in 0..<nSegments {
                 if let seg = whisper_full_get_segment_text(ctx, i) {
@@ -412,28 +391,28 @@ final class WhisperContext {
 
     /// 16kHz mono 16bit WAV → [Float] (-1.0 ~ 1.0)、前後の無音をトリミング
     static func loadWAV(url: URL) -> [Float]? {
-        guard let data = try? Data(contentsOf: url), data.count > 44 else { return nil }
-
-        // WAVヘッダーを正しくパース: "data"チャンクを探す
-        // AVAudioRecorderはJUNK/FLLRチャンクを挿入するため44バイト固定は不可
-        let dataOffset = findDataChunk(in: data)
-        guard dataOffset > 0, dataOffset < data.count else {
-            klog("WhisperContext: WAV data chunk not found")
+        // AVAudioFile で確実に Float32 PCM 16kHz mono を読む
+        guard let audioFile = try? AVAudioFile(forReading: url) else {
+            klog("WhisperContext: failed to open audio file")
             return nil
         }
 
-        let audioData = data.subdata(in: dataOffset..<data.count)
-        let sampleCount = audioData.count / 2  // 16-bit samples
-
-        var samples = [Float](repeating: 0, count: sampleCount)
-        audioData.withUnsafeBytes { raw in
-            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
-            for i in 0..<sampleCount {
-                samples[i] = Float(ptr[i]) / 32768.0
-            }
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+        let frameCount = AVAudioFrameCount(audioFile.length)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+            klog("WhisperContext: failed to create buffer")
+            return nil
         }
 
-        // whisper.cppは無音を自動処理するのでトリミング不要
+        do {
+            try audioFile.read(into: buffer)
+        } catch {
+            klog("WhisperContext: failed to read audio: \(error)")
+            return nil
+        }
+
+        guard let floatData = buffer.floatChannelData else { return nil }
+        let samples = Array(UnsafeBufferPointer(start: floatData[0], count: Int(buffer.frameLength)))
         return samples
     }
 

@@ -51,11 +51,9 @@ enum MemoryMonitor {
     static func recommendedWhisperModel() -> String {
         let avail = availableMemoryMB
         if avail > 4000 {
-            return "kotoba-v2-full"     // 1520MB — メモリ余裕あり
-        } else if avail > 2500 {
-            return "kotoba-v2-q5"       // 538MB — 推奨デフォルト
+            return "large-v3-turbo"     // 1500MB — メモリ余裕あり・最高速
         } else {
-            return "large-v3-turbo-q5"  // 547MB — 軽量
+            return "large-v3-turbo-q5"  // 547MB — 推奨デフォルト・高速
         }
     }
 

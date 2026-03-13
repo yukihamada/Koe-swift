@@ -78,7 +78,15 @@ if [ "$USE_COREML" = "1" ]; then
     COREML_FLAGS="-L $WHISPER_LIB -lwhisper.coreml -framework CoreML"
 fi
 
+# Compile C bridge (uses shim.h matching installed whisper v1.8.3)
+echo "Compiling whisper bridge..."
+cc -c Sources/CWhisper/whisper_bridge.c \
+    -I Sources/CWhisper \
+    -o /tmp/whisper_bridge.o \
+    -O2
+
 swiftc Sources/Koe/*.swift \
+    /tmp/whisper_bridge.o \
     -I Sources/CWhisper \
     -I Sources/CLlama \
     -L "$WHISPER_LIB" \
@@ -110,22 +118,38 @@ swiftc Sources/Koe/*.swift \
 FRAMEWORKS="$APP/Contents/Frameworks"
 mkdir -p "$FRAMEWORKS"
 
-# Copy whisper dylibs
-for lib in libwhisper.dylib libwhisper.coreml.dylib; do
-    src="$WHISPER_LIB/$lib"
-    # Resolve symlinks to get actual file
-    if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
-    if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
-done
+# When using CoreML build, ggml dylibs come from whisper's custom build (0.9.5)
+# but llama.cpp from Homebrew needs ggml 0.9.7. Use Homebrew ggml for compatibility.
+if [ "$USE_COREML" = "1" ]; then
+    # whisper dylibs from CoreML build
+    for lib in libwhisper.dylib libwhisper.coreml.dylib; do
+        src="$WHISPER_LIB/$lib"
+        if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
+        if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
+    done
+    # ggml dylibs from Homebrew (compatible with both whisper and llama)
+    for lib in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib; do
+        src="$BREW_PREFIX/lib/$lib"
+        if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
+        if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
+    done
+else
+    # Copy whisper dylibs
+    for lib in libwhisper.dylib libwhisper.coreml.dylib; do
+        src="$WHISPER_LIB/$lib"
+        if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
+        if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
+    done
+    # Copy ggml dylibs from potentially different directories
+    for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB"; do
+        lib="${pair%%:*}"
+        dir="${pair##*:}"
+        src="$dir/$lib"
+        if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
+        if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
+    done
+fi
 
-# Copy ggml dylibs from potentially different directories
-for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB"; do
-    lib="${pair%%:*}"
-    dir="${pair##*:}"
-    src="$dir/$lib"
-    if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
-    if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
-done
 # llama.cpp dylib
 if [ -f "$LLAMA_LIB/libllama.dylib" ]; then
     cp "$LLAMA_LIB/libllama.dylib" "$FRAMEWORKS/"
@@ -141,22 +165,52 @@ for lib in "$FRAMEWORKS"/*.dylib; do
 done
 
 # Fix inter-dylib references (libwhisper → libggml etc.)
+ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib"
 for lib in "$FRAMEWORKS"/*.dylib; do
     for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libwhisper.coreml.dylib libllama.dylib; do
-        # Try to change references from various possible original paths
-        install_name_tool -change "$WHISPER_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
-        install_name_tool -change "$LLAMA_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
-        install_name_tool -change "$GGML_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
-        install_name_tool -change "$GGML_METAL_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
-        install_name_tool -change "$GGML_BLAS_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
-        install_name_tool -change "$GGML_CPU_LIB/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
-        install_name_tool -change "@rpath/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
-        # Also handle versioned names
-        for versioned in libwhisper.1.dylib libwhisper.1.7.5.dylib libllama.0.dylib; do
-            install_name_tool -change "$WHISPER_LIB/$versioned" "@rpath/libwhisper.dylib" "$lib" 2>/dev/null || true
-            install_name_tool -change "$LLAMA_LIB/$versioned" "@rpath/libllama.dylib" "$lib" 2>/dev/null || true
+        for dir in $ALL_LIB_DIRS; do
+            install_name_tool -change "$dir/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
+        done
+        # Handle versioned names → unversioned
+        for versioned in libwhisper.1.dylib libwhisper.1.8.3.dylib; do
+            install_name_tool -change "@rpath/$versioned" "@rpath/libwhisper.dylib" "$lib" 2>/dev/null || true
+            for dir in $ALL_LIB_DIRS; do
+                install_name_tool -change "$dir/$versioned" "@rpath/libwhisper.dylib" "$lib" 2>/dev/null || true
+            done
+        done
+        for versioned in libllama.0.dylib; do
+            install_name_tool -change "@rpath/$versioned" "@rpath/libllama.dylib" "$lib" 2>/dev/null || true
+            for dir in $ALL_LIB_DIRS; do
+                install_name_tool -change "$dir/$versioned" "@rpath/libllama.dylib" "$lib" 2>/dev/null || true
+            done
+        done
+        # Handle versioned ggml .0 names
+        for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+            install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}.dylib" "$lib" 2>/dev/null || true
+            for dir in $ALL_LIB_DIRS; do
+                install_name_tool -change "$dir/${glib}.0.dylib" "@rpath/${glib}.dylib" "$lib" 2>/dev/null || true
+            done
         done
     done
+    # Remove build-directory rpaths baked into CoreML build
+    for rp in $(otool -l "$lib" 2>/dev/null | grep "path /tmp/" | awk '{print $2}'); do
+        install_name_tool -delete_rpath "$rp" "$lib" 2>/dev/null || true
+    done
+    # Ensure @loader_path rpath for inter-framework resolution
+    install_name_tool -add_rpath "@loader_path" "$lib" 2>/dev/null || true
+done
+
+# Also fix versioned refs in the main binary
+install_name_tool -change "@rpath/libwhisper.1.dylib" "@rpath/libwhisper.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+    install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+done
+
+# Create versioned symlinks for ggml (llama.cpp refs .0 names)
+for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+    if [ -f "$FRAMEWORKS/${glib}.dylib" ] && [ ! -f "$FRAMEWORKS/${glib}.0.dylib" ]; then
+        cp "$FRAMEWORKS/${glib}.dylib" "$FRAMEWORKS/${glib}.0.dylib"
+    fi
 done
 
 # Copy Metal shader if exists

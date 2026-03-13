@@ -38,34 +38,40 @@ fi
 ok "macOS $SW_VER ($ARCH)"
 
 # --- Step 1: whisper.cpp ---
+WHISPER_MIN_VERSION="1.8.3"
 info "whisper.cpp をチェック中..."
-if command -v whisper-cpp &>/dev/null || command -v whisper-server &>/dev/null; then
-  ok "whisper.cpp は既にインストール済み"
-else
-  if command -v brew &>/dev/null; then
+if command -v brew &>/dev/null; then
+  WHISPER_INSTALLED=$(brew list --versions whisper-cpp 2>/dev/null | awk '{print $2}')
+  if [[ -z "$WHISPER_INSTALLED" ]]; then
     info "whisper.cpp をインストール中..."
     brew install whisper-cpp
     ok "whisper.cpp インストール完了"
+  elif [[ "$(printf '%s\n' "$WHISPER_MIN_VERSION" "$WHISPER_INSTALLED" | sort -V | head -1)" != "$WHISPER_MIN_VERSION" ]]; then
+    info "whisper.cpp を $WHISPER_INSTALLED → $WHISPER_MIN_VERSION+ にアップグレード中..."
+    brew upgrade whisper-cpp
+    ok "whisper.cpp アップグレード完了"
   else
-    warn "Homebrew が見つかりません。whisper.cpp を手動でインストールしてください:"
-    echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-    echo "    brew install whisper-cpp"
+    ok "whisper.cpp $WHISPER_INSTALLED (>= $WHISPER_MIN_VERSION)"
   fi
+else
+  warn "Homebrew が見つかりません。whisper.cpp を手動でインストールしてください:"
+  echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+  echo "    brew install whisper-cpp"
 fi
 
 # --- Step 2: Whisper model ---
-# モデルはアプリ内で自動ダウンロード（デフォルト: Kotoba Whisper v2.0 日本語特化）
+# デフォルト: Large V3 Turbo Q5 (高速・高精度・多言語対応)
 MODEL_DIR="$HOME/Library/Application Support/whisper"
-MODEL_FILE="$MODEL_DIR/ggml-kotoba-whisper-v2.0-q5_0.bin"
+MODEL_FILE="$MODEL_DIR/ggml-large-v3-turbo-q5_0.bin"
 
 info "音声認識モデルをチェック中..."
 if [[ -f "$MODEL_FILE" ]]; then
   ok "モデルは既にダウンロード済み ($(du -h "$MODEL_FILE" | cut -f1))"
 else
-  info "Kotoba Whisper v2.0 (日本語特化) をダウンロード中 (~538MB)..."
+  info "Large V3 Turbo Q5 をダウンロード中 (~547MB)..."
   mkdir -p "$MODEL_DIR"
   curl -L --progress-bar \
-    "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0-q5_0.bin" \
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin" \
     -o "$MODEL_FILE"
   ok "モデルダウンロード完了 (アプリ内で他モデルにも切替可能)"
 fi

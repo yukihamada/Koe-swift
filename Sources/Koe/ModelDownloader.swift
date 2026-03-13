@@ -43,12 +43,12 @@ class ModelDownloader {
         // ── 日本語特化 ──
         WhisperModel(
             id: "kotoba-v2-q5",
-            name: "Kotoba v2.0 Q5 (推奨)",
+            name: "Kotoba v2.0 Q5",
             description: "日本語特化・高精度・軽量",
             fileName: "ggml-kotoba-whisper-v2.0-q5_0.bin",
             url: "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0-q5_0.bin",
             sizeMB: 538,
-            isDefault: true,
+            isDefault: false,
             targetLanguages: ["ja"]
         ),
         WhisperModel(
@@ -117,12 +117,12 @@ class ModelDownloader {
         ),
         WhisperModel(
             id: "large-v3-turbo-q5",
-            name: "Large V3 Turbo Q5",
-            description: "多言語対応・軽量",
+            name: "Large V3 Turbo Q5 (推奨)",
+            description: "多言語対応・高速・軽量",
             fileName: "ggml-large-v3-turbo-q5_0.bin",
             url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
             sizeMB: 547,
-            isDefault: false
+            isDefault: true
         ),
         WhisperModel(
             id: "medium",
@@ -145,16 +145,19 @@ class ModelDownloader {
     }
 
     /// 指定言語に最適なモデルを返す。
-    /// 言語特化モデルがあればそれを推奨、なければ Large V3 Turbo Q5。
+    /// ユーザーが多言語モデルを選択中なら尊重する。
     static func bestModel(for langCode: String) -> WhisperModel {
+        let current = shared.currentModel
+        // ユーザーが選んだモデルが多言語対応（targetLanguages空）ならそのまま使う
+        if current.targetLanguages.isEmpty { return current }
+        // 言語特化モデルを使用中で、その言語に合っているならそのまま
         let prefix = langCode.components(separatedBy: "-").first ?? langCode
-        guard prefix != "auto" else { return shared.currentModel }
-
-        // 言語特化モデルを検索（最初に見つかったものを推奨）
+        guard prefix != "auto" else { return current }
+        if current.targetLanguages.contains(prefix) { return current }
+        // 言語が合わない場合のみ切替を提案
         if let specialized = availableModels.first(where: { !$0.targetLanguages.isEmpty && $0.targetLanguages.contains(prefix) }) {
             return specialized
         }
-        // 特化モデルがない言語は多言語モデル
         return multilingualModel
     }
 

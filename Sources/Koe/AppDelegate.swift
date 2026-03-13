@@ -611,19 +611,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             cmdPressedKeyCode = nil
             if !cmdUsedAsModifier {
                 // 単独タップ → IME切替
-                if pressed == 55 {
-                    // 左⌘ → 英語
-                    switchInputSource(toJapanese: false)
-                } else {
-                    // 右⌘ → 日本語
-                    switchInputSource(toJapanese: true)
-                }
+                let toJapanese = (pressed == 54)
+                klog("IME switch: \(toJapanese ? "→日本語 (右⌘)" : "→英語 (左⌘)")")
+                switchInputSource(toJapanese: toJapanese)
             }
             cmdUsedAsModifier = false
         }
     }
 
     private func switchInputSource(toJapanese: Bool) {
+        // AppleScript経由でIME切替（TISSelectInputSourceはmacOS 13+で不安定）
+        let keyCode = toJapanese ? 104 : 102  // 104=F13(かな), 102=F11 — 実際はAppleScript
+        // CGEvent でKeyDown/Upをシミュレート: かなキー=0x68, 英数キー=0x66
+        let kanaKeyCode: CGKeyCode = toJapanese ? 0x68 : 0x66
+        if let down = CGEvent(keyboardEventSource: nil, virtualKey: kanaKeyCode, keyDown: true),
+           let up = CGEvent(keyboardEventSource: nil, virtualKey: kanaKeyCode, keyDown: false) {
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+            return
+        }
+        // フォールバック: TIS API
         let filter = [kTISPropertyInputSourceIsSelectCapable: true] as CFDictionary
         guard let sources = TISCreateInputSourceList(filter, false)?.takeRetainedValue() as? [TISInputSource] else { return }
         for source in sources {
@@ -631,17 +638,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let sourceID = Unmanaged<CFString>.fromOpaque(idRef).takeUnretainedValue() as String
 
             if toJapanese {
-                if sourceID.contains("Japanese") && sourceID.contains("Hiragana") {
+                if sourceID.contains("Japanese") || sourceID.contains("Hiragana") || sourceID.contains("Kana") {
                     TISSelectInputSource(source)
+                    klog("IME TIS fallback → \(sourceID)")
                     return
                 }
             } else {
-                if sourceID.contains("ABC") || sourceID == "com.apple.keylayout.US" {
+                if sourceID.contains("ABC") || sourceID.contains(".US") || sourceID.contains("Roman") || sourceID.contains("Alphanumeric") {
                     TISSelectInputSource(source)
+                    klog("IME TIS fallback → \(sourceID)")
                     return
                 }
             }
         }
+        klog("IME switch failed: no matching input source found")
     }
 
     // MARK: - Recording

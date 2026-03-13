@@ -494,7 +494,7 @@ class AppSettings: ObservableObject {
         whisperBeamSearch = ud.object(forKey: "whisperBeamSearch") as? Bool ?? false  // デフォルトOFF（速度優先、greedyで十分）
         whisperUseContext = ud.object(forKey: "whisperUseContext") as? Bool ?? true   // デフォルトON（長文の一貫性）
         diarizationEnabled = ud.object(forKey: "diarizationEnabled") as? Bool ?? false  // デフォルトOFF
-        cmdIMESwitchEnabled = ud.object(forKey: "cmdIMESwitchEnabled") as? Bool ?? false  // デフォルトOFF
+        cmdIMESwitchEnabled = ud.object(forKey: "cmdIMESwitchEnabled") as? Bool ?? true  // デフォルトON
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []

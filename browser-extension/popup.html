@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      width: 220px;
+      padding: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      color: #1a1a1a;
+    }
+    h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    button {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      border: none;
+      border-radius: 8px;
+      background: #f5f5f5;
+      cursor: pointer;
+      font-size: 13px;
+      text-align: left;
+      transition: background 0.15s;
+    }
+    button:hover { background: #e8e8e8; }
+    button.primary { background: #007aff; color: white; }
+    button.primary:hover { background: #0062cc; }
+    .icon { font-size: 16px; }
+    .note {
+      margin-top: 10px;
+      font-size: 10px;
+      color: #888;
+      text-align: center;
+    }
+    #status {
+      font-size: 11px;
+      color: #666;
+      min-height: 16px;
+      text-align: center;
+      margin-bottom: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h2>🎙 Koe</h2>
+  <div id="status"></div>
+  <button class="primary" id="btn-transcribe">
+    <span class="icon">🎤</span> 音声入力を開始
+  </button>
+  <button id="btn-translate">
+    <span class="icon">🔤</span> 翻訳モードで入力
+  </button>
+  <button id="btn-stop">
+    <span class="icon">⏹</span> 録音を停止
+  </button>
+  <button id="btn-settings">
+    <span class="icon">⚙️</span> 設定を開く
+  </button>
+  <div class="note">Koeアプリが起動している必要があります</div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

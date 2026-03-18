@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -159,6 +160,49 @@ struct SettingsView: View {
                     }
 
                     Text("best_of: 候補数を増やすと精度向上・速度低下。無音停止: 長いほど途中で切れにくい。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("オーディオ入力") {
+                    let inputManager = AudioInputManager.shared
+
+                    LabeledContent("現在の入力") {
+                        HStack(spacing: 4) {
+                            if inputManager.isExternalInput {
+                                Image(systemName: "cable.connector")
+                                    .foregroundStyle(.green)
+                            }
+                            Text(inputManager.currentInput)
+                                .foregroundStyle(inputManager.isExternalInput ? .green : .secondary)
+                        }
+                    }
+
+                    if inputManager.availableInputs.count > 1 {
+                        Picker("入力デバイス", selection: Binding(
+                            get: {
+                                AVAudioSession.sharedInstance().preferredInput?.uid ?? ""
+                            },
+                            set: { uid in
+                                if let port = inputManager.availableInputs.first(where: { $0.uid == uid }) {
+                                    inputManager.selectInput(port)
+                                }
+                            }
+                        )) {
+                            ForEach(inputManager.availableInputs, id: \.uid) { port in
+                                Text(port.portName).tag(port.uid)
+                            }
+                        }
+                    }
+
+                    if inputManager.isExternalInput {
+                        Button("楽器モードに設定（低レイテンシ）") {
+                            inputManager.configureForInstrument()
+                        }
+                        .font(.subheadline)
+                    }
+
+                    Text("外部オーディオインターフェース（Babyface Pro, iRig等）を接続すると自動検出されます")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

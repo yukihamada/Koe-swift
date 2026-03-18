@@ -52,7 +52,7 @@ final class WhisperContext: ObservableObject {
     // MARK: - Transcribe from audio buffer
 
     func transcribeBuffer(samples: [Float], language: String = "ja", prompt: String = "",
-                          completion: @escaping (String?) -> Void) {
+                          translate: Bool = false, completion: @escaping (String?) -> Void) {
         guard isLoaded, ctx != nil else { completion(nil); return }
 
         queue.async { [weak self] in
@@ -74,6 +74,8 @@ final class WhisperContext: ObservableObject {
             params.greedy.best_of = Int32(UserDefaults.standard.object(forKey: "koe_whisper_best_of") as? Int ?? 1)
             params.entropy_thold = 2.4   // 高エントロピーセグメントを再試行
             params.logprob_thold = -1.0  // 低確率セグメントのフィルタ
+
+            params.translate = translate
 
             let langCStr = language == "auto" ? nil : (language as NSString).utf8String
             params.language = langCStr

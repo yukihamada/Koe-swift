@@ -1,0 +1,48 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "koe",
+  "title": "Koe",
+  "description": "Voice input with AI — start/stop Koe voice recognition from Raycast",
+  "icon": "koe-icon.png",
+  "author": "yukihamada",
+  "categories": ["Productivity", "Applications"],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "start-recording",
+      "title": "Start Voice Input",
+      "description": "Start Koe voice recognition (transcribe to current app)",
+      "mode": "no-view"
+    },
+    {
+      "name": "start-translate",
+      "title": "Start Voice Translation",
+      "description": "Start Koe in translate mode (Japanese ↔ English)",
+      "mode": "no-view"
+    },
+    {
+      "name": "stop-recording",
+      "title": "Stop Recording",
+      "description": "Stop current Koe voice recording",
+      "mode": "no-view"
+    },
+    {
+      "name": "open-settings",
+      "title": "Open Koe Settings",
+      "description": "Open Koe preferences window",
+      "mode": "no-view"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.0.0"
+  },
+  "devDependencies": {
+    "@raycast/eslint-config": "^1.0.0",
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "lint": "ray lint"
+  }
+}

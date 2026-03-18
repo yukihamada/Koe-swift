@@ -1,13 +1,50 @@
 import SwiftUI
 
+enum AppTab: Int, CaseIterable {
+    case koe = 0
+    case soluna = 1
+    case memory = 2
+    case conversation = 3
+}
+
 struct ContentView: View {
     @StateObject private var recorder = RecordingManager()
     @StateObject private var modelManager = ModelManager.shared
     @ObservedObject private var whisper = WhisperContext.shared
     @State private var showHistory = false
     @State private var showSettings = false
+    @State private var selectedTab: AppTab = .koe
 
     var body: some View {
+        TabView(selection: $selectedTab) {
+            koeView
+                .tabItem {
+                    Label("Koe", systemImage: "mic.fill")
+                }
+                .tag(AppTab.koe)
+
+            SolunaView()
+                .tabItem {
+                    Label("Soluna", systemImage: "dot.radiowaves.left.and.right")
+                }
+                .tag(AppTab.soluna)
+
+            SoundMemoryView()
+                .tabItem {
+                    Label("Memory", systemImage: "brain.head.profile")
+                }
+                .tag(AppTab.memory)
+
+            ConversationView()
+                .tabItem {
+                    Label("翻訳", systemImage: "bubble.left.and.bubble.right")
+                }
+                .tag(AppTab.conversation)
+        }
+        .tint(.orange)
+    }
+
+    private var koeView: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Engine badge (top)

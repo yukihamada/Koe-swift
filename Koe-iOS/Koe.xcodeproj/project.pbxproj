@@ -20,6 +20,13 @@
 		C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EBB747CA810EF9BD3F04A0EE /* WhisperContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */; };
 		F0FBBD063E22B911B51FA246 /* RecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */; };
+		F6E5D4C3B2A1 /* SolunaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6 /* SolunaManager.swift */; };
+		F6E5D4C3B2A2 /* SolunaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F7 /* SolunaView.swift */; };
+		EE33FF44AA01 /* SoundMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB11CC22DD01 /* SoundMemory.swift */; };
+		EE33FF44AA02 /* SoundMemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB11CC22DD02 /* SoundMemoryView.swift */; };
+		EE33FF44AA03 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB11CC22DD03 /* ConversationView.swift */; };
+		FF33AA44BB01 /* AudioInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC11DD22EE01 /* AudioInputManager.swift */; };
+		FF33AA44BB02 /* PitchDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC11DD22EE02 /* PitchDetector.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,14 +78,28 @@
 		DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
 		E8D4209A6A834882CE32721D /* ggml-metal.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = "ggml-metal.metal"; sourceTree = "<group>"; };
 		EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F6 /* SolunaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolunaManager.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F7 /* SolunaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolunaView.swift; sourceTree = "<group>"; };
+		BB11CC22DD01 /* SoundMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundMemory.swift; sourceTree = "<group>"; };
+		BB11CC22DD02 /* SoundMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundMemoryView.swift; sourceTree = "<group>"; };
+		BB11CC22DD03 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
+		CC11DD22EE01 /* AudioInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputManager.swift; sourceTree = "<group>"; };
+		CC11DD22EE02 /* PitchDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PitchDetector.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
 		09D835E73F82C8647D08F5D7 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				A1B2C3D4E5F6 /* SolunaManager.swift */,
+				A1B2C3D4E5F7 /* SolunaView.swift */,
 				2E4A00EF6AE47584C718C989 /* Assets.xcassets */,
-				21E264AF883E006A40D11232 /* ContentView.swift */,
+				21E264AF883E006A40D11232 /* SoundMemory.swift */,
+				BB11CC22DD01 /* SoundMemoryView.swift */,
+				BB11CC22DD02 /* ConversationView.swift */,
+				BB11CC22DD03 /* AudioInputManager.swift */,
+				CC11DD22EE01 /* PitchDetector.swift */,
+				CC11DD22EE02 /* ContentView.swift */,
 				E8D4209A6A834882CE32721D /* ggml-metal.metal */,
 				EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */,
 				345D55DE66037B9F07C1D4B8 /* KoeApp.swift */,
@@ -256,6 +277,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */,
+				FF33AA44BB02 /* PitchDetector.swift in Sources */,
+				FF33AA44BB01 /* AudioInputManager.swift in Sources */,
+				EE33FF44AA03 /* ConversationView.swift in Sources */,
+				EE33FF44AA02 /* SoundMemoryView.swift in Sources */,
+				EE33FF44AA01 /* SoundMemory.swift in Sources */,
+				F6E5D4C3B2A1 /* SolunaManager.swift in Sources */,
+				F6E5D4C3B2A2 /* SolunaView.swift in Sources */,
 				2C39265DF9AFB6BDE16BD28A /* HistoryView.swift in Sources */,
 				5CDA08B2FE4E8C5997D3CEAB /* KoeApp.swift in Sources */,
 				89379325393A13D064595214 /* ModelManager.swift in Sources */,

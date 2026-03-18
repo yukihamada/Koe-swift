@@ -5,18 +5,58 @@ struct SolunaView: View {
     @State private var animationTick: UInt64 = 0
     @State private var timer: Timer?
 
-    // Channel categories
-    private let freeChannels = ["soluna", "zamna-hawaii", "stage-a", "stage-b", "vip", "jam"]
-    private let genreChannels = ["jazz", "ambient", "lo-fi", "classical", "electronic"]
-    private let artistChannels: [(name: String, artist: String)] = [
-        ("ed-sheeran", "Ed Sheeran"),
-        ("fkj", "FKJ"),
-        ("black-coffee", "Black Coffee"),
-        ("avicii", "Avicii"),
-        ("nora-jones", "Norah Jones"),
-        ("bonobo", "Bonobo"),
-        ("nujabes", "Nujabes"),
-        ("khruangbin", "Khruangbin"),
+    // ── Channel categories ──
+
+    private let liveChannels: [(id: String, label: String, emoji: String)] = [
+        ("soluna", "Soluna HQ", "🌀"),
+        ("zamna-hawaii", "ZAMNA HAWAII", "🌺"),
+        ("stage-a", "Main Stage", "🔥"),
+        ("stage-b", "Sub Stage", "⚡"),
+        ("vip", "VIP Lounge", "🥂"),
+        ("jam", "Open Jam", "🎸"),
+    ]
+
+    private let vibeChannels: [(id: String, label: String, emoji: String, color: Color)] = [
+        ("sunset-chill", "Sunset Chill", "🌅", .orange),
+        ("deep-focus", "Deep Focus", "🧠", .cyan),
+        ("tokyo-nights", "Tokyo Nights", "🗼", .purple),
+        ("ocean-waves", "Ocean Waves", "🌊", .blue),
+        ("morning-yoga", "Morning Yoga", "🧘", .green),
+        ("late-night", "Late Night", "🌙", .indigo),
+        ("coffee-shop", "Coffee Shop", "☕", .brown),
+        ("rain-sounds", "Rain + Lo-fi", "🌧️", .gray),
+        ("festival-heat", "Festival Heat", "🎪", .red),
+        ("space-ambient", "Space Ambient", "🪐", .purple),
+    ]
+
+    private let artistChannels: [(id: String, label: String, emoji: String, tier: String)] = [
+        // Tier 1: Legends
+        ("avicii", "Avicii", "◆", "LEGEND"),
+        ("nujabes", "Nujabes", "◆", "LEGEND"),
+        ("daft-punk", "Daft Punk", "◆", "LEGEND"),
+        // Tier 2: Icons
+        ("fkj", "FKJ", "♦", "ICON"),
+        ("black-coffee", "Black Coffee", "♦", "ICON"),
+        ("bonobo", "Bonobo", "♦", "ICON"),
+        ("four-tet", "Four Tet", "♦", "ICON"),
+        ("kaytranada", "KAYTRANADA", "♦", "ICON"),
+        ("khruangbin", "Khruangbin", "♦", "ICON"),
+        ("norah-jones", "Norah Jones", "♦", "ICON"),
+        ("tycho", "Tycho", "♦", "ICON"),
+        // Tier 3: Rising
+        ("fred-again", "Fred Again..", "▸", "RISING"),
+        ("peggy-gou", "Peggy Gou", "▸", "RISING"),
+        ("channel-tres", "Channel Tres", "▸", "RISING"),
+        ("jamie-xx", "Jamie xx", "▸", "RISING"),
+        ("toro-y-moi", "Toro y Moi", "▸", "RISING"),
+    ]
+
+    private let djMixChannels: [(id: String, label: String, emoji: String)] = [
+        ("solomun-live", "Solomun Live", "🎧"),
+        ("tale-of-us", "Tale Of Us", "🎧"),
+        ("amelie-lens", "Amelie Lens", "🎧"),
+        ("fisher-mix", "FISHER", "🎧"),
+        ("rufus-dj-set", "RÜFÜS DJ Set", "🎧"),
     ]
 
     // Pricing: ¥1/分、90%アーティスト直接、上限¥500/月、最初30分/月無料
@@ -71,70 +111,95 @@ struct SolunaView: View {
 
                 // Channel picker
                 ScrollView(.vertical, showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        // Free channels
-                        Text("Live")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 20)
+                    VStack(alignment: .leading, spacing: 16) {
+
+                        // 🔴 LIVE NOW
+                        sectionHeader("🔴 LIVE NOW", subtitle: nil)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(freeChannels, id: \.self) { ch in
-                                    channelButton(ch, icon: "dot.radiowaves.left.and.right")
+                                ForEach(liveChannels, id: \.id) { ch in
+                                    emojiChip(ch.id, emoji: ch.emoji, label: ch.label, active: .orange)
                                 }
                             }
                             .padding(.horizontal, 20)
                         }
 
-                        // Genre channels
-                        Text("Genre")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.leading, 20)
+                        // 🎵 VIBE
+                        sectionHeader("🎵 VIBE", subtitle: "雰囲気で選ぶ")
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(genreChannels, id: \.self) { ch in
-                                    channelButton(ch, icon: "music.note")
+                                ForEach(vibeChannels, id: \.id) { ch in
+                                    emojiChip(ch.id, emoji: ch.emoji, label: ch.label, active: ch.color)
                                 }
                             }
                             .padding(.horizontal, 20)
                         }
 
-                        // Artist channels (premium)
+                        // 🎧 DJ MIX
+                        sectionHeader("🎧 DJ MIX", subtitle: "ノンストップ")
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(djMixChannels, id: \.id) { ch in
+                                    emojiChip(ch.id, emoji: ch.emoji, label: ch.label, active: .pink)
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+
+                        // ◆ ARTIST
                         HStack {
-                            Text("Artist")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                            Text("◆ ARTIST")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white.opacity(0.7))
                             Spacer()
                             Button { showPricing = true } label: {
-                                Text("¥1/分 · 90%アーティストへ")
+                                Text("¥1/分 · 90%直接 · 上限¥500")
                                     .font(.system(size: 9, weight: .medium))
                                     .foregroundStyle(.purple)
                             }
                         }
                         .padding(.horizontal, 20)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(artistChannels, id: \.name) { ch in
-                                    Button {
-                                        soluna.setChannel(ch.name)
-                                    } label: {
-                                        Text(ch.artist)
-                                            .font(.caption.weight(.medium))
-                                            .padding(.horizontal, 14)
-                                            .padding(.vertical, 8)
-                                            .background(soluna.channel == ch.name ? Color.purple.opacity(0.2) : Color.white.opacity(0.05))
-                                            .foregroundStyle(soluna.channel == ch.name ? .purple : .secondary)
+
+                        // Artist tiers
+                        ForEach(["LEGEND", "ICON", "RISING"], id: \.self) { tier in
+                            let tierArtists = artistChannels.filter { $0.tier == tier }
+                            let tierColor: Color = tier == "LEGEND" ? .yellow : tier == "ICON" ? .purple : .cyan
+
+                            HStack(spacing: 4) {
+                                Text(tier)
+                                    .font(.system(size: 8, weight: .black, design: .monospaced))
+                                    .foregroundStyle(tierColor.opacity(0.6))
+                                    .padding(.leading, 24)
+                                Rectangle().fill(tierColor.opacity(0.1)).frame(height: 1)
+                            }
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 8) {
+                                    ForEach(tierArtists, id: \.id) { ch in
+                                        Button {
+                                            soluna.setChannel(ch.id)
+                                        } label: {
+                                            HStack(spacing: 4) {
+                                                Text(ch.emoji)
+                                                    .font(.system(size: 8))
+                                                Text(ch.label)
+                                                    .font(.caption.weight(.medium))
+                                            }
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 7)
+                                            .background(soluna.channel == ch.id ? tierColor.opacity(0.2) : Color.white.opacity(0.04))
+                                            .foregroundStyle(soluna.channel == ch.id ? tierColor : .secondary)
                                             .clipShape(Capsule())
-                                            .overlay(Capsule().stroke(soluna.channel == ch.name ? Color.purple.opacity(0.4) : Color.clear))
+                                            .overlay(Capsule().stroke(soluna.channel == ch.id ? tierColor.opacity(0.4) : Color.clear))
+                                        }
                                     }
                                 }
+                                .padding(.horizontal, 20)
                             }
-                            .padding(.horizontal, 20)
                         }
                     }
                 }
-                .frame(maxHeight: 220)
+                .frame(maxHeight: 340)
 
                 // Pricing bar
                 if soluna.isActive {
@@ -313,24 +378,39 @@ struct SolunaView: View {
         }
     }
 
-    // MARK: - Channel Button
+    // MARK: - UI Helpers
 
-    private func channelButton(_ ch: String, icon: String) -> some View {
-        Button {
-            soluna.setChannel(ch)
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10))
-                Text(ch)
-                    .font(.caption)
+    private func sectionHeader(_ title: String, subtitle: String?) -> some View {
+        HStack {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(.white.opacity(0.7))
+            if let sub = subtitle {
+                Text(sub)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.3))
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(soluna.channel == ch ? Color.orange.opacity(0.2) : Color.white.opacity(0.05))
-            .foregroundStyle(soluna.channel == ch ? .orange : .secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func emojiChip(_ id: String, emoji: String, label: String, active: Color) -> some View {
+        Button {
+            soluna.setChannel(id)
+        } label: {
+            HStack(spacing: 5) {
+                Text(emoji)
+                    .font(.system(size: 14))
+                Text(label)
+                    .font(.caption.weight(.medium))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(soluna.channel == id ? active.opacity(0.2) : Color.white.opacity(0.04))
+            .foregroundStyle(soluna.channel == id ? active : .secondary)
             .clipShape(Capsule())
-            .overlay(Capsule().stroke(soluna.channel == ch ? Color.orange.opacity(0.4) : Color.clear))
+            .overlay(Capsule().stroke(soluna.channel == id ? active.opacity(0.4) : Color.clear))
         }
     }
 

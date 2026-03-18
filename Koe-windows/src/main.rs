@@ -7,6 +7,7 @@ mod hotkey;
 mod model;
 mod overlay;
 mod paste;
+mod soluna;
 mod transcribe;
 mod tray;
 

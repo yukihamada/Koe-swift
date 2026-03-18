@@ -11,17 +11,29 @@ use winit::event_loop::{ControlFlow, EventLoop};
 use crate::audio::Recorder;
 use crate::config;
 use crate::hotkey;
+use crate::soluna;
 use crate::SharedState;
 
 /// システムトレイアイコンを作成し、メインイベントループを実行
 pub fn run(shared: Arc<Mutex<SharedState>>, mut recorder: Recorder) {
     let event_loop = EventLoop::new().expect("Failed to create event loop");
 
+    // Solunaクライアント
+    let mut soluna_client = soluna::SolunaClient::new();
+
     // メニュー構築
     let menu = Menu::new();
     let item_status = MenuItem::new("Koe — 待機中", false, None);
     let item_hotkey = MenuItem::new("ショートカット: Ctrl+Alt+V", false, None);
     let item_sep1 = PredefinedMenuItem::separator();
+
+    // Solunaメニュー
+    let item_soluna_toggle = MenuItem::new("Soluna: OFF", true, None);
+    let soluna_channel_items: Vec<MenuItem> = soluna::CHANNELS
+        .iter()
+        .map(|&ch| MenuItem::new(format!("  Ch: {}", ch), true, None))
+        .collect();
+    let item_sep_soluna = PredefinedMenuItem::separator();
 
     let languages = config::supported_languages();
     let lang_items: Vec<MenuItem> = languages
@@ -37,6 +49,11 @@ pub fn run(shared: Arc<Mutex<SharedState>>, mut recorder: Recorder) {
     let _ = menu.append(&item_status);
     let _ = menu.append(&item_hotkey);
     let _ = menu.append(&item_sep1);
+    let _ = menu.append(&item_soluna_toggle);
+    for item in &soluna_channel_items {
+        let _ = menu.append(item);
+    }
+    let _ = menu.append(&item_sep_soluna);
     for item in &lang_items {
         let _ = menu.append(item);
     }
@@ -60,6 +77,8 @@ pub fn run(shared: Arc<Mutex<SharedState>>, mut recorder: Recorder) {
 
     let quit_id = item_quit.id().clone();
     let lang_ids: Vec<_> = lang_items.iter().map(|i| i.id().clone()).collect();
+    let soluna_toggle_id = item_soluna_toggle.id().clone();
+    let soluna_ch_ids: Vec<_> = soluna_channel_items.iter().map(|i| i.id().clone()).collect();
 
     // イベントループ
     #[allow(deprecated)]
@@ -80,9 +99,42 @@ pub fn run(shared: Arc<Mutex<SharedState>>, mut recorder: Recorder) {
             if let Ok(event) = MenuEvent::receiver().try_recv() {
                 if event.id == quit_id {
                     info!("Quit requested");
+                    soluna_client.stop();
                     std::process::exit(0);
                 }
 
+                // Solunaトグル
+                if event.id == soluna_toggle_id {
+                    soluna_client.toggle();
+                    if soluna_client.state.is_active() {
+                        let ch = soluna_client.state.channel_name();
+                        let peers = soluna_client.state.peer_count();
+                        item_soluna_toggle.set_text(format!(
+                            "Soluna: ON [{}] ({}peers)",
+                            ch, peers
+                        ));
+                    } else {
+                        item_soluna_toggle.set_text("Soluna: OFF");
+                    }
+                }
+
+                // Solunaチャンネル切替
+                for (i, ch_id) in soluna_ch_ids.iter().enumerate() {
+                    if event.id == *ch_id {
+                        let ch = soluna::CHANNELS[i];
+                        soluna_client.set_channel(ch);
+                        if soluna_client.state.is_active() {
+                            item_soluna_toggle.set_text(format!(
+                                "Soluna: ON [{}] ({}peers)",
+                                ch,
+                                soluna_client.state.peer_count()
+                            ));
+                        }
+                        break;
+                    }
+                }
+
+                // 言語切替
                 for (i, lang_id) in lang_ids.iter().enumerate() {
                     if event.id == *lang_id {
                         let (_, name, code) = &languages[i];

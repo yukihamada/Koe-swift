@@ -8,14 +8,38 @@ struct SolunaView: View {
     // Channel categories
     private let freeChannels = ["soluna", "zamna-hawaii", "stage-a", "stage-b", "vip", "jam"]
     private let genreChannels = ["jazz", "ambient", "lo-fi", "classical", "electronic"]
-    private let artistChannels: [(name: String, artist: String, price: String)] = [
-        ("ed-sheeran", "Ed Sheeran", "¥500/月"),
-        ("fkj", "FKJ", "¥500/月"),
-        ("black-coffee", "Black Coffee", "¥500/月"),
-        ("avicii", "Avicii", "¥500/月"),
-        ("nora-jones", "Norah Jones", "¥500/月"),
-        ("bonobo", "Bonobo", "¥500/月"),
+    private let artistChannels: [(name: String, artist: String)] = [
+        ("ed-sheeran", "Ed Sheeran"),
+        ("fkj", "FKJ"),
+        ("black-coffee", "Black Coffee"),
+        ("avicii", "Avicii"),
+        ("nora-jones", "Norah Jones"),
+        ("bonobo", "Bonobo"),
+        ("nujabes", "Nujabes"),
+        ("khruangbin", "Khruangbin"),
     ]
+
+    // Pricing: ¥1/分、90%アーティスト直接、上限¥500/月、最初30分/月無料
+    @AppStorage("soluna_listen_minutes") private var listenMinutes: Double = 0
+    @AppStorage("soluna_month_key") private var monthKey: String = ""
+    @State private var showPricing = false
+
+    private var currentMonthKey: String {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM"
+        return df.string(from: Date())
+    }
+
+    private var freeMinutesRemaining: Double {
+        if monthKey != currentMonthKey { return 30 }
+        return max(0, 30 - listenMinutes)
+    }
+
+    private var currentCharge: Int {
+        if monthKey != currentMonthKey { return 0 }
+        let billableMinutes = max(0, listenMinutes - 30)
+        return min(500, Int(billableMinutes))
+    }
 
     var body: some View {
         ZStack {
@@ -82,9 +106,11 @@ struct SolunaView: View {
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Text("¥500/月 聴いた分だけ")
-                                .font(.system(size: 9))
-                                .foregroundStyle(.orange.opacity(0.6))
+                            Button { showPricing = true } label: {
+                                Text("¥1/分 · 90%アーティストへ")
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundStyle(.purple)
+                            }
                         }
                         .padding(.horizontal, 20)
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -93,19 +119,14 @@ struct SolunaView: View {
                                     Button {
                                         soluna.setChannel(ch.name)
                                     } label: {
-                                        VStack(spacing: 4) {
-                                            Text(ch.artist)
-                                                .font(.caption.weight(.medium))
-                                            Text(ch.price)
-                                                .font(.system(size: 8))
-                                                .foregroundStyle(.orange.opacity(0.6))
-                                        }
-                                        .padding(.horizontal, 14)
-                                        .padding(.vertical, 8)
-                                        .background(soluna.channel == ch.name ? Color.purple.opacity(0.2) : Color.white.opacity(0.05))
-                                        .foregroundStyle(soluna.channel == ch.name ? .purple : .secondary)
-                                        .clipShape(Capsule())
-                                        .overlay(Capsule().stroke(soluna.channel == ch.name ? Color.purple.opacity(0.4) : Color.clear))
+                                        Text(ch.artist)
+                                            .font(.caption.weight(.medium))
+                                            .padding(.horizontal, 14)
+                                            .padding(.vertical, 8)
+                                            .background(soluna.channel == ch.name ? Color.purple.opacity(0.2) : Color.white.opacity(0.05))
+                                            .foregroundStyle(soluna.channel == ch.name ? .purple : .secondary)
+                                            .clipShape(Capsule())
+                                            .overlay(Capsule().stroke(soluna.channel == ch.name ? Color.purple.opacity(0.4) : Color.clear))
                                     }
                                 }
                             }
@@ -113,7 +134,12 @@ struct SolunaView: View {
                         }
                     }
                 }
-                .frame(maxHeight: 200)
+                .frame(maxHeight: 220)
+
+                // Pricing bar
+                if soluna.isActive {
+                    pricingBar
+                }
 
                 Spacer()
 
@@ -146,7 +172,7 @@ struct SolunaView: View {
                     Text("同じWiFi上のデバイスと自動接続")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text("UDP \(soluna.isActive ? "239.69.0.1:5004" : "—")")
+                    Text("UDP \(soluna.isActive ? "239.42.42.1:4242" : "—")")
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.quaternary)
                 }
@@ -154,6 +180,137 @@ struct SolunaView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: $showPricing) { pricingSheet }
+    }
+
+    // MARK: - Pricing Bar
+
+    private var pricingBar: some View {
+        Button { showPricing = true } label: {
+            HStack(spacing: 12) {
+                // Free minutes or charge
+                if freeMinutesRemaining > 0 {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("無料")
+                            .font(.caption.bold())
+                            .foregroundStyle(.green)
+                        Text("残り\(Int(freeMinutesRemaining))分")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.green.opacity(0.7))
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("¥\(currentCharge)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                        Text("/ ¥500上限")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                // Progress bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.1))
+                        Capsule().fill(
+                            currentCharge >= 500 ? Color.green :
+                            freeMinutesRemaining > 0 ? Color.green :
+                            Color.orange
+                        )
+                        .frame(width: geo.size.width * min(1, Double(currentCharge) / 500))
+                    }
+                }
+                .frame(height: 6)
+
+                // 90% to artist badge
+                Text("90%→artist")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.purple)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: - Pricing Sheet
+
+    private var pricingSheet: some View {
+        VStack(spacing: 20) {
+            Spacer().frame(height: 8)
+
+            Text("Soluna Pricing")
+                .font(.title2.weight(.light))
+
+            // The pitch
+            VStack(spacing: 8) {
+                Text("¥1/分")
+                    .font(.system(size: 56, weight: .ultraLight, design: .rounded))
+                    .foregroundStyle(.orange)
+                Text("90%がアーティストに直接届く")
+                    .font(.subheadline)
+                    .foregroundStyle(.purple)
+            }
+
+            Divider().padding(.horizontal, 40)
+
+            // Comparison
+            VStack(alignment: .leading, spacing: 12) {
+                pricingRow("最初の30分/月", value: "無料", color: .green)
+                pricingRow("31分〜", value: "¥1/分", color: .orange)
+                pricingRow("月額上限", value: "¥500", color: .orange)
+                pricingRow("アーティスト取り分", value: "90%", color: .purple)
+
+                Divider()
+
+                Text("vs Spotify")
+                    .font(.caption.bold())
+                    .foregroundStyle(.secondary)
+                pricingRow("Spotify月額", value: "¥980", color: .gray)
+                pricingRow("Spotifyアーティスト取り分", value: "~¥0.15/曲", color: .red)
+                pricingRow("Solunaアーティスト取り分", value: "~¥3.6/曲", color: .green)
+
+                HStack {
+                    Spacer()
+                    Text("アーティストへの支払い 24倍")
+                        .font(.caption.bold())
+                        .foregroundStyle(.green)
+                    Spacer()
+                }
+            }
+            .padding(.horizontal, 30)
+
+            Spacer()
+
+            // Current usage
+            VStack(spacing: 4) {
+                Text("今月の利用")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("¥\(currentCharge) / ¥500")
+                    .font(.title3.weight(.light))
+                Text("\(Int(listenMinutes))分 聴取")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer().frame(height: 16)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func pricingRow(_ label: String, value: String, color: Color) -> some View {
+        HStack {
+            Text(label)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(color)
+        }
     }
 
     // MARK: - Channel Button

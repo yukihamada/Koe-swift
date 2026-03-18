@@ -15,6 +15,33 @@ struct SoundMemoryView: View {
     var body: some View {
         NavigationView {
             List {
+                // MARK: - Privacy banner
+                if !memory.isEnabled {
+                    Section {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "lock.shield.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.green)
+                                Text("音声はこのデバイスだけに保存されます")
+                                    .font(.subheadline.bold())
+                            }
+                            Text("ダウンロード・録音されたデータはすべてローカルに残ります。あなたが「送信」するまで、一切外部には出ません。")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            HStack(spacing: 6) {
+                                Image(systemName: "airplane")
+                                    .font(.caption)
+                                    .foregroundColor(.orange)
+                                Text("試しに機内モードでお試しください。オフラインでも完全に動作します。")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+
                 // MARK: - Control section
                 Section {
                     Toggle("Sound Memory", isOn: Binding(
@@ -48,6 +75,10 @@ struct SoundMemoryView: View {
                     }
                 } header: {
                     Text("Capture")
+                } footer: {
+                    if !memory.isEnabled {
+                        Text("ONにすると周囲の音声を自動で録音・文字起こしします。データは7日で自動削除されます。")
+                    }
                 }
 
                 // MARK: - Bookmark button
@@ -123,6 +154,35 @@ struct SoundMemoryView: View {
                         }
                     } header: {
                         Text("Recent")
+                    }
+                }
+
+                // MARK: - Mac auto-send
+                if memory.isEnabled {
+                    Section {
+                        HStack(spacing: 10) {
+                            Image(systemName: "macbook.and.iphone")
+                                .font(.title3)
+                                .foregroundColor(.blue)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Macに自動送信")
+                                    .font(.subheadline.bold())
+                                if MacBridge.shared.isConnected {
+                                    Text("Mac接続中 — テキストが自動で入力されます")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                } else {
+                                    Text("同じWiFiでKoe macOS版を起動すると自動接続します")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    } header: {
+                        Text("Mac連携")
+                    } footer: {
+                        Text("録音テキストは送信するまでiPhoneから出ません。Mac連携もローカルネットワーク内のみで動作します。")
                     }
                 }
 

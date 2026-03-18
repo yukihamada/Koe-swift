@@ -12,9 +12,11 @@ struct ContentView: View {
     @StateObject private var recorder = RecordingManager()
     @StateObject private var modelManager = ModelManager.shared
     @ObservedObject private var whisper = WhisperContext.shared
+    @ObservedObject private var soundMemory = SoundMemory.shared
     @State private var showHistory = false
     @State private var showSettings = false
     @State private var selectedTab: AppTab = .koe
+    @State private var showMemoryTip = false
 
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -167,6 +169,15 @@ struct ContentView: View {
                     modelManager.loadWhisperModel { _ in }
                 }
                 MacBridge.shared.startBrowsing()
+                // Show Sound Memory tip if not enabled and not dismissed
+                if !soundMemory.isEnabled && !UserDefaults.standard.bool(forKey: "koe_memory_tip_dismissed") {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        showMemoryTip = true
+                    }
+                }
+            }
+            .sheet(isPresented: $showMemoryTip) {
+                memoryTipSheet
             }
         }
     }
@@ -241,6 +252,85 @@ struct ContentView: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Sound Memory Tip Sheet
+
+    private var memoryTipSheet: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 56))
+                .foregroundStyle(.orange)
+
+            Text("Sound Memoryをオンにしませんか？")
+                .font(.title3.bold())
+                .multilineTextAlignment(.center)
+
+            VStack(alignment: .leading, spacing: 12) {
+                tipRow(icon: "lock.shield.fill", color: .green,
+                       title: "完全ローカル処理",
+                       desc: "音声データはこのiPhoneだけに保存。あなたが送信するまで外部には一切出ません。")
+
+                tipRow(icon: "airplane", color: .orange,
+                       title: "機内モードでも動作",
+                       desc: "オフラインで完全に動作します。試しに機内モードでお試しください。")
+
+                tipRow(icon: "macbook.and.iphone", color: .blue,
+                       title: "Macに自動送信",
+                       desc: "macOS版Koeと同じWiFiなら、テキストが自動でMacに入力されます。")
+
+                tipRow(icon: "clock.arrow.circlepath", color: .purple,
+                       title: "7日で自動削除",
+                       desc: "録音データは7日後に自動的に削除されます。容量を圧迫しません。")
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+
+            Button {
+                soundMemory.startCapture()
+                selectedTab = .memory
+                showMemoryTip = false
+            } label: {
+                Text("Sound Memoryをオンにする")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .padding(.horizontal, 24)
+
+            Button {
+                UserDefaults.standard.set(true, forKey: "koe_memory_tip_dismissed")
+                showMemoryTip = false
+            } label: {
+                Text("あとで")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer().frame(height: 16)
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func tipRow(icon: String, color: Color, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(color)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.bold())
+                Text(desc)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
     }
 }
 

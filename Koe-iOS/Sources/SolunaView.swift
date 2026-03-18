@@ -5,7 +5,17 @@ struct SolunaView: View {
     @State private var animationTick: UInt64 = 0
     @State private var timer: Timer?
 
-    private let channels = ["soluna", "zamna-hawaii", "stage-a", "stage-b", "vip", "jam"]
+    // Channel categories
+    private let freeChannels = ["soluna", "zamna-hawaii", "stage-a", "stage-b", "vip", "jam"]
+    private let genreChannels = ["jazz", "ambient", "lo-fi", "classical", "electronic"]
+    private let artistChannels: [(name: String, artist: String, price: String)] = [
+        ("ed-sheeran", "Ed Sheeran", "¥500/月"),
+        ("fkj", "FKJ", "¥500/月"),
+        ("black-coffee", "Black Coffee", "¥500/月"),
+        ("avicii", "Avicii", "¥500/月"),
+        ("nora-jones", "Norah Jones", "¥500/月"),
+        ("bonobo", "Bonobo", "¥500/月"),
+    ]
 
     var body: some View {
         ZStack {
@@ -36,25 +46,74 @@ struct SolunaView: View {
                 }
 
                 // Channel picker
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(channels, id: \.self) { ch in
-                            Button {
-                                soluna.setChannel(ch)
-                            } label: {
-                                Text(ch)
-                                    .font(.caption)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .background(soluna.channel == ch ? Color.orange.opacity(0.2) : Color.white.opacity(0.05))
-                                    .foregroundStyle(soluna.channel == ch ? .orange : .secondary)
-                                    .clipShape(Capsule())
-                                    .overlay(Capsule().stroke(soluna.channel == ch ? Color.orange.opacity(0.4) : Color.clear))
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        // Free channels
+                        Text("Live")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 20)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(freeChannels, id: \.self) { ch in
+                                    channelButton(ch, icon: "dot.radiowaves.left.and.right")
+                                }
                             }
+                            .padding(.horizontal, 20)
+                        }
+
+                        // Genre channels
+                        Text("Genre")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 20)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(genreChannels, id: \.self) { ch in
+                                    channelButton(ch, icon: "music.note")
+                                }
+                            }
+                            .padding(.horizontal, 20)
+                        }
+
+                        // Artist channels (premium)
+                        HStack {
+                            Text("Artist")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Text("¥500/月 聴いた分だけ")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.orange.opacity(0.6))
+                        }
+                        .padding(.horizontal, 20)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(artistChannels, id: \.name) { ch in
+                                    Button {
+                                        soluna.setChannel(ch.name)
+                                    } label: {
+                                        VStack(spacing: 4) {
+                                            Text(ch.artist)
+                                                .font(.caption.weight(.medium))
+                                            Text(ch.price)
+                                                .font(.system(size: 8))
+                                                .foregroundStyle(.orange.opacity(0.6))
+                                        }
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .background(soluna.channel == ch.name ? Color.purple.opacity(0.2) : Color.white.opacity(0.05))
+                                        .foregroundStyle(soluna.channel == ch.name ? .purple : .secondary)
+                                        .clipShape(Capsule())
+                                        .overlay(Capsule().stroke(soluna.channel == ch.name ? Color.purple.opacity(0.4) : Color.clear))
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 20)
                         }
                     }
-                    .padding(.horizontal, 20)
                 }
+                .frame(maxHeight: 200)
 
                 Spacer()
 
@@ -95,6 +154,27 @@ struct SolunaView: View {
             }
         }
         .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Channel Button
+
+    private func channelButton(_ ch: String, icon: String) -> some View {
+        Button {
+            soluna.setChannel(ch)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10))
+                Text(ch)
+                    .font(.caption)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(soluna.channel == ch ? Color.orange.opacity(0.2) : Color.white.opacity(0.05))
+            .foregroundStyle(soluna.channel == ch ? .orange : .secondary)
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(soluna.channel == ch ? Color.orange.opacity(0.4) : Color.clear))
+        }
     }
 
     // MARK: - LED Background

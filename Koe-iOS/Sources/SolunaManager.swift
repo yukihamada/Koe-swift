@@ -16,7 +16,7 @@ final class SolunaManager: ObservableObject {
     // Public state
     @Published var isActive = false
     @Published var peerCount = 0
-    @Published var channel = "default"
+    @Published var channel = "soluna"
     @Published var ledR: UInt8 = 0
     @Published var ledG: UInt8 = 0
     @Published var ledB: UInt8 = 0

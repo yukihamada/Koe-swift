@@ -5,7 +5,7 @@ struct SolunaView: View {
     @State private var animationTick: UInt64 = 0
     @State private var timer: Timer?
 
-    private let channels = ["default", "stage-a", "stage-b", "vip", "jam"]
+    private let channels = ["soluna", "zamna-hawaii", "stage-a", "stage-b", "vip", "jam"]
 
     var body: some View {
         ZStack {

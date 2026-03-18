@@ -166,6 +166,7 @@ struct ContentView: View {
                 if modelManager.isModelReady && !whisper.isLoaded && !whisper.isLoading {
                     modelManager.loadWhisperModel { _ in }
                 }
+                MacBridge.shared.startBrowsing()
             }
         }
     }

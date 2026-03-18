@@ -378,6 +378,7 @@ final class RecordingManager: ObservableObject {
     // MARK: - Handoff
 
     private func publishHandoff(text: String) {
+        // Handoff (Apple)
         let activity = NSUserActivity(activityType: "com.yuki.koe.transcription")
         activity.title = "Koe 音声入力"
         activity.userInfo = ["text": text, "timestamp": Date().timeIntervalSince1970]
@@ -386,6 +387,9 @@ final class RecordingManager: ObservableObject {
         activity.needsSave = true
         currentActivity = activity
         currentActivity?.becomeCurrent()
+
+        // MacBridge — テキストをMacに送信 (Macのカーソル位置に入力)
+        MacBridge.shared.sendText(text)
     }
 
     // MARK: - History

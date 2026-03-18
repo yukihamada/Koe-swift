@@ -5,6 +5,7 @@ enum AppTab: Int, CaseIterable {
     case soluna = 1
     case memory = 2
     case conversation = 3
+    case tools = 4
 }
 
 struct ContentView: View {
@@ -40,6 +41,12 @@ struct ContentView: View {
                     Label("翻訳", systemImage: "bubble.left.and.bubble.right")
                 }
                 .tag(AppTab.conversation)
+
+            AudioToolsView()
+                .tabItem {
+                    Label("Tools", systemImage: "waveform.badge.magnifyingglass")
+                }
+                .tag(AppTab.tools)
         }
         .tint(.orange)
     }

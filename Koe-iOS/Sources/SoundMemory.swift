@@ -63,6 +63,13 @@ final class SoundMemory: ObservableObject {
         try? FileManager.default.createDirectory(at: storageDir, withIntermediateDirectories: true)
         loadData()
         updateTodayDuration()
+
+        // 前回ONだった場合、自動で再開
+        if UserDefaults.standard.bool(forKey: "koe_sound_memory_enabled") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+                self?.startCapture()
+            }
+        }
     }
 
     // MARK: - Public API
@@ -136,6 +143,7 @@ final class SoundMemory: ObservableObject {
 
         audioEngine = engine
         isEnabled = true
+        UserDefaults.standard.set(true, forKey: "koe_sound_memory_enabled")
 
         // Timer to finalize segments every 30 seconds
         segmentTimer = Timer.scheduledTimer(withTimeInterval: segmentDuration, repeats: true) { [weak self] _ in
@@ -161,6 +169,7 @@ final class SoundMemory: ObservableObject {
         finalizeCurrentSegment()
 
         isEnabled = false
+        UserDefaults.standard.set(false, forKey: "koe_sound_memory_enabled")
         print("[SoundMemory] Capture stopped")
     }
 

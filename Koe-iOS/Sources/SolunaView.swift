@@ -4,6 +4,7 @@ struct SolunaView: View {
     @StateObject private var soluna = SolunaManager.shared
     @State private var animationTick: UInt64 = 0
     @State private var timer: Timer?
+    @State private var showDebug = false
 
     // ── Channel categories ──
 
@@ -30,11 +31,9 @@ struct SolunaView: View {
     ]
 
     private let artistChannels: [(id: String, label: String, emoji: String, tier: String)] = [
-        // Tier 1: Legends
         ("avicii", "Avicii", "◆", "LEGEND"),
         ("nujabes", "Nujabes", "◆", "LEGEND"),
         ("daft-punk", "Daft Punk", "◆", "LEGEND"),
-        // Tier 2: Icons
         ("fkj", "FKJ", "♦", "ICON"),
         ("black-coffee", "Black Coffee", "♦", "ICON"),
         ("bonobo", "Bonobo", "♦", "ICON"),
@@ -43,7 +42,6 @@ struct SolunaView: View {
         ("khruangbin", "Khruangbin", "♦", "ICON"),
         ("norah-jones", "Norah Jones", "♦", "ICON"),
         ("tycho", "Tycho", "♦", "ICON"),
-        // Tier 3: Rising
         ("fred-again", "Fred Again..", "▸", "RISING"),
         ("peggy-gou", "Peggy Gou", "▸", "RISING"),
         ("channel-tres", "Channel Tres", "▸", "RISING"),
@@ -59,7 +57,6 @@ struct SolunaView: View {
         ("rufus-dj-set", "RÜFÜS DJ Set", "🎧"),
     ]
 
-    // Pricing: ¥1/分、90%アーティスト直接、上限¥500/月、最初30分/月無料
     @AppStorage("soluna_listen_minutes") private var listenMinutes: Double = 0
     @AppStorage("soluna_month_key") private var monthKey: String = ""
     @State private var showPricing = false
@@ -83,18 +80,18 @@ struct SolunaView: View {
 
     var body: some View {
         ZStack {
-            // Background: LED sync (full screen)
             ledBackground
                 .ignoresSafeArea()
 
             VStack(spacing: 24) {
                 Spacer()
 
-                // Status
+                // Status — triple-tap to toggle debug
                 VStack(spacing: 8) {
                     Text(soluna.isActive ? "SOLUNA" : "OFFLINE")
                         .font(.system(size: 40, weight: .ultraLight, design: .rounded))
                         .foregroundStyle(soluna.isActive ? .orange : .gray)
+                        .onTapGesture(count: 3) { showDebug.toggle() }
 
                     if soluna.isActive {
                         HStack(spacing: 16) {
@@ -112,8 +109,6 @@ struct SolunaView: View {
                 // Channel picker
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
-
-                        // 🔴 LIVE NOW
                         sectionHeader("🔴 LIVE NOW", subtitle: nil)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -124,7 +119,6 @@ struct SolunaView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        // 🎵 VIBE
                         sectionHeader("🎵 VIBE", subtitle: "雰囲気で選ぶ")
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -135,7 +129,6 @@ struct SolunaView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        // 🎧 DJ MIX
                         sectionHeader("🎧 DJ MIX", subtitle: "ノンストップ")
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -146,7 +139,6 @@ struct SolunaView: View {
                             .padding(.horizontal, 20)
                         }
 
-                        // ◆ ARTIST
                         HStack {
                             Text("◆ ARTIST")
                                 .font(.caption2.weight(.bold))
@@ -160,7 +152,6 @@ struct SolunaView: View {
                         }
                         .padding(.horizontal, 20)
 
-                        // Artist tiers
                         ForEach(["LEGEND", "ICON", "RISING"], id: \.self) { tier in
                             let tierArtists = artistChannels.filter { $0.tier == tier }
                             let tierColor: Color = tier == "LEGEND" ? .yellow : tier == "ICON" ? .purple : .cyan
@@ -176,14 +167,10 @@ struct SolunaView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 HStack(spacing: 8) {
                                     ForEach(tierArtists, id: \.id) { ch in
-                                        Button {
-                                            soluna.setChannel(ch.id)
-                                        } label: {
+                                        Button { soluna.setChannel(ch.id) } label: {
                                             HStack(spacing: 4) {
-                                                Text(ch.emoji)
-                                                    .font(.system(size: 8))
-                                                Text(ch.label)
-                                                    .font(.caption.weight(.medium))
+                                                Text(ch.emoji).font(.system(size: 8))
+                                                Text(ch.label).font(.caption.weight(.medium))
                                             }
                                             .padding(.horizontal, 12)
                                             .padding(.vertical, 7)
@@ -202,9 +189,7 @@ struct SolunaView: View {
                 .frame(maxHeight: 340)
 
                 // Pricing bar
-                if soluna.isActive {
-                    pricingBar
-                }
+                if soluna.isActive { pricingBar }
 
                 Spacer()
 
@@ -232,14 +217,20 @@ struct SolunaView: View {
 
                 Spacer()
 
-                // Info
+                // Footer — debug (hidden by default, triple-tap SOLUNA to show)
                 VStack(spacing: 4) {
-                    Text("同じWiFi上のデバイスと自動接続")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("UDP \(soluna.isActive ? "239.42.42.1:4242" : "—")")
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.quaternary)
+                    if showDebug && !soluna.debugInfo.isEmpty {
+                        Text(soluna.debugInfo)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.orange.opacity(0.6))
+                        Text("relay.solun.art:5100")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.quaternary)
+                    } else {
+                        Text("ch: \(soluna.channel)")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.quaternary)
+                    }
                 }
                 .padding(.bottom, 20)
             }
@@ -253,42 +244,31 @@ struct SolunaView: View {
     private var pricingBar: some View {
         Button { showPricing = true } label: {
             HStack(spacing: 12) {
-                // Free minutes or charge
                 if freeMinutesRemaining > 0 {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("無料")
-                            .font(.caption.bold())
-                            .foregroundStyle(.green)
+                        Text("無料").font(.caption.bold()).foregroundStyle(.green)
                         Text("残り\(Int(freeMinutesRemaining))分")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.green.opacity(0.7))
+                            .font(.system(size: 10)).foregroundStyle(.green.opacity(0.7))
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("¥\(currentCharge)")
-                            .font(.caption.bold())
-                            .foregroundStyle(.white)
-                        Text("/ ¥500上限")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                        Text("¥\(currentCharge)").font(.caption.bold()).foregroundStyle(.white)
+                        Text("/ ¥500上限").font(.system(size: 10)).foregroundStyle(.secondary)
                     }
                 }
 
-                // Progress bar
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(.white.opacity(0.1))
                         Capsule().fill(
                             currentCharge >= 500 ? Color.green :
-                            freeMinutesRemaining > 0 ? Color.green :
-                            Color.orange
+                            freeMinutesRemaining > 0 ? Color.green : Color.orange
                         )
                         .frame(width: geo.size.width * min(1, Double(currentCharge) / 500))
                     }
                 }
                 .frame(height: 6)
 
-                // 90% to artist badge
                 Text("90%→artist")
                     .font(.system(size: 8, weight: .bold, design: .monospaced))
                     .foregroundStyle(.purple)
@@ -305,43 +285,31 @@ struct SolunaView: View {
     private var pricingSheet: some View {
         VStack(spacing: 20) {
             Spacer().frame(height: 8)
+            Text("Soluna Pricing").font(.title2.weight(.light))
 
-            Text("Soluna Pricing")
-                .font(.title2.weight(.light))
-
-            // The pitch
             VStack(spacing: 8) {
                 Text("¥1/分")
                     .font(.system(size: 56, weight: .ultraLight, design: .rounded))
                     .foregroundStyle(.orange)
                 Text("90%がアーティストに直接届く")
-                    .font(.subheadline)
-                    .foregroundStyle(.purple)
+                    .font(.subheadline).foregroundStyle(.purple)
             }
 
             Divider().padding(.horizontal, 40)
 
-            // Comparison
             VStack(alignment: .leading, spacing: 12) {
                 pricingRow("最初の30分/月", value: "無料", color: .green)
                 pricingRow("31分〜", value: "¥1/分", color: .orange)
                 pricingRow("月額上限", value: "¥500", color: .orange)
                 pricingRow("アーティスト取り分", value: "90%", color: .purple)
-
                 Divider()
-
-                Text("vs Spotify")
-                    .font(.caption.bold())
-                    .foregroundStyle(.secondary)
+                Text("vs Spotify").font(.caption.bold()).foregroundStyle(.secondary)
                 pricingRow("Spotify月額", value: "¥980", color: .gray)
                 pricingRow("Spotifyアーティスト取り分", value: "~¥0.15/曲", color: .red)
                 pricingRow("Solunaアーティスト取り分", value: "~¥3.6/曲", color: .green)
-
                 HStack {
                     Spacer()
-                    Text("アーティストへの支払い 24倍")
-                        .font(.caption.bold())
-                        .foregroundStyle(.green)
+                    Text("アーティストへの支払い 24倍").font(.caption.bold()).foregroundStyle(.green)
                     Spacer()
                 }
             }
@@ -349,16 +317,10 @@ struct SolunaView: View {
 
             Spacer()
 
-            // Current usage
             VStack(spacing: 4) {
-                Text("今月の利用")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text("¥\(currentCharge) / ¥500")
-                    .font(.title3.weight(.light))
-                Text("\(Int(listenMinutes))分 聴取")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                Text("今月の利用").font(.caption).foregroundStyle(.secondary)
+                Text("¥\(currentCharge) / ¥500").font(.title3.weight(.light))
+                Text("\(Int(listenMinutes))分 聴取").font(.caption2).foregroundStyle(.secondary)
             }
 
             Spacer().frame(height: 16)
@@ -368,13 +330,9 @@ struct SolunaView: View {
 
     private func pricingRow(_ label: String, value: String, color: Color) -> some View {
         HStack {
-            Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            Text(label).font(.subheadline).foregroundStyle(.secondary)
             Spacer()
-            Text(value)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(color)
+            Text(value).font(.subheadline.weight(.medium)).foregroundStyle(color)
         }
     }
 
@@ -382,13 +340,9 @@ struct SolunaView: View {
 
     private func sectionHeader(_ title: String, subtitle: String?) -> some View {
         HStack {
-            Text(title)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(.white.opacity(0.7))
+            Text(title).font(.caption2.weight(.bold)).foregroundStyle(.white.opacity(0.7))
             if let sub = subtitle {
-                Text(sub)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.3))
+                Text(sub).font(.system(size: 9)).foregroundStyle(.white.opacity(0.3))
             }
             Spacer()
         }
@@ -396,14 +350,10 @@ struct SolunaView: View {
     }
 
     private func emojiChip(_ id: String, emoji: String, label: String, active: Color) -> some View {
-        Button {
-            soluna.setChannel(id)
-        } label: {
+        Button { soluna.setChannel(id) } label: {
             HStack(spacing: 5) {
-                Text(emoji)
-                    .font(.system(size: 14))
-                Text(label)
-                    .font(.caption.weight(.medium))
+                Text(emoji).font(.system(size: 14))
+                Text(label).font(.caption.weight(.medium))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
@@ -426,25 +376,23 @@ struct SolunaView: View {
         let speed = Double(soluna.ledSpeed) / 255.0
 
         switch pattern {
-        case 0: // off
-            Color.black
-        case 1: // solid
-            Color(red: r * inten, green: g * inten, blue: b * inten)
-        case 2: // pulse
+        case 0: Color.black
+        case 1: Color(red: r * inten, green: g * inten, blue: b * inten)
+        case 2:
             let t = Double(animationTick % 120) / 120.0
             let bright = abs(sin(t * .pi))
             Color(red: r * bright * inten, green: g * bright * inten, blue: b * bright * inten)
-        case 3: // rainbow
+        case 3:
             let hue = Double(animationTick % 360) / 360.0
             Color(hue: hue, saturation: 1.0, brightness: inten)
-        case 6: // strobe
+        case 6:
             let on = animationTick % UInt64(max(2, 20 - Int(speed * 18))) < UInt64(max(1, 10 - Int(speed * 9)))
             on ? Color(red: r * inten, green: g * inten, blue: b * inten) : Color.black
-        case 7: // breathe
+        case 7:
             let t = Double(animationTick % 180) / 180.0
             let bright = (sin(t * .pi * 2) + 1) / 2
             Color(red: r * bright * inten, green: g * bright * inten, blue: b * bright * inten)
-        default: // wave etc
+        default:
             let t = Double(animationTick % 100) / 100.0
             let bright = max(0, 1 - abs(t - 0.5) * 4)
             Color(red: r * bright * inten, green: g * bright * inten, blue: b * bright * inten)

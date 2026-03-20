@@ -65,68 +65,90 @@ final class AudioToolsEngine: ObservableObject {
     func start() {
         guard !isRunning else { return }
 
-        let session = AVAudioSession.sharedInstance()
+        // Check mic permission first
+        #if os(iOS)
+        let perm = AVAudioSession.sharedInstance().recordPermission
+        if perm == .denied {
+            print("AudioTools: mic permission denied")
+            return
+        }
+        if perm == .undetermined {
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                if granted {
+                    Task { @MainActor in self.start() }
+                }
+            }
+            return
+        }
+        #endif
+
         do {
+            let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .measurement, options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setPreferredSampleRate(Double(sampleRate))
             try session.setActive(true)
         } catch {
             print("AudioSession error: \(error)")
             return
         }
 
-        let engine = AVAudioEngine()
-        let inputNode = engine.inputNode
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-
-        // Setup effect nodes
-        let reverbNode = AVAudioUnitReverb()
-        reverbNode.loadFactoryPreset(.mediumHall)
-        reverbNode.wetDryMix = reverbWetDry
-
-        let delayNode = AVAudioUnitDelay()
-        delayNode.delayTime = TimeInterval(delayTime)
-        delayNode.feedback = delayFeedback
-        delayNode.wetDryMix = 50
-
-        let timePitchNode = AVAudioUnitTimePitch()
-        timePitchNode.pitch = pitchShiftSemitones * 100
-
-        engine.attach(reverbNode)
-        engine.attach(delayNode)
-        engine.attach(timePitchNode)
-
-        self.reverb = reverbNode
-        self.delay = delayNode
-        self.timePitch = timePitchNode
-        self.audioEngine = engine
-
-        // Install tap for analysis
-        let tapFormat = AVAudioFormat(standardFormatWithSampleRate: Double(sampleRate), channels: 1)
-            ?? inputFormat
-
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: tapFormat) { [weak self] buffer, _ in
-            guard let channelData = buffer.floatChannelData else { return }
-            let frameCount = Int(buffer.frameLength)
-            let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
-
-            // Heavy DSP on background
-            var rms: Float = 0
-            vDSP_rmsqv(samples, 1, &rms, vDSP_Length(frameCount))
-            let dbFS = 20 * log10(max(rms, 1e-10))
-            let splApprox = max(0, dbFS + 90)
-            let spectrumResult = AudioToolsEngine.computeSpectrum(samples: samples)
-            let pitch = PitchDetector.detectPitch(samples: samples, sampleRate: 44100)
-
-            DispatchQueue.main.async {
-                self?.handleProcessedBuffer(
-                    samples: samples, rms: rms, splApprox: splApprox,
-                    spectrumResult: spectrumResult, pitch: pitch, frameCount: frameCount
-                )
-            }
-        }
-
         do {
+            let engine = AVAudioEngine()
+            let inputNode = engine.inputNode
+            let hwFormat = inputNode.outputFormat(forBus: 0)
+
+            guard hwFormat.channelCount > 0, hwFormat.sampleRate > 0 else {
+                print("AudioTools: invalid inputFormat ch=\(hwFormat.channelCount) sr=\(hwFormat.sampleRate)")
+                return
+            }
+
+            let actualSampleRate = Float(hwFormat.sampleRate)
+
+            // Setup effect nodes
+            let reverbNode = AVAudioUnitReverb()
+            reverbNode.loadFactoryPreset(.mediumHall)
+            reverbNode.wetDryMix = reverbWetDry
+
+            let delayNode = AVAudioUnitDelay()
+            delayNode.delayTime = TimeInterval(delayTime)
+            delayNode.feedback = delayFeedback
+            delayNode.wetDryMix = 50
+
+            let timePitchNode = AVAudioUnitTimePitch()
+            timePitchNode.pitch = pitchShiftSemitones * 100
+
+            engine.attach(reverbNode)
+            engine.attach(delayNode)
+            engine.attach(timePitchNode)
+
+            self.reverb = reverbNode
+            self.delay = delayNode
+            self.timePitch = timePitchNode
+            self.audioEngine = engine
+
+            // Use nil format = use hardware format as-is (avoids sample rate mismatch crash)
+            inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: nil) { [weak self] buffer, _ in
+                guard let channelData = buffer.floatChannelData else { return }
+                let frameCount = Int(buffer.frameLength)
+                guard frameCount > 0 else { return }
+
+                // Use only channel 0
+                let samples = Array(UnsafeBufferPointer(start: channelData[0], count: frameCount))
+
+                var rms: Float = 0
+                vDSP_rmsqv(samples, 1, &rms, vDSP_Length(frameCount))
+                let dbFS = 20 * log10(max(rms, 1e-10))
+                let splApprox = max(0, dbFS + 90)
+                let spectrumResult = AudioToolsEngine.computeSpectrum(samples: samples)
+                let pitch = PitchDetector.detectPitch(samples: samples, sampleRate: actualSampleRate)
+
+                DispatchQueue.main.async {
+                    self?.handleProcessedBuffer(
+                        samples: samples, rms: rms, splApprox: splApprox,
+                        spectrumResult: spectrumResult, pitch: pitch, frameCount: frameCount
+                    )
+                }
+            }
+
             try engine.start()
             isRunning = true
         } catch {
@@ -135,8 +157,11 @@ final class AudioToolsEngine: ObservableObject {
     }
 
     func stop() {
-        audioEngine?.inputNode.removeTap(onBus: 0)
-        audioEngine?.stop()
+        guard let engine = audioEngine else { return }
+        if engine.isRunning {
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+        }
         audioEngine = nil
         isRunning = false
         reverb = nil
@@ -388,7 +413,6 @@ struct AudioToolsView: View {
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Tools")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear { engine.start() }
             .onDisappear { engine.stop() }
         }
     }

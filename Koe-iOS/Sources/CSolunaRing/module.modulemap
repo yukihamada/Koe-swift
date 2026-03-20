@@ -1,0 +1,4 @@
+module CSolunaRing {
+    header "soluna_ring.h"
+    export *
+}

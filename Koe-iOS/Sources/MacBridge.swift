@@ -12,6 +12,10 @@ final class MacBridge: NSObject, ObservableObject {
     @Published var remoteTranscription = ""
     @Published var remoteTranslation = ""
     @Published var useRemoteWhisper: Bool = UserDefaults.standard.bool(forKey: "koe_remote_whisper")
+    @Published var activeAppName: String = ""
+    @Published var activeAppBundleID: String = ""
+    @Published var screenImage: UIImage?
+    @Published var screenContext: String = ""
 
     private let serviceType = "koe-bridge"
     private let myPeerID = MCPeerID(displayName: UIDevice.current.name)
@@ -50,6 +54,30 @@ final class MacBridge: NSObject, ObservableObject {
         try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
 
+    /// ストリーミングテキスト（部分認識結果）をMacに送信
+    func sendStreamingText(_ text: String) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg = ["type": "streaming_text", "text": text]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
+    /// MacにBackspaceを送信（文字数分）
+    func sendBackspace(count: Int = 1) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg: [String: Any] = ["type": "backspace", "count": count]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
+    /// MacにEnterキーを送信
+    func sendEnter() {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg = ["type": "enter"]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
     /// PCM音声データをMacに送信してWhisper認識を依頼
     /// 注意: 呼び出し側が送信サンプル数を制限すること (最大30秒分程度)
     func sendAudioForTranscription(_ samples: [Float], translate: Bool = false) {
@@ -77,6 +105,30 @@ final class MacBridge: NSObject, ObservableObject {
         try? session.send(samples, toPeers: session.connectedPeers, with: .unreliable)
     }
 
+    /// Macにコマンドを送信（undo, selectAll, tab等）
+    func sendCommand(_ command: String) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg = ["type": "command", "command": command]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
+    /// Send mouse move delta to Mac
+    func sendMouseMove(dx: CGFloat, dy: CGFloat) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg: [String: Any] = ["type": "mouse_move", "dx": dx, "dy": dy]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .unreliable)
+    }
+
+    /// Send mouse click coordinates to Mac (normalized 0-1)
+    func sendMouseClick(x: CGFloat, y: CGFloat) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg: [String: Any] = ["type": "mouse_click", "x": x, "y": y]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
     func disconnect() {
         session?.disconnect()
         browser?.stopBrowsingForPeers()
@@ -91,6 +143,16 @@ extension MacBridge: MCSessionDelegate {
         }
     }
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer: MCPeerID) {
+        // Screen frame: 4-byte "SCRN" magic + JPEG
+        if data.count > 4, data[0] == 0x53, data[1] == 0x43, data[2] == 0x52, data[3] == 0x4E {
+            let jpegData = data.subdata(in: 4..<data.count)
+            if let image = UIImage(data: jpegData) {
+                Task { @MainActor in
+                    self.screenImage = image
+                }
+            }
+            return
+        }
         // MacからのWhisper認識結果を受信
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = json["type"] as? String else { return }
@@ -101,6 +163,17 @@ extension MacBridge: MCSessionDelegate {
                 }
                 if let translated = json["translated"] as? String {
                     self.remoteTranslation = translated
+                }
+            } else if type == "active_app" {
+                if let name = json["name"] as? String {
+                    self.activeAppName = name
+                }
+                if let bundleID = json["bundleID"] as? String {
+                    self.activeAppBundleID = bundleID
+                }
+            } else if type == "screen_context" {
+                if let text = json["text"] as? String {
+                    self.screenContext = text
                 }
             }
         }

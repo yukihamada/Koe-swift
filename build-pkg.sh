@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-APP="Koe.app"
+APP="build-macos/Koe.app"
 PKG="Koe.pkg"
 VERSION=$(defaults read "$(pwd)/$APP/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null || echo "1.0.1")
 IDENTIFIER="com.yuki.koe"
@@ -32,6 +32,11 @@ SCRIPT
 cat > "$STAGING/scripts/postinstall" << 'SCRIPT'
 #!/bin/bash
 xattr -dr com.apple.quarantine /Applications/Koe.app 2>/dev/null || true
+# Fix ownership so auto-updater can replace the app without sudo
+LOGGED_IN_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
+if [ -n "$LOGGED_IN_USER" ] && [ "$LOGGED_IN_USER" != "root" ]; then
+    chown -R "$LOGGED_IN_USER:staff" /Applications/Koe.app 2>/dev/null || true
+fi
 # Open after a short delay so the installer finishes cleanly
 (sleep 2 && open /Applications/Koe.app) &
 exit 0

@@ -128,6 +128,93 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         speech.requestPermissions()
         loadEmbeddedWhisper()
 
+        // iPhone連携: テキストをLLM処理→カーソル位置に自動入力→任意でEnter
+        IPhoneBridge.shared.start { [weak self] text in
+            guard let self else { return }
+            klog("IPhoneBridge: received from iPhone: '\(String(text.prefix(60)))'")
+            let settings = AppSettings.shared
+
+            let typeAndEnter = { (finalText: String) in
+                self.typer.typeInto(finalText, bundleID: "")
+                if settings.iphoneBridgeAutoEnter {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.typer.postReturn()
+                    }
+                }
+                self.sendNotification(text: "📱→ \(String(finalText.prefix(30)))")
+            }
+
+            if settings.iphoneBridgeLLM && settings.llmEnabled {
+                let instruction = settings.llmMode == .none ? "" : settings.llmMode.instruction
+                LLMProcessor.shared.process(text: text, instruction: instruction, appBundleID: "") { processed in
+                    typeAndEnter(processed)
+                }
+            } else {
+                typeAndEnter(text)
+            }
+        }
+        IPhoneBridge.shared.onEnter = { [weak self] in
+            klog("IPhoneBridge: Enter key from iPhone")
+            self?.typer.postReturn()
+        }
+        IPhoneBridge.shared.onBackspace = { [weak self] count in
+            guard let self else { return }
+            for _ in 0..<count {
+                self.postKeyCombo(key: 0x33, modifiers: []) // 0x33 = Delete/Backspace
+            }
+        }
+        IPhoneBridge.shared.onStreamingText = { [weak self] text in
+            self?.typer.typeStreaming(text, bundleID: "")
+        }
+        IPhoneBridge.shared.onCommand = { [weak self] command in
+            klog("IPhoneBridge: command from iPhone: \(command)")
+            guard let self else { return }
+            switch command {
+            case "undo":
+                self.typer.postUndo()
+            case "selectAll":
+                self.typer.postSelectAllDelete()
+            case "tab":
+                self.typer.postTab()
+            case "backspace":
+                break // Handled separately via onBackspace
+            case "nextTab":
+                self.postKeyCombo(key: 0x30, modifiers: .maskControl)
+            case "prevTab":
+                self.postKeyCombo(key: 0x30, modifiers: [.maskControl, .maskShift])
+            case "copy":
+                self.postKeyCombo(key: 0x08, modifiers: .maskCommand) // ⌘C
+            case "paste":
+                self.postKeyCombo(key: 0x09, modifiers: .maskCommand) // ⌘V
+            case "closeWindow":
+                self.postKeyCombo(key: 0x0D, modifiers: .maskCommand) // ⌘W
+            case "space":
+                self.postKeyCombo(key: 0x31, modifiers: [])
+            case "click":
+                IPhoneBridge.shared.postMouseClick(button: .left)
+            case "rightClick":
+                IPhoneBridge.shared.postMouseClick(button: .right)
+            case "scroll":
+                IPhoneBridge.shared.postScroll(dy: -3)
+            case "scrollUp":
+                IPhoneBridge.shared.postScroll(dy: 3)
+            case "escape":
+                self.postKeyCombo(key: 0x35, modifiers: []) // ESC
+            default:
+                klog("IPhoneBridge: unknown command '\(command)'")
+            }
+        }
+
+        // Send active Mac app info to iPhone
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { notif in
+            if let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                IPhoneBridge.shared.sendActiveApp(
+                    bundleID: app.bundleIdentifier ?? "",
+                    name: app.localizedName ?? ""
+                )
+            }
+        }
+
         WakeWordDetector.shared.onDetected = { [weak self] in self?.startRecording() }
         if AppSettings.shared.wakeWordEnabled { WakeWordDetector.shared.start() }
         if AppSettings.shared.floatingButtonEnabled { FloatingButton.shared.show() }
@@ -1284,6 +1371,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               let mode = LLMMode(rawValue: rawValue) else { return }
         AppSettings.shared.llmMode = mode
         klog("LLM mode changed: \(mode.displayName)")
+        // オーバーレイのモード表示を即反映（オフにしたら消える）
+        overlay?.setTranslateMode(false)
         rebuildMenu()
     }
 
@@ -1396,6 +1485,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// CGEventでキーコンビネーションを送信
+    private func postKeyCombo(key: CGKeyCode, modifiers: CGEventFlags) {
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: false) else { return }
+        down.flags = modifiers
+        up.flags = modifiers
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
     }
@@ -1404,5 +1503,177 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let m = eventMonitor { NSEvent.removeMonitor(m) }
         levelTimer?.invalidate()
         streamingTimer?.invalidate()
+    }
+}
+
+// MARK: - iPhone Bridge (MultipeerConnectivity)
+
+import MultipeerConnectivity
+
+final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiserDelegate {
+    static let shared = IPhoneBridge()
+    private let peerID = MCPeerID(displayName: Host.current().localizedName ?? "Mac")
+    private var session: MCSession?
+    private var advertiser: MCNearbyServiceAdvertiser?
+    private var onText: ((String) -> Void)?
+    var onEnter: (() -> Void)?
+    var onStreamingText: ((String) -> Void)?
+    var onCommand: ((String) -> Void)?
+
+    func start(onTextReceived: @escaping (String) -> Void) {
+        self.onText = onTextReceived
+        let s = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
+        s.delegate = self
+        session = s
+        let a = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: nil, serviceType: "koe-bridge")
+        a.delegate = self
+        a.startAdvertisingPeer()
+        advertiser = a
+        klog("IPhoneBridge: advertising")
+    }
+
+    func sendActiveApp(bundleID: String, name: String) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg: [String: String] = ["type": "active_app", "bundleID": bundleID, "name": name]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
+    // MARK: - Screen Context (LLM-based)
+
+    var screenSharingEnabled = false
+    private var screenTimer: Timer?
+    private var isAnalyzing = false
+
+    func startScreenSharing() {
+        guard !screenSharingEnabled else { return }
+        screenSharingEnabled = true
+        // Analyze every 10 seconds (not streaming — LLM description)
+        screenTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
+            self?.captureAndAnalyzeScreen()
+        }
+        // First analysis immediately
+        captureAndAnalyzeScreen()
+        klog("IPhoneBridge: screen context started")
+    }
+
+    func stopScreenSharing() {
+        screenSharingEnabled = false
+        screenTimer?.invalidate()
+        screenTimer = nil
+        klog("IPhoneBridge: screen context stopped")
+    }
+
+    private func captureAndAnalyzeScreen() {
+        guard let session, !session.connectedPeers.isEmpty, !isAnalyzing else { return }
+
+        // Get window list info (no screen recording permission needed)
+        var context = ""
+        if let app = NSWorkspace.shared.frontmostApplication {
+            context += "アプリ: \(app.localizedName ?? "不明")\n"
+        }
+
+        // Get window titles from accessibility (if available)
+        if let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+            var titles: [String] = []
+            for win in windows.prefix(5) {
+                if let name = win[kCGWindowName as String] as? String, !name.isEmpty,
+                   let owner = win[kCGWindowOwnerName as String] as? String {
+                    titles.append("[\(owner)] \(name)")
+                }
+            }
+            if !titles.isEmpty {
+                context += "ウィンドウ:\n" + titles.joined(separator: "\n")
+            }
+        }
+
+        guard !context.isEmpty else { return }
+
+        // Send raw context to iPhone (no LLM needed — just window info)
+        let msg: [String: String] = ["type": "screen_context", "text": context]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
+    func session(_ s: MCSession, peer: MCPeerID, didChange state: MCSessionState) {
+        klog("IPhoneBridge: \(peer.displayName) \(state == .connected ? "connected" : "disconnected")")
+        // Screen sharing is opt-in (beta) — don't auto-start
+    }
+    var onBackspace: ((Int) -> Void)?
+
+    func session(_ s: MCSession, didReceive data: Data, fromPeer peer: MCPeerID) {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String else { return }
+        DispatchQueue.main.async {
+            if type == "text", let text = json["text"] as? String {
+                self.onText?(text)
+            } else if type == "streaming_text", let text = json["text"] as? String {
+                self.onStreamingText?(text)
+            } else if type == "enter" {
+                self.onEnter?()
+            } else if type == "backspace", let count = json["count"] as? Int {
+                self.onBackspace?(count)
+            } else if type == "command", let command = json["command"] as? String {
+                self.onCommand?(command)
+            } else if type == "mouse_click",
+                      let nx = json["x"] as? Double,
+                      let ny = json["y"] as? Double {
+                self.handleMouseClick(normalizedX: nx, normalizedY: ny)
+            } else if type == "mouse_move",
+                      let dx = json["dx"] as? Double,
+                      let dy = json["dy"] as? Double {
+                self.handleMouseMove(dx: dx, dy: dy)
+            }
+        }
+    }
+    func session(_ s: MCSession, didReceive stream: InputStream, withName: String, fromPeer: MCPeerID) {}
+    func session(_ s: MCSession, didStartReceivingResourceWithName: String, fromPeer: MCPeerID, with: Progress) {}
+    func session(_ s: MCSession, didFinishReceivingResourceWithName: String, fromPeer: MCPeerID, at: URL?, withError: Error?) {}
+    func advertiser(_ a: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peer: MCPeerID,
+                    withContext: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        klog("IPhoneBridge: accepting \(peer.displayName)")
+        invitationHandler(true, session)
+    }
+    func advertiser(_ a: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {}
+
+    /// Handle mouse move delta from iPhone trackpad
+    func handleMouseMove(dx: Double, dy: Double) {
+        let current = NSEvent.mouseLocation
+        let screen = NSScreen.main ?? NSScreen.screens[0]
+        // NSEvent.mouseLocation is bottom-left origin, CGEvent is top-left
+        let flippedY = screen.frame.height - current.y
+        let newX = current.x + CGFloat(dx)
+        let newY = flippedY + CGFloat(dy)
+        let point = CGPoint(x: newX, y: newY)
+        CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left)?.post(tap: .cghidEventTap)
+    }
+
+    func postMouseClick(button: CGMouseButton) {
+        let pos = NSEvent.mouseLocation
+        let screen = NSScreen.main ?? NSScreen.screens[0]
+        let flippedY = screen.frame.height - pos.y
+        let point = CGPoint(x: pos.x, y: flippedY)
+        let downType: CGEventType = button == .right ? .rightMouseDown : .leftMouseDown
+        let upType: CGEventType = button == .right ? .rightMouseUp : .leftMouseUp
+        CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: point, mouseButton: button)?.post(tap: .cghidEventTap)
+        CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: point, mouseButton: button)?.post(tap: .cghidEventTap)
+    }
+
+    func postScroll(dy: Int32) {
+        CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: dy, wheel2: 0, wheel3: 0)?.post(tap: .cghidEventTap)
+    }
+
+    /// Handle mouse click from iPhone (normalized coordinates 0-1)
+    private func handleMouseClick(normalizedX: Double, normalizedY: Double) {
+        guard let screen = NSScreen.main else { return }
+        let frame = screen.frame
+        let x = frame.origin.x + CGFloat(normalizedX) * frame.width
+        let y = frame.origin.y + CGFloat(normalizedY) * frame.height
+        let point = CGPoint(x: x, y: y)
+        klog("IPhoneBridge: mouse click at (\(Int(x)), \(Int(y)))")
+        let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)
+        let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
+        mouseDown?.post(tap: .cghidEventTap)
+        mouseUp?.post(tap: .cghidEventTap)
     }
 }

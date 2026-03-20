@@ -3,6 +3,11 @@ import SwiftUI
 struct HistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var recorder: RecordingManager
+    @State private var searchText = ""
+
+    private var filteredHistory: [HistoryItem] {
+        recorder.searchHistory(searchText)
+    }
 
     var body: some View {
         NavigationStack {
@@ -14,7 +19,7 @@ struct HistoryView: View {
                         description: Text("音声入力するとここに表示されます")
                     )
                 } else {
-                    List(recorder.history) { item in
+                    List(filteredHistory) { item in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(item.text)
                                 .font(.body)
@@ -28,6 +33,7 @@ struct HistoryView: View {
                             UIPasteboard.general.string = item.text
                         }
                     }
+                    .searchable(text: $searchText, prompt: "履歴を検索")
                 }
             }
             .navigationTitle("履歴")

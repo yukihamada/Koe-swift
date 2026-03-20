@@ -40,11 +40,9 @@ struct KoeWidgetEntryView: View {
                     Image(systemName: "mic.circle.fill")
                         .font(.system(size: family == .systemSmall ? 36 : 28))
                         .foregroundStyle(.red)
-                    if family != .systemSmall {
-                        Text("声で入力")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.white)
-                    }
+                    Text(family == .systemSmall ? "Koe" : "声で入力")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
                 }
             }
         }

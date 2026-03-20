@@ -1,132 +1,85 @@
 import SwiftUI
 
-enum AppTab: Int, CaseIterable {
-    case koe = 0
-    case soluna = 1
-    case memory = 2
-    case conversation = 3
-    case tools = 4
-}
-
 struct ContentView: View {
     @StateObject private var recorder = RecordingManager()
     @StateObject private var modelManager = ModelManager.shared
     @ObservedObject private var whisper = WhisperContext.shared
-    @ObservedObject private var soundMemory = SoundMemory.shared
-    @State private var showHistory = false
+    @ObservedObject private var macBridge = MacBridge.shared
+    @ObservedObject private var appState = AppState.shared
     @State private var showSettings = false
-    @State private var selectedTab: AppTab = .koe
-    @State private var showMemoryTip = false
+    @ObservedObject private var appState2 = AppState.shared
+    @State private var copiedFeedback = false
+    @State private var sentToMac = false
+    @State private var trackpadMode = false
+    @AppStorage("koe_llm_enabled") private var llmEnabled = false
+    @AppStorage("koe_llm_mode") private var llmMode = "correct"
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            koeView
-                .tabItem {
-                    Label("Koe", systemImage: "mic.fill")
-                }
-                .tag(AppTab.koe)
-
-            SolunaView()
-                .tabItem {
-                    Label("Soluna", systemImage: "dot.radiowaves.left.and.right")
-                }
-                .tag(AppTab.soluna)
-
-            SoundMemoryView()
-                .tabItem {
-                    Label("Memory", systemImage: "brain.head.profile")
-                }
-                .tag(AppTab.memory)
-
-            ConversationView()
-                .tabItem {
-                    Label("翻訳", systemImage: "bubble.left.and.bubble.right")
-                }
-                .tag(AppTab.conversation)
-
-            AudioToolsView()
-                .tabItem {
-                    Label("Tools", systemImage: "waveform.badge.magnifyingglass")
-                }
-                .tag(AppTab.tools)
-        }
-        .tint(.orange)
-    }
-
-    private var koeView: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Engine badge (top)
-                engineBadge
-                    .padding(.top, 8)
-
-                Spacer(minLength: 12)
-
-                // Recognized text (scrollable, expands)
-                if !recorder.recognizedText.isEmpty {
-                    VStack(spacing: 8) {
-                        ScrollView {
-                            Text(recorder.recognizedText)
-                                .font(.title3)
-                                .multilineTextAlignment(.center)
-                                .frame(maxWidth: .infinity)
-                                .padding(16)
-                                .textSelection(.enabled)
+                // Mac connection status
+                if macBridge.isConnected {
+                    VStack(spacing: 4) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(.green)
+                                .frame(width: 6, height: 6)
+                            Text("Macに接続中")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if !macBridge.activeAppName.isEmpty {
+                                Text("· \(macBridge.activeAppName)")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
-                        .frame(maxHeight: 200)
-
-                        // Action buttons
-                        HStack(spacing: 16) {
-                            Button {
-                                UIPasteboard.general.string = recorder.recognizedText
-                                withAnimation { recorder.statusText = "コピーしました" }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                                    recorder.statusText = recorder.isRecording ? "録音中…" : "タップして録音"
-                                }
-                            } label: {
-                                Label("コピー", systemImage: "doc.on.doc")
-                                    .font(.caption)
+                        if llmEnabled && llmMode == "translate" {
+                            HStack(spacing: 4) {
+                                Text("\u{1f1ef}\u{1f1f5}\u{2192}\u{1f1fa}\u{1f1f8}")
+                                    .font(.caption2)
+                                Text("翻訳モード")
+                                    .font(.caption2)
+                                    .foregroundStyle(.blue)
                             }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-
-                            ShareLink(item: recorder.recognizedText) {
-                                Label("共有", systemImage: "square.and.arrow.up")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
                         }
                     }
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .transition(.opacity)
                 }
 
-                Spacer(minLength: 12)
+                Spacer()
+
+                // Result text area — swipe left/right to switch Mac tabs
+                if !recorder.recognizedText.isEmpty {
+                    resultCard
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
+                }
+
+                // Mac tab switcher (swipe area when connected)
+                if macBridge.isConnected {
+                    macSwipeArea
+                }
+
+                Spacer()
 
                 // Status
                 Text(recorder.statusText)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, 16)
+                    .animation(.easeInOut, value: recorder.statusText)
 
-                // Download banner or progress (compact)
+                // Model download (compact, only when needed)
                 if !modelManager.isModelReady && !modelManager.isDownloading {
-                    compactDownloadBanner
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
+                    downloadPrompt
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 12)
                 }
+
                 if modelManager.isDownloading {
-                    VStack(spacing: 4) {
-                        ProgressView(value: modelManager.downloadProgress)
-                        HStack {
-                            Text(modelManager.downloadStatus).font(.caption2).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("中止") { modelManager.cancelDownload() }.font(.caption2)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
+                    downloadProgress
+                        .padding(.horizontal, 24)
+                        .padding(.bottom, 12)
                 }
 
                 // Record button
@@ -134,21 +87,54 @@ struct ContentView: View {
                     if recorder.isRecording { recorder.stopRecording() }
                     else { recorder.startRecording() }
                 }
-                .padding(.bottom, 4)
-
-                Text(recorder.isRecording ? "タップで停止" : "")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .frame(height: 16)
-
-                Spacer().frame(height: 16)
+                .padding(.bottom, 32)
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                // Long press → haptic → drag to move mouse (without lifting finger)
+                LongPressGesture(minimumDuration: 0.4)
+                    .sequenced(before: DragGesture(minimumDistance: 0))
+                    .onChanged { value in
+                        guard macBridge.isConnected else { return }
+                        switch value {
+                        case .first(true):
+                            // Long press recognized — enter trackpad
+                            if !trackpadMode {
+                                trackpadMode = true
+                                lastDragPos = nil
+                                let gen = UIImpactFeedbackGenerator(style: .medium)
+                                gen.impactOccurred()
+                            }
+                        case .second(true, let drag):
+                            // Dragging after long press — move mouse
+                            if let drag {
+                                if let last = lastDragPos {
+                                    let dx = drag.location.x - last.x
+                                    let dy = drag.location.y - last.y
+                                    MacBridge.shared.sendMouseMove(dx: dx * 2, dy: dy * 2)
+                                }
+                                lastDragPos = drag.location
+                            }
+                        default: break
+                        }
+                    }
+                    .onEnded { _ in
+                        lastDragPos = nil
+                    }
+            )
+            .overlay {
+                if trackpadMode {
+                    trackpadOverlay
+                        .transition(.opacity)
+                }
             }
             .navigationTitle("Koe")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button { showHistory = true } label: {
-                        Image(systemName: "clock.arrow.circlepath")
+                    Button { appState2.selectedTab = 1 } label: {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .font(.subheadline)
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -157,11 +143,14 @@ struct ContentView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showHistory) {
-                HistoryView(recorder: recorder)
-            }
             .sheet(isPresented: $showSettings) {
-                SettingsView()
+                SettingsView(recorder: recorder)
+            }
+            .onChange(of: appState.shouldStartRecording) { _, shouldStart in
+                if shouldStart && !recorder.isRecording {
+                    recorder.startRecording()
+                    appState.shouldStartRecording = false
+                }
             }
             .onAppear {
                 recorder.requestPermissions()
@@ -169,166 +158,314 @@ struct ContentView: View {
                     modelManager.loadWhisperModel { _ in }
                 }
                 MacBridge.shared.startBrowsing()
-                // Show Sound Memory tip if not enabled and not dismissed
-                if !soundMemory.isEnabled && !UserDefaults.standard.bool(forKey: "koe_memory_tip_dismissed") {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        showMemoryTip = true
+            }
+        }
+    }
+
+    // MARK: - Result Card
+
+    @State private var lastSentText = ""
+
+    private var resultCard: some View {
+        VStack(spacing: 0) {
+            // Editable text — syncs to Mac in real-time when autoSendMac is on
+            TextEditor(text: $recorder.recognizedText)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .frame(maxHeight: 200)
+                .padding(.horizontal, 12)
+                .padding(.top, 8)
+                .onChange(of: recorder.recognizedText) { _, newText in
+                    // Real-time sync: if auto-send on and Mac connected
+                    if recorder.autoSendMac && macBridge.isConnected && sentToMac {
+                        // Send backspace for removed chars, then new text
+                        if newText.count < lastSentText.count {
+                            let diff = lastSentText.count - newText.count
+                            MacBridge.shared.sendBackspace(count: diff)
+                        } else if newText != lastSentText {
+                            // Incremental: send only the new part
+                            let newPart = String(newText.dropFirst(lastSentText.count))
+                            if !newPart.isEmpty {
+                                MacBridge.shared.sendText(newPart)
+                            }
+                        }
+                        lastSentText = newText
                     }
                 }
-            }
-            .sheet(isPresented: $showMemoryTip) {
-                memoryTipSheet
-            }
-        }
-    }
 
-    // MARK: - Engine Badge
-
-    @ViewBuilder
-    private var engineBadge: some View {
-        if whisper.isLoading {
-            HStack(spacing: 6) {
-                ProgressView().controlSize(.mini)
-                Text("whisper.cpp ロード中…")
-                    .font(.caption2)
-            }
-            .foregroundStyle(.orange)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .background(.orange.opacity(0.1), in: Capsule())
-        } else if whisper.isLoaded {
-            Label("whisper.cpp + Metal", systemImage: "cpu")
-                .font(.caption2)
-                .foregroundStyle(.green)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 3)
-                .background(.green.opacity(0.1), in: Capsule())
-        } else if modelManager.isModelReady {
-            Button {
-                modelManager.loadWhisperModel { _ in }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("whisper.cpp をロード")
+            // Action bar
+            HStack(spacing: 16) {
+                // Copy
+                Button {
+                    UIPasteboard.general.string = recorder.recognizedText
+                    withAnimation { copiedFeedback = true }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                        withAnimation { copiedFeedback = false }
+                    }
+                } label: {
+                    Image(systemName: copiedFeedback ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.system(size: 18))
+                        .foregroundStyle(copiedFeedback ? .green : .secondary)
                 }
-                .font(.caption2)
-                .foregroundStyle(.orange)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 3)
-                .background(.orange.opacity(0.1), in: Capsule())
+
+                // Backspace (delete last on Mac)
+                if macBridge.isConnected {
+                    Button {
+                        MacBridge.shared.sendBackspace(count: 1)
+                    } label: {
+                        Image(systemName: "delete.left")
+                            .font(.system(size: 18))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Spacer()
+
+                // Mac send / Enter
+                if macBridge.isConnected {
+                    if recorder.autoSendMac {
+                        Button {
+                            MacBridge.shared.sendEnter()
+                            recorder.recognizedText = ""
+                            lastSentText = ""
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "return")
+                                Text("Enter")
+                                    .font(.caption.weight(.medium))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(.orange, in: Capsule())
+                            .foregroundStyle(.white)
+                        }
+                    } else {
+                        Button {
+                            if sentToMac {
+                                MacBridge.shared.sendEnter()
+                                recorder.recognizedText = ""
+                                lastSentText = ""
+                                withAnimation { sentToMac = false }
+                            } else {
+                                MacBridge.shared.sendText(recorder.recognizedText)
+                                lastSentText = recorder.recognizedText
+                                withAnimation { sentToMac = true }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: sentToMac ? "return" : "paperplane.fill")
+                                Text(sentToMac ? "Enter" : "Mac")
+                                    .font(.caption.weight(.medium))
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 7)
+                            .background(sentToMac ? .orange : .blue, in: Capsule())
+                            .foregroundStyle(.white)
+                        }
+                    }
+                }
+
+                // Share
+                ShareLink(item: recorder.recognizedText) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.secondary)
+                }
             }
-        } else {
-            Label("Apple Speech", systemImage: "waveform")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 3)
-                .background(.secondary.opacity(0.1), in: Capsule())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: - Trackpad
+
+    @State private var lastDragPos: CGPoint?
+
+    private var trackpadOverlay: some View {
+        ZStack {
+            // Background
+            Color.black.opacity(0.85)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Image(systemName: "hand.point.up.left")
+                        .foregroundStyle(.orange)
+                    Text("トラックパッド")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Button {
+                        withAnimation { trackpadMode = false }
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundStyle(.gray)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
+
+                // Trackpad area
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.white.opacity(0.05))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 20)
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                if let last = lastDragPos {
+                                    let dx = value.location.x - last.x
+                                    let dy = value.location.y - last.y
+                                    MacBridge.shared.sendMouseMove(dx: dx * 2, dy: dy * 2)
+                                }
+                                lastDragPos = value.location
+                            }
+                            .onEnded { _ in
+                                lastDragPos = nil
+                            }
+                    )
+                    .onTapGesture {
+                        MacBridge.shared.sendCommand("click")
+                    }
+
+                // Bottom buttons
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
+                        trackpadBtn("クリック", "hand.tap") { MacBridge.shared.sendCommand("click") }
+                        trackpadBtn("右クリック", "hand.tap") { MacBridge.shared.sendCommand("rightClick") }
+                        trackpadBtn("ESC", "escape") { MacBridge.shared.sendCommand("escape") }
+                    }
+                    HStack(spacing: 8) {
+                        trackpadBtn("↑スクロール", "chevron.up") { MacBridge.shared.sendCommand("scrollUp") }
+                        trackpadBtn("↓スクロール", "chevron.down") { MacBridge.shared.sendCommand("scroll") }
+                        trackpadBtn("Space", "space") { MacBridge.shared.sendCommand("space") }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .buttonStyle(.plain)
+            }
         }
     }
 
-    // MARK: - Compact Download Banner
+    private func trackpadBtn(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .foregroundStyle(.white)
+        }
+    }
 
-    private var compactDownloadBanner: some View {
+    // MARK: - Mac Swipe Control
+
+    @State private var swipeFeedback = ""
+
+    private var macSwipeArea: some View {
+        HStack(spacing: 0) {
+            // Left tap → previous tab
+            Button {
+                MacBridge.shared.sendCommand("prevTab")
+                withAnimation { swipeFeedback = "← 前のタブ" }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    withAnimation { swipeFeedback = "" }
+                }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 50, height: 44)
+                    .contentShape(Rectangle())
+            }
+
+            // Center — swipe + label
+            Text(swipeFeedback.isEmpty ? "Macタブ切替" : swipeFeedback)
+                .font(.caption2)
+                .foregroundColor(swipeFeedback.isEmpty ? .gray.opacity(0.5) : .orange)
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 40)
+                        .onEnded { value in
+                            if value.translation.width > 40 {
+                                MacBridge.shared.sendCommand("nextTab")
+                                withAnimation { swipeFeedback = "次のタブ →" }
+                            } else if value.translation.width < -40 {
+                                MacBridge.shared.sendCommand("prevTab")
+                                withAnimation { swipeFeedback = "← 前のタブ" }
+                            }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                                withAnimation { swipeFeedback = "" }
+                            }
+                        }
+                )
+
+            // Right tap → next tab
+            Button {
+                MacBridge.shared.sendCommand("nextTab")
+                withAnimation { swipeFeedback = "次のタブ →" }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    withAnimation { swipeFeedback = "" }
+                }
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 50, height: 44)
+                    .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Download
+
+    private var downloadPrompt: some View {
         Button {
             modelManager.download(modelManager.currentModel)
         } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.title3)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("whisper.cpp モデルをDL")
-                        .font(.caption.bold())
-                    Text("\(modelManager.currentModel.name) (\(modelManager.currentModel.sizeMB)MB)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.body)
+                Text("高精度モデルをダウンロード")
+                    .font(.subheadline)
                 Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
+                Text("\(modelManager.currentModel.sizeMB)MB")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            .padding(10)
+            .padding(12)
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: - Sound Memory Tip Sheet
-
-    private var memoryTipSheet: some View {
-        VStack(spacing: 20) {
-            Spacer()
-
-            Image(systemName: "brain.head.profile")
-                .font(.system(size: 56))
-                .foregroundStyle(.orange)
-
-            Text("Sound Memoryをオンにしませんか？")
-                .font(.title3.bold())
-                .multilineTextAlignment(.center)
-
-            VStack(alignment: .leading, spacing: 12) {
-                tipRow(icon: "lock.shield.fill", color: .green,
-                       title: "完全ローカル処理",
-                       desc: "音声データはこのiPhoneだけに保存。あなたが送信するまで外部には一切出ません。")
-
-                tipRow(icon: "airplane", color: .orange,
-                       title: "機内モードでも動作",
-                       desc: "オフラインで完全に動作します。試しに機内モードでお試しください。")
-
-                tipRow(icon: "macbook.and.iphone", color: .blue,
-                       title: "Macに自動送信",
-                       desc: "macOS版Koeと同じWiFiなら、テキストが自動でMacに入力されます。")
-
-                tipRow(icon: "clock.arrow.circlepath", color: .purple,
-                       title: "7日で自動削除",
-                       desc: "録音データは7日後に自動的に削除されます。容量を圧迫しません。")
-            }
-            .padding(.horizontal, 24)
-
-            Spacer()
-
-            Button {
-                soundMemory.startCapture()
-                selectedTab = .memory
-                showMemoryTip = false
-            } label: {
-                Text("Sound Memoryをオンにする")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.orange)
-            .padding(.horizontal, 24)
-
-            Button {
-                UserDefaults.standard.set(true, forKey: "koe_memory_tip_dismissed")
-                showMemoryTip = false
-            } label: {
-                Text("あとで")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer().frame(height: 16)
-        }
-        .presentationDetents([.medium])
-    }
-
-    private func tipRow(icon: String, color: Color, title: String, desc: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(color)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.subheadline.bold())
-                Text(desc)
+    private var downloadProgress: some View {
+        VStack(spacing: 6) {
+            ProgressView(value: modelManager.downloadProgress)
+                .tint(.orange)
+            HStack {
+                Text(modelManager.downloadStatus)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("中止") { modelManager.cancelDownload() }
+                    .font(.caption)
             }
         }
     }
@@ -344,27 +481,38 @@ struct RecordButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
+                // Pulse ring
                 if isRecording {
                     Circle()
-                        .stroke(Color.red.opacity(0.3), lineWidth: 3)
-                        .frame(width: 88 + CGFloat(level) * 40,
-                               height: 88 + CGFloat(level) * 40)
-                        .animation(.easeInOut(duration: 0.1), value: level)
+                        .fill(Color.red.opacity(0.08))
+                        .frame(width: 100 + CGFloat(level) * 50,
+                               height: 100 + CGFloat(level) * 50)
+                        .animation(.easeOut(duration: 0.08), value: level)
                 }
+
+                // Outer ring
                 Circle()
-                    .stroke(isRecording ? Color.red : Color.accentColor, lineWidth: 3)
-                    .frame(width: 72, height: 72)
+                    .stroke(isRecording ? Color.red.opacity(0.4) : Color.orange.opacity(0.3), lineWidth: 2)
+                    .frame(width: 80, height: 80)
+
+                // Inner circle
                 if isRecording {
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: 8)
                         .fill(Color.red)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 30, height: 30)
                 } else {
                     Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 60, height: 60)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.orange, Color.orange.opacity(0.8)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(width: 64, height: 64)
                         .overlay {
                             Image(systemName: "mic.fill")
-                                .font(.system(size: 24))
+                                .font(.system(size: 26, weight: .medium))
                                 .foregroundStyle(.white)
                         }
                 }

@@ -35,9 +35,33 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.yuki.koe</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>koe</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>音声入力のためにマイクを使用します</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>音声をテキストに変換するために音声認識を使用します</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>同じWiFi上のMacに音声入力テキストを送信するために使用します</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_koe-bridge._tcp</string>
+	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.yuki.koe.transcribe</string>
+		<string>com.yuki.koe.transcription</string>
+	</array>
 </dict>
 </plist>

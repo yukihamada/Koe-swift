@@ -19,31 +19,41 @@ targets:
       - path: Sources
         excludes:
           - "CWhisper/**"
+          - "CSolunaRing/**"
+          - "include/**"
           - "ggml-metal.metal"
           - "ggml-common.h"
           - "ggml-metal-impl.h"
+      - path: Sources/CSolunaRing/soluna_ring.c
+        buildPhase: sources
+        compilerFlags: "-std=c11"
       - path: Sources/ggml-metal.metal
         buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios
         INFOPLIST_FILE: Info.plist
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.3.0"
+        CURRENT_PROJECT_VERSION: "2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: true
-        SWIFT_INCLUDE_PATHS: "$(PROJECT_DIR)/Sources/CWhisper"
+        SWIFT_OBJC_BRIDGING_HEADER: "Sources/Koe-Bridging-Header.h"
+        SWIFT_INCLUDE_PATHS: "$(PROJECT_DIR)/Sources/CWhisper $(PROJECT_DIR)/Sources/CSolunaRing"
+        HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Sources/include $(PROJECT_DIR)/Sources"
         LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/lib"
-        OTHER_LDFLAGS: "-lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit"
+        OTHER_LDFLAGS: "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox"
         MTL_HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Sources"
         GENERATE_INFOPLIST_FILE: "NO"
+        CLANG_CXX_LANGUAGE_STANDARD: "c++17"
     entitlements:
       path: Koe.entitlements
     dependencies:
       - target: KoeKeyboard
         embed: true
       - target: KoeShareExt
+        embed: true
+      - target: KoeWidget
         embed: true
 
   KoeKeyboard:
@@ -56,8 +66,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios.keyboard
         INFOPLIST_FILE: KoeKeyboard/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.3.0"
+        CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
 
   KoeShareExt:
@@ -70,6 +80,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios.shareext
         INFOPLIST_FILE: KoeShareExt/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.3.0"
+        CURRENT_PROJECT_VERSION: "2"
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  KoeWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: KoeWidget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios.widget
+        INFOPLIST_FILE: KoeWidget/Info.plist
+        GENERATE_INFOPLIST_FILE: "NO"
+        MARKETING_VERSION: "1.3.0"
+        CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"

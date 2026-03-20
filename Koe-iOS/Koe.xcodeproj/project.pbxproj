@@ -7,35 +7,52 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00C2A81FA8B890C0D1C321EF /* soluna_ring.c in Sources */ = {isa = PBXBuildFile; fileRef = F7CE8E44AA229D153001F522 /* soluna_ring.c */; settings = {COMPILER_FLAGS = "-std=c11"; }; };
 		0FA1E862F1AF05B85E253B84 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4383DC38247B4FA6EBA7FA39 /* SettingsView.swift */; };
 		14582E3EA50773F09872262C /* PitchDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C194774FEE4B3F96B1408C88 /* PitchDetector.swift */; };
+		185ED9D7C6D1B7EBB3C98565 /* MacScreenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D06EA3315419A9F5688BF90 /* MacScreenView.swift */; };
 		2C39265DF9AFB6BDE16BD28A /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */; };
+		33DA89D451994F38F8249DDB /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDAFCAEA0BD98C7F3E002895 /* KeychainHelper.swift */; };
 		35446E3B1F90BF07CE1B1D6F /* KoeShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C8335D6BF37ED46929C1A99 /* KoeShortcuts.swift */; };
 		3BE11845D9D03FAB0987653C /* ggml-metal.metal in Resources */ = {isa = PBXBuildFile; fileRef = E8D4209A6A834882CE32721D /* ggml-metal.metal */; };
+		3D11AD1DFB73F721181249AF /* MeetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B298131B562070D1E875106 /* MeetingView.swift */; };
 		3D84E4A6410ACFCEE5696CC6 /* TextExpansionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD4D5F6DA042AA84A1B8A015 /* TextExpansionStore.swift */; };
 		494339B2D85E4EC36B6C42CB /* AudioToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A4369D20092F5F94274C8FC /* AudioToolsView.swift */; };
 		4EA8C039A4386E504C52B8B7 /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AF7EFAE2F809A9329BD672 /* WaveformView.swift */; };
+		5511CA77E4F78B715DF5BBD7 /* MeetingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ABC6E7D02151EBF78768F6C /* MeetingManager.swift */; };
 		558EC4F9ECF68FA8EF5AA828 /* SoundMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ECAD894C47D1D9072A46C5D /* SoundMemory.swift */; };
 		5CDA08B2FE4E8C5997D3CEAB /* KoeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D55DE66037B9F07C1D4B8 /* KoeApp.swift */; };
 		610BFD0D1A29374852F89C54 /* KoeKeyboard.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		810EEBB1DBDE9AD2F72BD278 /* SolunaView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D1F80021671885AD05063B6 /* SolunaView.swift */; };
 		812046C1066046DB4AD21A17 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C51A3984455E5BB24AD147E /* ShareViewController.swift */; };
+		84CBFF0FD85540E62A1DF5B1 /* AudioReceiverBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = 6D216B15D27DE4BD2245606F /* AudioReceiverBridge.mm */; };
 		85703E8BD974B6D6F92A4EE0 /* SoundMemoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE3703FE0EBAAD03B6F8EC75 /* SoundMemoryView.swift */; };
 		89379325393A13D064595214 /* ModelManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC84C5A1752EC621A7C1A395 /* ModelManager.swift */; };
+		933A09B360C449752D0D03A3 /* KoeWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C561D031968A2013DF3C5F30 /* KoeWidget.swift */; };
 		9A5E5EB5E04928B90A231E12 /* SolunaManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8534C73DDAE014A2EAC680CE /* SolunaManager.swift */; };
 		A6294D582FD26E196F250BF6 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E63620C74D2B0550DA79AB /* KeyboardViewController.swift */; };
+		AA83818CE911CC12AA08D32E /* VoiceMemoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25B6188B167F49D8EDFC746 /* VoiceMemoStore.swift */; };
 		AB734E1FD2422F3FB227A959 /* AudioInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB1A39FCF6B7C3BD815013F9 /* AudioInputManager.swift */; };
 		B0106297C77CDB451539032F /* MacBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2070A47D1A13E7273BCC061 /* MacBridge.swift */; };
 		B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2E4A00EF6AE47584C718C989 /* Assets.xcassets */; };
 		C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E264AF883E006A40D11232 /* ContentView.swift */; };
 		C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CC8504AB8D4C5597B0221A90 /* KoeWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A69F04C5457550E57FB55CD5 /* KoeWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EBB747CA810EF9BD3F04A0EE /* WhisperContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */; };
 		EEC8B08AAA0F35EDC1D24744 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67A3C1B83D218C8E9EB7C740 /* ConversationView.swift */; };
 		F0FBBD063E22B911B51FA246 /* RecordingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */; };
 		F454A33B996E3EA2E8980152 /* KoeRecordingAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCC2BE2AA8F831A6BD44F77 /* KoeRecordingAttributes.swift */; };
+		FDE94941C2BB573B030DC90E /* VoiceMemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB2CC2336D623EF52DD55F2D /* VoiceMemoView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		2986A4D0B6157EE4FCB11767 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 147F84EDE1426B6A609CE119 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 16D8F6C1B60378156F400E07;
+			remoteInfo = KoeWidget;
+		};
 		75083A38598FB390B6D6606F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 147F84EDE1426B6A609CE119 /* Project object */;
@@ -61,6 +78,7 @@
 			files = (
 				610BFD0D1A29374852F89C54 /* KoeKeyboard.appex in Embed Foundation Extensions */,
 				C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */,
+				CC8504AB8D4C5597B0221A90 /* KoeWidget.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -70,30 +88,44 @@
 /* Begin PBXFileReference section */
 		06AF7EFAE2F809A9329BD672 /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
 		15ECBF7536F71D44433AD11D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		1D06EA3315419A9F5688BF90 /* MacScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScreenView.swift; sourceTree = "<group>"; };
 		21E264AF883E006A40D11232 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		286EEA2A3E06F232AEB574B1 /* AudioReceiverBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AudioReceiverBridge.h; sourceTree = "<group>"; };
 		2A4369D20092F5F94274C8FC /* AudioToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioToolsView.swift; sourceTree = "<group>"; };
+		2B298131B562070D1E875106 /* MeetingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingView.swift; sourceTree = "<group>"; };
 		2E4A00EF6AE47584C718C989 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		345D55DE66037B9F07C1D4B8 /* KoeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeApp.swift; sourceTree = "<group>"; };
+		3ABC6E7D02151EBF78768F6C /* MeetingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingManager.swift; sourceTree = "<group>"; };
 		3D1F80021671885AD05063B6 /* SolunaView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolunaView.swift; sourceTree = "<group>"; };
 		3ECAD894C47D1D9072A46C5D /* SoundMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundMemory.swift; sourceTree = "<group>"; };
 		3FCC2BE2AA8F831A6BD44F77 /* KoeRecordingAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeRecordingAttributes.swift; sourceTree = "<group>"; };
 		4383DC38247B4FA6EBA7FA39 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		4B4DAB2B36C306843ED46D8B /* Koe.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Koe.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		50152F5092FA4390A3D59DC8 /* Koe-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Koe-Bridging-Header.h"; sourceTree = "<group>"; };
 		53E63620C74D2B0550DA79AB /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
 		5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C51A3984455E5BB24AD147E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeShareExt.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		67A3C1B83D218C8E9EB7C740 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
 		6C8335D6BF37ED46929C1A99 /* KoeShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeShortcuts.swift; sourceTree = "<group>"; };
+		6D216B15D27DE4BD2245606F /* AudioReceiverBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioReceiverBridge.mm; sourceTree = "<group>"; };
 		8534C73DDAE014A2EAC680CE /* SolunaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolunaManager.swift; sourceTree = "<group>"; };
+		A69F04C5457550E57FB55CD5 /* KoeWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AC84C5A1752EC621A7C1A395 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
+		BDAFCAEA0BD98C7F3E002895 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C194774FEE4B3F96B1408C88 /* PitchDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PitchDetector.swift; sourceTree = "<group>"; };
+		C2A73684254A1D01F5A6C9EB /* web_embedded.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = web_embedded.h; sourceTree = "<group>"; };
+		C561D031968A2013DF3C5F30 /* KoeWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeWidget.swift; sourceTree = "<group>"; };
 		CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperContext.swift; sourceTree = "<group>"; };
 		D0721A07D8532CB3CED06F01 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D870877BC7095FD7A070BF96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
 		E2070A47D1A13E7273BCC061 /* MacBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBridge.swift; sourceTree = "<group>"; };
 		E8D4209A6A834882CE32721D /* ggml-metal.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = "ggml-metal.metal"; sourceTree = "<group>"; };
+		EB2CC2336D623EF52DD55F2D /* VoiceMemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMemoView.swift; sourceTree = "<group>"; };
 		EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		F25B6188B167F49D8EDFC746 /* VoiceMemoStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceMemoStore.swift; sourceTree = "<group>"; };
+		F7CE8E44AA229D153001F522 /* soluna_ring.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = soluna_ring.c; sourceTree = "<group>"; };
 		FB1A39FCF6B7C3BD815013F9 /* AudioInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputManager.swift; sourceTree = "<group>"; };
 		FD4D5F6DA042AA84A1B8A015 /* TextExpansionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextExpansionStore.swift; sourceTree = "<group>"; };
 		FE3703FE0EBAAD03B6F8EC75 /* SoundMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundMemoryView.swift; sourceTree = "<group>"; };
@@ -105,15 +137,22 @@
 			children = (
 				2E4A00EF6AE47584C718C989 /* Assets.xcassets */,
 				FB1A39FCF6B7C3BD815013F9 /* AudioInputManager.swift */,
+				286EEA2A3E06F232AEB574B1 /* AudioReceiverBridge.h */,
+				6D216B15D27DE4BD2245606F /* AudioReceiverBridge.mm */,
 				2A4369D20092F5F94274C8FC /* AudioToolsView.swift */,
 				21E264AF883E006A40D11232 /* ContentView.swift */,
 				67A3C1B83D218C8E9EB7C740 /* ConversationView.swift */,
 				E8D4209A6A834882CE32721D /* ggml-metal.metal */,
 				EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */,
+				BDAFCAEA0BD98C7F3E002895 /* KeychainHelper.swift */,
+				50152F5092FA4390A3D59DC8 /* Koe-Bridging-Header.h */,
 				345D55DE66037B9F07C1D4B8 /* KoeApp.swift */,
 				3FCC2BE2AA8F831A6BD44F77 /* KoeRecordingAttributes.swift */,
 				6C8335D6BF37ED46929C1A99 /* KoeShortcuts.swift */,
 				E2070A47D1A13E7273BCC061 /* MacBridge.swift */,
+				1D06EA3315419A9F5688BF90 /* MacScreenView.swift */,
+				3ABC6E7D02151EBF78768F6C /* MeetingManager.swift */,
+				2B298131B562070D1E875106 /* MeetingView.swift */,
 				AC84C5A1752EC621A7C1A395 /* ModelManager.swift */,
 				C194774FEE4B3F96B1408C88 /* PitchDetector.swift */,
 				DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */,
@@ -123,7 +162,10 @@
 				3ECAD894C47D1D9072A46C5D /* SoundMemory.swift */,
 				FE3703FE0EBAAD03B6F8EC75 /* SoundMemoryView.swift */,
 				FD4D5F6DA042AA84A1B8A015 /* TextExpansionStore.swift */,
+				F25B6188B167F49D8EDFC746 /* VoiceMemoStore.swift */,
+				EB2CC2336D623EF52DD55F2D /* VoiceMemoView.swift */,
 				06AF7EFAE2F809A9329BD672 /* WaveformView.swift */,
+				C2A73684254A1D01F5A6C9EB /* web_embedded.h */,
 				CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */,
 			);
 			path = Sources;
@@ -147,11 +189,22 @@
 			path = KoeShareExt;
 			sourceTree = "<group>";
 		};
+		7D257171FDF77D1B913FDB98 /* KoeWidget */ = {
+			isa = PBXGroup;
+			children = (
+				D870877BC7095FD7A070BF96 /* Info.plist */,
+				C561D031968A2013DF3C5F30 /* KoeWidget.swift */,
+			);
+			path = KoeWidget;
+			sourceTree = "<group>";
+		};
 		BCB5D93540A2093763BEE9A1 = {
 			isa = PBXGroup;
 			children = (
+				FD6A932F35FB7691F8F5816E /* CSolunaRing */,
 				0E29870BB9EE6BA426C38196 /* KoeKeyboard */,
 				2A73ED5F60ADF95293C716A2 /* KoeShareExt */,
+				7D257171FDF77D1B913FDB98 /* KoeWidget */,
 				09D835E73F82C8647D08F5D7 /* Sources */,
 				DCAED6271EA27370B344D452 /* Products */,
 			);
@@ -163,13 +216,40 @@
 				4B4DAB2B36C306843ED46D8B /* Koe.app */,
 				5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */,
 				5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */,
+				A69F04C5457550E57FB55CD5 /* KoeWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		FD6A932F35FB7691F8F5816E /* CSolunaRing */ = {
+			isa = PBXGroup;
+			children = (
+				F7CE8E44AA229D153001F522 /* soluna_ring.c */,
+			);
+			name = CSolunaRing;
+			path = Sources/CSolunaRing;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		16D8F6C1B60378156F400E07 /* KoeWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F8E32C31780B73F13DC322F /* Build configuration list for PBXNativeTarget "KoeWidget" */;
+			buildPhases = (
+				19A10D0BA68119AD68C84F96 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KoeWidget;
+			packageProductDependencies = (
+			);
+			productName = KoeWidget;
+			productReference = A69F04C5457550E57FB55CD5 /* KoeWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		3BAF886740CB96D509EC9EC3 /* Koe */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 97267E18672A4925968517C6 /* Build configuration list for PBXNativeTarget "Koe" */;
@@ -183,6 +263,7 @@
 			dependencies = (
 				1E03D5883CA1D66935B0F72D /* PBXTargetDependency */,
 				59AA66DF8C396797E349A016 /* PBXTargetDependency */,
+				5EA234C9C20C8099F2CA6881 /* PBXTargetDependency */,
 			);
 			name = Koe;
 			packageProductDependencies = (
@@ -234,6 +315,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1620;
 				TargetAttributes = {
+					16D8F6C1B60378156F400E07 = {
+						DevelopmentTeam = 5BV85JW8US;
+						ProvisioningStyle = Automatic;
+					};
 					3BAF886740CB96D509EC9EC3 = {
 						DevelopmentTeam = 5BV85JW8US;
 						ProvisioningStyle = Automatic;
@@ -265,6 +350,7 @@
 				3BAF886740CB96D509EC9EC3 /* Koe */,
 				F94FB96A04856D5C697A03E9 /* KoeKeyboard */,
 				880DFEA185D7FBA5AB58B19A /* KoeShareExt */,
+				16D8F6C1B60378156F400E07 /* KoeWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -282,6 +368,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		19A10D0BA68119AD68C84F96 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				933A09B360C449752D0D03A3 /* KoeWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8BCA411DC88FDC89D6763591 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -295,14 +389,19 @@
 			buildActionMask = 2147483647;
 			files = (
 				AB734E1FD2422F3FB227A959 /* AudioInputManager.swift in Sources */,
+				84CBFF0FD85540E62A1DF5B1 /* AudioReceiverBridge.mm in Sources */,
 				494339B2D85E4EC36B6C42CB /* AudioToolsView.swift in Sources */,
 				C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */,
 				EEC8B08AAA0F35EDC1D24744 /* ConversationView.swift in Sources */,
 				2C39265DF9AFB6BDE16BD28A /* HistoryView.swift in Sources */,
+				33DA89D451994F38F8249DDB /* KeychainHelper.swift in Sources */,
 				5CDA08B2FE4E8C5997D3CEAB /* KoeApp.swift in Sources */,
 				F454A33B996E3EA2E8980152 /* KoeRecordingAttributes.swift in Sources */,
 				35446E3B1F90BF07CE1B1D6F /* KoeShortcuts.swift in Sources */,
 				B0106297C77CDB451539032F /* MacBridge.swift in Sources */,
+				185ED9D7C6D1B7EBB3C98565 /* MacScreenView.swift in Sources */,
+				5511CA77E4F78B715DF5BBD7 /* MeetingManager.swift in Sources */,
+				3D11AD1DFB73F721181249AF /* MeetingView.swift in Sources */,
 				89379325393A13D064595214 /* ModelManager.swift in Sources */,
 				14582E3EA50773F09872262C /* PitchDetector.swift in Sources */,
 				F0FBBD063E22B911B51FA246 /* RecordingManager.swift in Sources */,
@@ -312,8 +411,11 @@
 				558EC4F9ECF68FA8EF5AA828 /* SoundMemory.swift in Sources */,
 				85703E8BD974B6D6F92A4EE0 /* SoundMemoryView.swift in Sources */,
 				3D84E4A6410ACFCEE5696CC6 /* TextExpansionStore.swift in Sources */,
+				AA83818CE911CC12AA08D32E /* VoiceMemoStore.swift in Sources */,
+				FDE94941C2BB573B030DC90E /* VoiceMemoView.swift in Sources */,
 				4EA8C039A4386E504C52B8B7 /* WaveformView.swift in Sources */,
 				EBB747CA810EF9BD3F04A0EE /* WhisperContext.swift in Sources */,
+				00C2A81FA8B890C0D1C321EF /* soluna_ring.c in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -338,30 +440,56 @@
 			target = 880DFEA185D7FBA5AB58B19A /* KoeShareExt */;
 			targetProxy = 75083A38598FB390B6D6606F /* PBXContainerItemProxy */;
 		};
+		5EA234C9C20C8099F2CA6881 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 16D8F6C1B60378156F400E07 /* KoeWidget */;
+			targetProxy = 2986A4D0B6157EE4FCB11767 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		4012DDDE89ACD7C951B17387 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KoeWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.widget;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		44B563D6CE433CCE0A83C46A /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_ENTITLEMENTS = Koe.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources/include $(PROJECT_DIR)/Sources";
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.3.0;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
-				OTHER_LDFLAGS = "-lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit";
+				OTHER_LDFLAGS = "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
-				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper";
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper $(PROJECT_DIR)/Sources/CSolunaRing";
+				SWIFT_OBJC_BRIDGING_HEADER = "Sources/Koe-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -369,7 +497,7 @@
 		4703FA69FEA5866FBE08BEC4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeShareExt/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -377,7 +505,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -449,10 +577,28 @@
 			};
 			name = Debug;
 		};
+		607DA4634470B79EE56B87A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CURRENT_PROJECT_VERSION = 2;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = KoeWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.3.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.widget;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		6780441EEA05DDBE5F16CC3B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeKeyboard/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -460,7 +606,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -470,7 +616,7 @@
 		792FA1C28CBF76AD9FE6BD99 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeKeyboard/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -478,7 +624,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -488,7 +634,7 @@
 		7B84BFAB69C6C79E034E08F2 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeShareExt/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -496,7 +642,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -565,23 +711,26 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_ENTITLEMENTS = Koe.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
+				HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources/include $(PROJECT_DIR)/Sources";
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.3.0;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
-				OTHER_LDFLAGS = "-lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit";
+				OTHER_LDFLAGS = "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;
 				SDKROOT = iphoneos;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
-				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper";
+				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper $(PROJECT_DIR)/Sources/CSolunaRing";
+				SWIFT_OBJC_BRIDGING_HEADER = "Sources/Koe-Bridging-Header.h";
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -594,6 +743,15 @@
 			buildConfigurations = (
 				5E307589B8997484E77C3AB7 /* Debug */,
 				BC79F00D28ECA5958E4BD819 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		2F8E32C31780B73F13DC322F /* Build configuration list for PBXNativeTarget "KoeWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				607DA4634470B79EE56B87A9 /* Debug */,
+				4012DDDE89ACD7C951B17387 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

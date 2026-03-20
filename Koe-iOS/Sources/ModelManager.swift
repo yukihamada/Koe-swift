@@ -72,7 +72,7 @@ final class ModelManager: ObservableObject {
     var currentModel: WhisperModel {
         let savedID = UserDefaults.standard.string(forKey: "selectedModelID") ?? ""
         return Self.availableModels.first { $0.id == savedID }
-            ?? Self.availableModels.first { $0.isDefault }!
+            ?? Self.availableModels.first { $0.isDefault } ?? Self.availableModels[0]
     }
 
     var modelPath: String {
@@ -108,7 +108,7 @@ final class ModelManager: ObservableObject {
         downloadProgress = 0
         downloadStatus = "ダウンロード準備中..."
 
-        let url = URL(string: model.url)!
+        guard let url = URL(string: model.url) else { isDownloading = false; return }
         let task = URLSession.shared.downloadTask(with: url) { [weak self] tempURL, _, error in
             DispatchQueue.main.async {
                 guard let self else { return }

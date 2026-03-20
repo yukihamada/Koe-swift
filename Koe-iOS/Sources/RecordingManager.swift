@@ -4,6 +4,8 @@ import AVFoundation
 import Speech
 import Accelerate
 import Combine
+import ActivityKit
+import Intents
 
 @MainActor
 final class RecordingManager: ObservableObject {
@@ -13,6 +15,13 @@ final class RecordingManager: ObservableObject {
     @Published var audioLevel: Float = 0
     @Published var history: [HistoryItem] = []
     @Published var autoCopy: Bool = UserDefaults.standard.bool(forKey: "koe_auto_copy")
+    @Published var autoSendMac: Bool = UserDefaults.standard.bool(forKey: "koe_auto_send_mac") {
+        didSet { UserDefaults.standard.set(autoSendMac, forKey: "koe_auto_send_mac") }
+    }
+    @Published var continuousMode: Bool = UserDefaults.standard.bool(forKey: "koe_continuous_mode") {
+        didSet { UserDefaults.standard.set(continuousMode, forKey: "koe_continuous_mode") }
+    }
+    @Published var quickPhrases: [String] = UserDefaults.standard.stringArray(forKey: "koe_quick_phrases") ?? ["お世話になっております。", "承知いたしました。", "よろしくお願いいたします。"]
 
     private var audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -28,7 +37,8 @@ final class RecordingManager: ObservableObject {
     private var silenceStart: Date?
     private let silenceThreshold: Float = 0.01
     private var silenceDuration: TimeInterval {
-        UserDefaults.standard.object(forKey: "koe_silence_duration") as? Double ?? 3.0
+        // 0 = 無音自動停止OFF（手動停止のみ）
+        UserDefaults.standard.object(forKey: "koe_silence_duration") as? Double ?? 0
     }
     private var silenceTimer: Timer?
 
@@ -39,7 +49,17 @@ final class RecordingManager: ObservableObject {
 
     private var currentActivity: NSUserActivity?
 
+    // 最後の録音サンプル（VoiceMemoStore保存用）
+    private var lastRecordedSamples: [Float] = []
+
+    // Live Activity (Dynamic Island)
+    private var recordingActivity: Activity<KoeRecordingAttributes>?
+
     init() {
+        // koe_auto_send_mac のデフォルトを true に設定
+        UserDefaults.standard.register(defaults: ["koe_auto_send_mac": true])
+        autoSendMac = UserDefaults.standard.bool(forKey: "koe_auto_send_mac")
+
         let locale = Locale(identifier: UserDefaults.standard.string(forKey: "koe_language") ?? "ja-JP")
         speechRecognizer = SFSpeechRecognizer(locale: locale)
         loadHistory()
@@ -139,19 +159,23 @@ final class RecordingManager: ObservableObject {
         statusText = "録音中…"
         recognizedText = ""
         silenceStart = nil
+        startLiveActivity()
 
-        // 無音検出タイマー (0.3秒ごとにチェック)
-        silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.isRecording else { return }
-                // 最低1秒分の録音がないと自動停止しない
-                self.samplesLock.lock()
-                let sampleCount = self.pcmSamples.count
-                self.samplesLock.unlock()
-                guard sampleCount > 16000 else { return } // 1秒以上
+        // 無音検出タイマー (silenceDuration > 0 の場合のみ自動停止)
+        if silenceDuration > 0 {
+            silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self, self.isRecording else { return }
+                    self.samplesLock.lock()
+                    let sampleCount = self.pcmSamples.count
+                    self.samplesLock.unlock()
+                    guard sampleCount > 16000 else { return }
 
-                if let start = self.silenceStart, Date().timeIntervalSince(start) >= self.silenceDuration {
-                    self.stopRecording()
+                    if let start = self.silenceStart, Date().timeIntervalSince(start) >= self.silenceDuration {
+                        self.stopRecording()
+                    }
+                    // Live Activity 更新
+                    self.updateLiveActivity()
                 }
             }
         }
@@ -173,19 +197,23 @@ final class RecordingManager: ObservableObject {
         statusText = "録音中…"
         recognizedText = ""
         silenceStart = nil
+        startLiveActivity()
 
-        // Apple Speechでも無音検出タイマー起動
+        // Apple Speechでも無音検出タイマー起動 (silenceDuration > 0 の場合のみ)
+        if silenceDuration > 0 {
         silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.isRecording, !self.useWhisper else { return }
                 if let start = self.silenceStart, Date().timeIntervalSince(start) >= self.silenceDuration {
-                    // 無音検出で停止（ただしテキストが既にある場合のみ）
                     if !self.recognizedText.isEmpty {
                         self.stopRecording()
                     }
                 }
+                // Live Activity 更新
+                self.updateLiveActivity()
             }
         }
+        } // if silenceDuration > 0
     }
 
     /// Apple Speech認識セッションを開始（60秒制限対策: isFinalで自動リスタート）
@@ -247,6 +275,10 @@ final class RecordingManager: ObservableObject {
                         self.recognizedText = fullText
                         self.statusText = "録音中…"
                     }
+                    // ストリーミング: 部分認識結果をMacにリアルタイム送信
+                    if !result.isFinal && !fullText.isEmpty {
+                        MacBridge.shared.sendStreamingText(fullText)
+                    }
                 }
                 if result.isFinal {
                     DispatchQueue.main.async {
@@ -291,6 +323,7 @@ final class RecordingManager: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         isRecording = false
         audioLevel = 0
+        endLiveActivity()
 
         if useWhisper {
             statusText = "認識中…"
@@ -302,8 +335,12 @@ final class RecordingManager: ObservableObject {
             guard samples.count > 4000 else { // 0.25秒未満は無視
                 statusText = "音声が短すぎます"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.statusText = "タップして録音" }
+                handleContinuousMode()
                 return
             }
+
+            // VoiceMemo保存用にサンプルを保持
+            lastRecordedSamples = samples
 
             let lang = UserDefaults.standard.string(forKey: "koe_language") ?? "ja-JP"
             let whisperLang = lang == "auto" ? "auto" : (lang.components(separatedBy: "-").first ?? "en")
@@ -311,25 +348,11 @@ final class RecordingManager: ObservableObject {
             WhisperContext.shared.transcribeBuffer(samples: samples, language: whisperLang) { [weak self] text in
                 guard let self else { return }
                 if let text, !text.isEmpty {
-                    // LLM後処理が有効なら修正を適用
-                    if UserDefaults.standard.bool(forKey: "koe_llm_enabled") {
-                        self.statusText = "LLM修正中…"
-                        self.recognizedText = text
-                        self.postProcessWithLLM(text) { processed in
-                            self.recognizedText = processed
-                            self.addToHistory(processed)
-                            self.publishHandoff(text: processed)
-                            self.statusText = "タップして録音"
-                        }
-                    } else {
-                        self.recognizedText = text
-                        self.addToHistory(text)
-                        self.publishHandoff(text: text)
-                        self.statusText = "タップして録音"
-                    }
+                    self.handleRecognitionResultWithLLM(text)
                 } else {
                     self.statusText = "認識できませんでした"
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.statusText = "タップして録音" }
+                    self.handleContinuousMode()
                 }
             }
         } else {
@@ -354,24 +377,119 @@ final class RecordingManager: ObservableObject {
         recognitionRestartCount = 0
 
         if !text.isEmpty {
-            // LLM後処理
-            if UserDefaults.standard.bool(forKey: "koe_llm_enabled") {
-                statusText = "LLM修正中…"
-                postProcessWithLLM(text) { [weak self] processed in
-                    guard let self else { return }
-                    self.recognizedText = processed
-                    self.addToHistory(processed)
-                    self.publishHandoff(text: processed)
-                    self.statusText = "タップして録音"
-                }
-            } else {
-                addToHistory(text)
-                publishHandoff(text: text)
-                statusText = "タップして録音"
-            }
+            handleRecognitionResultWithLLM(text)
         } else {
             statusText = "認識できませんでした"
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.statusText = "タップして録音" }
+            handleContinuousMode()
+        }
+    }
+
+    // MARK: - Voice Commands
+
+    /// 音声コマンドを検出して処理する。コマンドだった場合は true を返す
+    private func processVoiceCommand(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch trimmed {
+        case "改行", "かいぎょう":
+            MacBridge.shared.sendText("\n")
+            statusText = "改行を送信しました"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.statusText = "タップして録音" }
+            handleContinuousMode()
+            return true
+        case "送信", "そうしん":
+            MacBridge.shared.sendEnter()
+            statusText = "送信しました"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.statusText = "タップして録音" }
+            handleContinuousMode()
+            return true
+        case "消して", "けして":
+            recognizedText = ""
+            statusText = "クリアしました"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.statusText = "タップして録音" }
+            handleContinuousMode()
+            return true
+        case "取り消し", "取り消して", "もどして", "アンドゥ":
+            MacBridge.shared.sendCommand("undo")
+            statusText = "取り消しました"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.statusText = "タップして録音" }
+            handleContinuousMode()
+            return true
+        case "全選択", "ぜんせんたく":
+            MacBridge.shared.sendCommand("selectAll")
+            statusText = "全選択しました"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.statusText = "タップして録音" }
+            handleContinuousMode()
+            return true
+        case "タブ":
+            MacBridge.shared.sendCommand("tab")
+            statusText = "タブを送信しました"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { self.statusText = "タップして録音" }
+            handleContinuousMode()
+            return true
+        case "ストップ", "おわり", "終了":
+            continuousMode = false
+            statusText = "連続モードを停止しました"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { self.statusText = "タップして録音" }
+            return true
+        default:
+            return false
+        }
+    }
+
+    // MARK: - Post-Recognition
+
+    /// 認識完了後の共通処理: コマンド判定 → 保存 → ハンドオフ → 連続モード
+    private func handleRecognitionResult(_ text: String) {
+        // 音声コマンドチェック
+        if processVoiceCommand(text) { return }
+
+        recognizedText = text
+        addToHistory(text)
+
+        // VoiceMemo保存 (Whisper使用時のみ音声あり)
+        if !lastRecordedSamples.isEmpty {
+            VoiceMemoStore.shared.save(text: text, samples: lastRecordedSamples)
+            lastRecordedSamples = []
+        }
+
+        // Mac自動送信
+        if autoSendMac {
+            publishHandoff(text: text)
+        }
+
+        // Siri Shortcut donation
+        let shortcutActivity = NSUserActivity(activityType: "com.yuki.koe.transcribe")
+        shortcutActivity.title = "Koeで音声入力"
+        shortcutActivity.isEligibleForPrediction = true
+        shortcutActivity.suggestedInvocationPhrase = "声で入力"
+        shortcutActivity.becomeCurrent()
+
+        statusText = "タップして録音"
+        handleContinuousMode()
+    }
+
+    /// LLM後処理付きの認識結果ハンドラー
+    private func handleRecognitionResultWithLLM(_ text: String) {
+        if UserDefaults.standard.bool(forKey: "koe_llm_enabled") {
+            statusText = "LLM修正中…"
+            recognizedText = text
+            postProcessWithLLM(text) { [weak self] processed in
+                guard let self else { return }
+                self.handleRecognitionResult(processed)
+            }
+        } else {
+            handleRecognitionResult(text)
+        }
+    }
+
+    /// 連続認識モード: 完了後に自動で録音再開
+    private func handleContinuousMode() {
+        if continuousMode {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, !self.isRecording else { return }
+                self.startRecording()
+            }
         }
     }
 
@@ -424,6 +542,52 @@ final class RecordingManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "koe_history")
     }
 
+    func searchHistory(_ query: String) -> [HistoryItem] {
+        guard !query.isEmpty else { return history }
+        return history.filter { $0.text.localizedCaseInsensitiveContains(query) }
+    }
+
+    // MARK: - Quick Phrases
+
+    func sendQuickPhrase(_ phrase: String) {
+        MacBridge.shared.sendText(phrase)
+    }
+
+    func addQuickPhrase(_ phrase: String) {
+        quickPhrases.append(phrase)
+        UserDefaults.standard.set(quickPhrases, forKey: "koe_quick_phrases")
+    }
+
+    func removeQuickPhrase(at offsets: IndexSet) {
+        quickPhrases.remove(atOffsets: offsets)
+        UserDefaults.standard.set(quickPhrases, forKey: "koe_quick_phrases")
+    }
+
+    // MARK: - LLM Post-Processing (chatweb.ai)
+
+    // MARK: - Live Activity
+
+    private func startLiveActivity() {
+        if ActivityAuthorizationInfo().areActivitiesEnabled {
+            let attrs = KoeRecordingAttributes(startTime: Date())
+            let state = KoeRecordingAttributes.ContentState(isRecording: true, statusText: "録音中…", audioLevel: 0)
+            recordingActivity = try? Activity.request(attributes: attrs, content: .init(state: state, staleDate: nil))
+        }
+    }
+
+    private func updateLiveActivity() {
+        Task {
+            await recordingActivity?.update(.init(state: .init(isRecording: true, statusText: "録音中…", audioLevel: Double(self.audioLevel)), staleDate: nil))
+        }
+    }
+
+    private func endLiveActivity() {
+        Task {
+            await recordingActivity?.end(.init(state: .init(isRecording: false, statusText: "認識中…", audioLevel: 0), staleDate: nil), dismissalPolicy: .immediate)
+            recordingActivity = nil
+        }
+    }
+
     // MARK: - LLM Post-Processing (chatweb.ai)
 
     private func postProcessWithLLM(_ text: String, completion: @escaping (String) -> Void) {
@@ -458,6 +622,11 @@ final class RecordingManager: ObservableObject {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // chatweb.ai は API キー不要（匿名アクセス可）
+        // ユーザーが独自キーを設定している場合はKeychainから取得
+        if let apiKey = KeychainHelper.get(key: "koe_api_key"), !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
         request.httpBody = jsonData
         request.timeoutInterval = 15
 

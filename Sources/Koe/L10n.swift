@@ -407,47 +407,43 @@ enum L10n {
     static var tutorialCards: [(icon: String, title: String, desc: String, shortcut: String)] {
         switch lang {
         case "ja": return [
-            ("mic.fill", "音声入力", "どのアプリでも声でテキスト入力", "⌥⌘V 長押し"),
-            ("doc.text.fill", "議事録モード", "会議の音声を自動で文字起こし・整形", "⌥⌘M"),
-            ("globe", "20以上の言語", "日本語・英語・中国語など幅広く対応", "設定で切替"),
-            ("gearshape.fill", "カスタマイズ", "ショートカット・言語・アプリ別設定", "メニューバーから"),
+            ("mic.fill", "声で入力", "押して話すだけ。カーソル位置にテキストが入る", "⌥⌘V"),
+            ("arrow.right.doc.on.clipboard", "iPhoneから送信", "iPhoneで話した言葉がMacのクリップボードへ", "同じWiFiで自動接続"),
+            ("doc.text.fill", "議事録", "会議を自動で文字起こし。話者分離も対応", "⌥⌘M"),
         ]
         case "zh": return [
-            ("mic.fill", "语音输入", "在任何应用中用声音输入文字", "长按 ⌥⌘V"),
-            ("doc.text.fill", "会议记录模式", "自动转录和整理会议音频", "⌥⌘M"),
-            ("globe", "20+种语言", "支持日语、英语、中文等多种语言", "在设置中切换"),
-            ("gearshape.fill", "自定义", "快捷键、语言、按应用设置", "从菜单栏"),
+            ("mic.fill", "语音输入", "按下说话，文字自动输入到光标位置", "⌥⌘V"),
+            ("arrow.right.doc.on.clipboard", "从iPhone发送", "iPhone上说的话自动复制到Mac剪贴板", "同WiFi自动连接"),
+            ("doc.text.fill", "会议记录", "自动转录会议，支持说话人分离", "⌥⌘M"),
         ]
         case "ko": return [
-            ("mic.fill", "음성 입력", "모든 앱에서 음성으로 텍스트 입력", "⌥⌘V 길게 누르기"),
-            ("doc.text.fill", "회의록 모드", "회의 음성을 자동 전사 및 정리", "⌥⌘M"),
-            ("globe", "20개 이상의 언어", "일본어, 영어, 중국어 등 폭넓게 지원", "설정에서 전환"),
-            ("gearshape.fill", "사용자 설정", "단축키, 언어, 앱별 설정", "메뉴바에서"),
+            ("mic.fill", "음성 입력", "누르고 말하면 커서 위치에 텍스트 입력", "⌥⌘V"),
+            ("arrow.right.doc.on.clipboard", "iPhone에서 전송", "iPhone에서 말한 내용이 Mac 클립보드로", "같은 WiFi에서 자동 연결"),
+            ("doc.text.fill", "회의록", "회의를 자동 전사. 화자 분리 지원", "⌥⌘M"),
         ]
         default: return [
-            ("mic.fill", "Voice Input", "Type with your voice in any app", "Hold ⌥⌘V"),
-            ("doc.text.fill", "Meeting Notes", "Auto-transcribe & format meetings", "⌥⌘M"),
-            ("globe", "20+ Languages", "Japanese, English, Chinese and more", "Switch in Settings"),
-            ("gearshape.fill", "Customize", "Shortcuts, languages, per-app settings", "From menu bar"),
+            ("mic.fill", "Voice Input", "Press and speak. Text appears at cursor", "⌥⌘V"),
+            ("arrow.right.doc.on.clipboard", "Send from iPhone", "Speak on iPhone, text goes to Mac clipboard", "Auto-connect on same WiFi"),
+            ("doc.text.fill", "Meeting Notes", "Auto-transcribe meetings with speaker labels", "⌥⌘M"),
         ]
         }
     }
 
     static var tutorialTip: String {
         switch lang {
-        case "ja": return "メニューバーの「声」アイコンからいつでも設定を変更できます"
-        case "zh": return "随时可以从菜单栏的\"声\"图标更改设置"
-        case "ko": return "메뉴바의 \"声\" 아이콘에서 언제든 설정을 변경할 수 있습니다"
-        default:   return "You can change settings anytime from the \"声\" icon in the menu bar"
+        case "ja": return "メニューバーの 声 アイコンから設定を変更できます"
+        case "zh": return "从菜单栏的 声 图标更改设置"
+        case "ko": return "메뉴바의 声 아이콘에서 설정 변경 가능"
+        default:   return "Change settings from the 声 icon in the menu bar"
         }
     }
 
     static var tryNow: String {
         switch lang {
-        case "ja": return "試してみる"
-        case "zh": return "立即试用"
-        case "ko": return "지금 사용해보기"
-        default:   return "Try It Now"
+        case "ja": return "始める"
+        case "zh": return "开始"
+        case "ko": return "시작"
+        default:   return "Get Started"
         }
     }
 

@@ -176,10 +176,6 @@ final class ConversationViewModel: ObservableObject {
     private var audioEngine = AVAudioEngine()
     private let samplesLock = NSLock()
     private var pcmSamples: [Float] = []
-    private var silenceStart: Date?
-    private var silenceTimer: Timer?
-    private let silenceThreshold: Float = 0.01
-    private let silenceDuration: TimeInterval = 2.0
 
     private var useWhisper: Bool { WhisperContext.shared.isLoaded }
 
@@ -212,9 +208,11 @@ final class ConversationViewModel: ObservableObject {
 
         samplesLock.lock()
         pcmSamples.removeAll(keepingCapacity: true)
-        pcmSamples.reserveCapacity(16000 * 30)
+        pcmSamples.reserveCapacity(16000 * 60)  // up to 60 seconds
         samplesLock.unlock()
 
+        // Re-create engine to avoid stale state
+        audioEngine = AVAudioEngine()
         let inputNode = audioEngine.inputNode
         let hwFormat = inputNode.outputFormat(forBus: 0)
 
@@ -225,19 +223,6 @@ final class ConversationViewModel: ObservableObject {
 
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
             guard let self else { return }
-
-            // RMS for silence detection
-            if let ch = buffer.floatChannelData?[0] {
-                var rms: Float = 0
-                vDSP_rmsqv(ch, 1, &rms, vDSP_Length(buffer.frameLength))
-                DispatchQueue.main.async {
-                    if rms < self.silenceThreshold {
-                        if self.silenceStart == nil { self.silenceStart = Date() }
-                    } else {
-                        self.silenceStart = nil
-                    }
-                }
-            }
 
             // Resample to 16kHz mono
             let ratio = 16000.0 / hwFormat.sampleRate
@@ -262,29 +247,10 @@ final class ConversationViewModel: ObservableObject {
 
         activePerson = person
         isRecording = true
-        silenceStart = nil
-
-        // Auto-stop on silence
-        silenceTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.isRecording else { return }
-                self.samplesLock.lock()
-                let count = self.pcmSamples.count
-                self.samplesLock.unlock()
-                guard count > 16000 else { return }
-
-                if let start = self.silenceStart, Date().timeIntervalSince(start) >= self.silenceDuration {
-                    self.stopRecording()
-                }
-            }
-        }
     }
 
     private func stopRecording() {
         guard isRecording else { return }
-        silenceTimer?.invalidate()
-        silenceTimer = nil
-        silenceStart = nil
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         isRecording = false

@@ -107,6 +107,19 @@ a:hover{text-decoration:underline}
 .dl-compare{display:flex;gap:20px;justify-content:center;max-width:640px;margin:16px auto 0;flex-wrap:wrap}
 .dl-compare-item{flex:1;min-width:240px;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 18px;font-size:13px;color:var(--muted);line-height:1.6}
 
+/* Platform cards */
+.platform-cards{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;margin-bottom:16px}
+.platform-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px 28px;text-align:center;width:220px;position:relative;transition:border-color .2s,transform .2s}
+.platform-card:hover{border-color:#444;transform:translateY(-4px)}
+.platform-card.featured{border-color:rgba(255,59,48,.4);box-shadow:0 0 40px rgba(255,59,48,.08)}
+.platform-badge{position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:var(--grad);color:#fff;font-size:10px;font-weight:700;letter-spacing:1px;padding:4px 12px;border-radius:20px}
+.platform-icon{margin-bottom:16px}
+.platform-icon svg{fill:var(--text)}
+.platform-card h3{font-size:20px;font-weight:700;margin-bottom:6px}
+.platform-desc{font-size:12px;color:var(--muted);margin-bottom:20px}
+.platform-note{font-size:11px;color:#555;margin-top:10px}
+@media(max-width:768px){.platform-cards{flex-direction:column;align-items:center}.platform-card{width:280px}}
+
 /* Stats */
 .stats{display:flex;justify-content:center;gap:48px;padding:40px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:80px}
 .stat{text-align:center}
@@ -310,15 +323,58 @@ footer a{color:#777}
   </div>
   <h1><span>Koe</span> <span data-i18n="hero_title_suffix">(声)</span></h1>
   <p class="tagline" data-i18n="hero_tagline">話すだけで、文字になる。</p>
-  <p class="sub" data-i18n="hero_sub">Mac用の音声入力アプリ。完全無料・音声データはMacの外に出ません。</p>
+  <p class="sub" data-i18n="hero_sub">iPhone・Mac・Windows対応。完全無料・音声データは端末の外に出ません。</p>
 
-  <div class="dl-buttons" style="margin-bottom:8px">
-    <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">
-      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-      <span data-i18n="dl_pkg">無料ダウンロード (macOS)</span>
-    </a>
+  <!-- Platform download cards -->
+  <div class="platform-cards">
+    <div class="platform-card">
+      <div class="platform-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      </div>
+      <h3>iPhone</h3>
+      <p class="platform-desc">iOS 17+ / キーボード拡張対応</p>
+      <a class="dl-btn" href="https://testflight.apple.com/join/koe-voice" style="font-size:14px;padding:12px 24px">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+        TestFlight
+      </a>
+      <p class="platform-note">App Store 申請準備中</p>
+    </div>
+
+    <div class="platform-card featured">
+      <div class="platform-badge">おすすめ</div>
+      <div class="platform-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+      </div>
+      <h3>Mac</h3>
+      <p class="platform-desc">macOS 13+ / Apple Silicon & Intel</p>
+      <div style="display:flex;gap:8px;flex-direction:column;align-items:center">
+        <a class="dl-btn" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg" style="font-size:14px;padding:12px 24px">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          PKG
+        </a>
+        <a class="dl-btn dl-btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg" style="font-size:14px;padding:12px 24px">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+          DMG
+        </a>
+      </div>
+      <p class="platform-note">v2.7.0 / オープンソース</p>
+    </div>
+
+    <div class="platform-card">
+      <div class="platform-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32"><path d="M3 12V6.75l6-1.32v6.48L3 12zm17-9v8.75l-10 .15V5.21L20 3zM3 13l6 .09v6.81l-6-1.15V13zm17 .25V22l-10-1.91V13.1l10 .15z"/></svg>
+      </div>
+      <h3>Windows</h3>
+      <p class="platform-desc">Windows 10+ / x64</p>
+      <a class="dl-btn dl-btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases" style="font-size:14px;padding:12px 24px">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+        準備中
+      </a>
+      <p class="platform-note">開発中</p>
+    </div>
   </div>
-  <p class="dl-sub" data-i18n="dl_sub">macOS 13以降 / Apple Silicon & Intel 対応 / オープンソース</p>
+
+  <p class="dl-sub" data-i18n="dl_sub">全プラットフォーム無料 / オープンソース / プライバシー重視</p>
 </div>
 
 <!-- Stats -->
@@ -332,8 +388,8 @@ footer a{color:#777}
     <div class="stat-label" data-i18n="stat_speed_label">話した瞬間に入力</div>
   </div>
   <div class="stat">
-    <div class="stat-val">100%</div>
-    <div class="stat-label" data-i18n="stat_local_label">Mac内で完結</div>
+    <div class="stat-val">3</div>
+    <div class="stat-label">対応プラットフォーム</div>
   </div>
   <div class="stat">
     <div class="stat-val" data-i18n="stat_lang_val">20言語</div>

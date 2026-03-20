@@ -240,7 +240,8 @@ class SetupWindow: NSObject {
         modelPopup.target = self
         modelPopup.action = #selector(onModelChanged)
         for model in ModelDownloader.availableModels {
-            let title = "\(model.name) — \(model.description) (\(model.sizeMB)MB)"
+            let rec = model.isDefault ? " *" : ""
+            let title = "\(model.name) — \(model.description) (\(model.sizeMB)MB)\(rec)"
             modelPopup.addItem(withTitle: title)
         }
         if let idx = ModelDownloader.availableModels.firstIndex(where: { $0.isDefault }) {
@@ -616,8 +617,7 @@ class SetupWindow: NSObject {
     private var tutorialView: NSView!
 
     private func showTutorial() {
-        // ウィンドウを少し大きく
-        let newSize = NSSize(width: 520, height: 600)
+        let newSize = NSSize(width: 480, height: 480)
         window.setContentSize(newSize)
 
         tutorialView = NSView(frame: NSRect(origin: .zero, size: newSize))
@@ -625,52 +625,38 @@ class SetupWindow: NSObject {
 
         let w = newSize.width
 
-        // Header: elegant checkmark
-        let checkmark = NSTextField(labelWithString: "\u{2713}")
-        checkmark.font = .systemFont(ofSize: 28, weight: .ultraLight)
-        checkmark.textColor = Self.goldColor
-        checkmark.frame = NSRect(x: (w - 40) / 2, y: 544, width: 40, height: 36)
-        checkmark.alignment = .center
-        tutorialView.addSubview(checkmark)
-
-        let title = NSTextField(labelWithString: L10n.tutorialTitle)
-        title.font = .systemFont(ofSize: 24, weight: .thin)
+        // Minimal header
+        let title = NSTextField(labelWithString: L10n.tutorialReady)
+        title.font = .systemFont(ofSize: 20, weight: .thin)
         title.textColor = .labelColor
         title.alignment = .center
-        title.frame = NSRect(x: 0, y: 508, width: w, height: 36)
+        title.frame = NSRect(x: 0, y: 420, width: w, height: 30)
         tutorialView.addSubview(title)
 
-        let subtitle = NSTextField(labelWithString: L10n.tutorialReady)
-        subtitle.font = .systemFont(ofSize: 13, weight: .light)
-        subtitle.textColor = .secondaryLabelColor
-        subtitle.alignment = .center
-        subtitle.frame = NSRect(x: 0, y: 486, width: w, height: 20)
-        tutorialView.addSubview(subtitle)
-
-        // Feature cards
+        // 3 feature cards — clean and spacious
         let cards = L10n.tutorialCards
         for (i, card) in cards.enumerated() {
-            let y = CGFloat(390 - i * 90)
+            let y = CGFloat(310 - i * 90)
             let cardView = createTutorialCard(
                 icon: card.icon,
                 title: card.title,
                 desc: card.desc,
                 shortcut: card.shortcut,
-                frame: NSRect(x: 30, y: y, width: w - 60, height: 78)
+                frame: NSRect(x: 40, y: y, width: w - 80, height: 76)
             )
             tutorialView.addSubview(cardView)
         }
 
-        // Tip
+        // Tip — subtle
         let tip = NSTextField(labelWithString: L10n.tutorialTip)
         tip.font = .systemFont(ofSize: 11, weight: .light)
         tip.textColor = .tertiaryLabelColor
         tip.alignment = .center
-        tip.frame = NSRect(x: 30, y: 60, width: w - 60, height: 16)
+        tip.frame = NSRect(x: 40, y: 56, width: w - 80, height: 16)
         tutorialView.addSubview(tip)
 
-        // Try now button — luxe dark
-        let tryBtn = NSButton(frame: NSRect(x: (w - 220) / 2, y: 14, width: 220, height: 44))
+        // Button — minimal
+        let tryBtn = NSButton(frame: NSRect(x: (w - 200) / 2, y: 10, width: 200, height: 40))
         tryBtn.bezelStyle = .rounded
         tryBtn.title = L10n.tryNow
         tryBtn.font = .systemFont(ofSize: 14, weight: .medium)
@@ -680,9 +666,9 @@ class SetupWindow: NSObject {
         tryBtn.wantsLayer = true
         tryBtn.layer?.backgroundColor = Self.deepCharcoal.cgColor
         tryBtn.contentTintColor = Self.champagneColor
-        tryBtn.layer?.cornerRadius = 12
+        tryBtn.layer?.cornerRadius = 10
         tryBtn.layer?.borderWidth = 0.5
-        tryBtn.layer?.borderColor = Self.goldColor.withAlphaComponent(0.3).cgColor
+        tryBtn.layer?.borderColor = Self.goldColor.withAlphaComponent(0.2).cgColor
         tutorialView.addSubview(tryBtn)
 
         contentView.addSubview(tutorialView)

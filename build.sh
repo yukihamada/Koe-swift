@@ -1,11 +1,11 @@
 #!/bin/bash
 set -e
 
-APP="Koe.app"
 cd "$(dirname "$0")"
+APP="build-macos/Koe.app"
 
 echo "Building Koe..."
-# Keep existing bundle (preserves Accessibility permission) — only overwrite binary
+# Build into build-macos/ (not project root) to keep workspace clean
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/"
@@ -276,10 +276,10 @@ if [ "$1" = "--no-launch" ] || [ -n "$CI" ]; then
     exit 0
 fi
 
-echo "→ Launching..."
+echo "→ Installing to /Applications and launching..."
 pkill -9 Koe 2>/dev/null
 sleep 0.5
-# Launch directly (not via open) so stdout/stderr is captured
-nohup "$APP/Contents/MacOS/Koe" >> ~/Desktop/koe_debug.log 2>&1 &
-echo "Koe PID: $!"
-echo "Log: ~/Desktop/koe_debug.log"
+# Copy to /Applications (preserves Accessibility permission if already granted)
+rsync -a --delete "$APP/" /Applications/Koe.app/
+open /Applications/Koe.app
+echo "✓ Installed and launched /Applications/Koe.app"

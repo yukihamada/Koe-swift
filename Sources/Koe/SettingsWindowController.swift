@@ -1238,6 +1238,29 @@ struct AutomationTab: View {
             }
 
             Section {
+                Toggle("LLM処理を適用", isOn: $s.iphoneBridgeLLM)
+                    .font(.system(size: 12))
+                if s.iphoneBridgeLLM {
+                    HStack {
+                        Text("モード").font(.system(size: 11)).foregroundColor(.secondary)
+                        Spacer()
+                        Picker("", selection: $s.llmMode) {
+                            ForEach(LLMMode.allCases, id: \.self) { mode in
+                                Text(mode.displayName).tag(mode)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 200)
+                    }
+                }
+                Toggle("入力後に自動Enter", isOn: $s.iphoneBridgeAutoEnter)
+                    .font(.system(size: 12))
+            } header: {
+                Label("iPhone連携", systemImage: "iphone.and.arrow.forward")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
                 DisclosureGroup("テキスト展開 (\(s.textExpansions.count)件)") {
                     TextExpansionsInlineView()
                 }

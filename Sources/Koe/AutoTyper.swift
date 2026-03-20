@@ -136,10 +136,22 @@ class AutoTyper {
 
     // MARK: - Voice Edit Commands
 
+    /// Return/Enterキー送信
+    func postReturn() {
+        guard canUseCGEvent else { return }
+        postKey(keyCode: CGKeyCode(kVK_Return), flags: [])
+    }
+
     /// Cmd+Z (元に戻す)
     func postUndo() {
         guard canUseCGEvent else { return }
         postKey(keyCode: CGKeyCode(kVK_ANSI_Z), flags: .maskCommand)
+    }
+
+    /// Tabキーを送信
+    func postTab() {
+        guard canUseCGEvent else { return }
+        postKey(keyCode: CGKeyCode(kVK_Tab), flags: [])
     }
 
     /// Cmd+A → Delete (全選択して削除)

@@ -35,7 +35,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.mac
         INFOPLIST_FILE: Info-macOS.plist
-        MARKETING_VERSION: "2.2.5"
+        MARKETING_VERSION: "2.7.1"
         CURRENT_PROJECT_VERSION: "1"
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         ARCHS: "arm64"
@@ -44,6 +44,7 @@ targets:
         MTL_HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/lib-macos"
         LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/lib-macos"
         OTHER_LDFLAGS: >-
+          -lwhisper_bridge
           -lwhisper
           -lwhisper.coreml
           -lggml

@@ -80,7 +80,7 @@ extension PhoneBridge: MCSessionDelegate {
             let whisper = WhisperContext.shared
 
             // Step 1: 原文の文字起こし
-            whisper.transcribeBuffer(samples: samples, translate: false, completion: { [weak self] (text: String?) in
+            whisper.transcribeBuffer(samples: samples, completion: { [weak self] (text: String?) in
                 let resultText = text ?? ""
 
                 let sendResult = { (translated: String) in
@@ -96,7 +96,7 @@ extension PhoneBridge: MCSessionDelegate {
                 }
 
                 if doTranslate {
-                    whisper.transcribeBuffer(samples: samples, translate: true, completion: { (translated: String?) in
+                    whisper.transcribeBuffer(samples: samples, completion: { (translated: String?) in
                         sendResult(translated ?? "")
                     })
                 } else {

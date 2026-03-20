@@ -294,10 +294,10 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib-macos";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.2.5;
+				MARKETING_VERSION = 2.7.1;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/lib-macos";
 				ONLY_ACTIVE_ARCH = NO;
-				OTHER_LDFLAGS = "-lwhisper -lwhisper.coreml -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lllama -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreML -framework AppKit -framework AVFoundation -framework Speech -framework SwiftUI -framework AudioToolbox -framework CoreAudio -framework UserNotifications -framework ServiceManagement";
+				OTHER_LDFLAGS = "-lwhisper_bridge -lwhisper -lwhisper.coreml -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lllama -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreML -framework AppKit -framework AVFoundation -framework Speech -framework SwiftUI -framework AudioToolbox -framework CoreAudio -framework UserNotifications -framework ServiceManagement";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.mac;
 				SDKROOT = macosx;
 				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper $(PROJECT_DIR)/Sources/CLlama";
@@ -382,10 +382,10 @@
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib-macos";
 				MACOSX_DEPLOYMENT_TARGET = 13.0;
-				MARKETING_VERSION = 2.2.5;
+				MARKETING_VERSION = 2.7.1;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/lib-macos";
 				ONLY_ACTIVE_ARCH = NO;
-				OTHER_LDFLAGS = "-lwhisper -lwhisper.coreml -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lllama -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreML -framework AppKit -framework AVFoundation -framework Speech -framework SwiftUI -framework AudioToolbox -framework CoreAudio -framework UserNotifications -framework ServiceManagement";
+				OTHER_LDFLAGS = "-lwhisper_bridge -lwhisper -lwhisper.coreml -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lllama -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreML -framework AppKit -framework AVFoundation -framework Speech -framework SwiftUI -framework AudioToolbox -framework CoreAudio -framework UserNotifications -framework ServiceManagement";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.mac;
 				SDKROOT = macosx;
 				SWIFT_INCLUDE_PATHS = "$(PROJECT_DIR)/Sources/CWhisper $(PROJECT_DIR)/Sources/CLlama";

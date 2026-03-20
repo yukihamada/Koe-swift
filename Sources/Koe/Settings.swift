@@ -306,6 +306,10 @@ class AppSettings: ObservableObject {
     // Agent mode (voice commands)
     @Published var agentModeEnabled: Bool { didSet { ud.set(agentModeEnabled, forKey: "agentModeEnabled") } }
 
+    // iPhone Bridge
+    @Published var iphoneBridgeLLM: Bool { didSet { ud.set(iphoneBridgeLLM, forKey: "iphoneBridgeLLM") } }
+    @Published var iphoneBridgeAutoEnter: Bool { didSet { ud.set(iphoneBridgeAutoEnter, forKey: "iphoneBridgeAutoEnter") } }
+
     // Login item (ログイン時に自動起動)
     @Published var launchAtLogin: Bool { didSet {
         ud.set(launchAtLogin, forKey: "launchAtLogin")
@@ -485,6 +489,8 @@ class AppSettings: ObservableObject {
         llmMemorySaveMode = ud.object(forKey: "llmMemorySaveMode") as? Bool ?? false  // デフォルトOFF（常時読み込み）
         superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
         agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF
+        iphoneBridgeLLM = ud.object(forKey: "iphoneBridgeLLM") as? Bool ?? true  // デフォルトON
+        iphoneBridgeAutoEnter = ud.object(forKey: "iphoneBridgeAutoEnter") as? Bool ?? false  // デフォルトOFF
         streamingPreviewEnabled = ud.object(forKey: "streamingPreviewEnabled") as? Bool ?? false  // デフォルトOFF: Apple Speechでリアルタイム入力
         whisperBestOf = ud.object(forKey: "whisperBestOf") as? Int ?? 1
         whisperEntropyThreshold = ud.object(forKey: "whisperEntropyThreshold") as? Double ?? 2.4

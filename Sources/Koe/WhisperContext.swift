@@ -100,25 +100,25 @@ final class WhisperContext {
     }
 
     private func makeParams(settings ws: WhisperSettings, timestamps: Bool = false) -> whisper_full_params {
-        // whisper-cliのデフォルトに合わせた設定（best_of=5が精度の鍵）
+        // 速度最適化: best_of=1 + single_segment + temperature_inc=0 で最速
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         params.n_threads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
         params.print_progress = false
         params.print_special = false
         params.print_realtime = false
         params.print_timestamps = false
-        params.no_timestamps = false   // whisper-cliデフォルト
-        params.single_segment = false
-        params.suppress_blank = true   // whisper-cliデフォルト
+        params.no_timestamps = !timestamps
+        params.single_segment = true   // 速度: セグメント分割をスキップ
+        params.suppress_blank = true
         params.suppress_nst = false
         params.token_timestamps = timestamps
-        params.no_context = false  // whisper-cliデフォルト
-        params.greedy.best_of = 5     // whisper-cliデフォルト（精度の鍵）
-        params.entropy_thold = 2.4   // whisper-cliデフォルト
-        params.logprob_thold = -1.0  // whisper-cliデフォルト
-        params.no_speech_thold = 0.6 // whisper-cliデフォルト
-        params.temperature = 0.0     // whisper-cliデフォルト
-        params.temperature_inc = 0.2 // whisper-cliデフォルト
+        params.no_context = false
+        params.greedy.best_of = 1      // 速度: 1回の推論で結果を返す（5→1で3-5倍速い）
+        params.entropy_thold = 2.4
+        params.logprob_thold = -1.0
+        params.no_speech_thold = 0.6
+        params.temperature = 0.0
+        params.temperature_inc = 0.0   // 速度: 温度上げ再試行なし（0.2→0で余分な推論をカット）
         params.vad = false
         return params
     }

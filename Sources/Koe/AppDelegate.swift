@@ -1889,21 +1889,14 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
         try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
 
-    /// screencaptureコマンド経由で確実にキャプチャ
+    /// 画面キャプチャ（CGWindowList、権限不要でウィンドウ情報は取得可能）
+    /// 画面録画権限がない場合はnilを返す（screencaptureは使わない — プロンプトが出るため）
     private func captureScreenImage() -> CGImage? {
-        let tmpPath = "/tmp/koe_bridge_capture.png"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
-        process.arguments = ["-x", tmpPath]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch { return nil }
-        guard let provider = CGDataProvider(url: URL(fileURLWithPath: tmpPath) as CFURL),
-              let image = CGImage(pngDataProviderSource: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
-        try? FileManager.default.removeItem(atPath: tmpPath)
+        guard let image = CGWindowListCreateImage(.null, .optionOnScreenOnly, kCGNullWindowID, [.boundsIgnoreFraming]) else {
+            return nil
+        }
+        // 画面録画権限がないと1x1や空画像が返ることがある
+        if image.width <= 1 || image.height <= 1 { return nil }
         return image
     }
 

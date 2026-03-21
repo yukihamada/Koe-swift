@@ -10,11 +10,12 @@ struct SettingsView: View {
     @AppStorage("koe_auto_copy") private var autoCopy = false
     @AppStorage("koe_llm_enabled") private var llmEnabled = false
     @AppStorage("koe_llm_mode") private var llmMode = "correct"
-    @AppStorage("koe_silence_duration") private var silenceDuration = 3.0
+    @AppStorage("koe_silence_duration") private var silenceDuration = 0.0
     @AppStorage("koe_auto_send_mac") private var autoSendMac = true
     @AppStorage("koe_continuous_mode") private var continuousMode = false
     @AppStorage("koe_translate_target") private var translateTarget = "en"
     @AppStorage("koe_screen_context") private var screenContextEnabled = false
+    @AppStorage("koe_streaming_preview") private var streamingPreview = false
     @State private var newPhrase = ""
     @State private var showAddPhrase = false
 
@@ -26,7 +27,7 @@ struct SettingsView: View {
 
                 // MARK: - Language
                 Section {
-                    Picker("言語", selection: $language) {
+                    Picker(L10n.language, selection: $language) {
                         ForEach(Self.languages, id: \.0) { code, name in
                             Text(name).tag(code)
                         }
@@ -35,86 +36,94 @@ struct SettingsView: View {
 
                 // MARK: - AI Processing
                 Section {
-                    Toggle("AI文章補正", isOn: $llmEnabled)
+                    Toggle(L10n.aiTextCorrection, isOn: $llmEnabled)
                     if llmEnabled {
-                        Picker("スタイル", selection: $llmMode) {
-                            Text("修正").tag("correct")
-                            Text("メール").tag("email")
-                            Text("チャット").tag("chat")
-                            Text("翻訳 日↔英").tag("translate")
+                        Picker(L10n.style, selection: $llmMode) {
+                            Text(L10n.styleCorrect).tag("correct")
+                            Text(L10n.styleEmail).tag("email")
+                            Text(L10n.styleChat).tag("chat")
+                            Text(L10n.styleTranslate).tag("translate")
                         }
                         .pickerStyle(.menu)
                         if llmMode == "translate" {
-                            Picker("翻訳先", selection: $translateTarget) {
-                                Text("英語").tag("en")
-                                Text("日本語").tag("ja")
-                                Text("中国語").tag("zh")
-                                Text("韓国語").tag("ko")
+                            Picker(L10n.translateTarget, selection: $translateTarget) {
+                                Text(L10n.english).tag("en")
+                                Text(L10n.japanese).tag("ja")
+                                Text(L10n.chinese).tag("zh")
+                                Text(L10n.korean).tag("ko")
                             }
                             .pickerStyle(.menu)
                         }
                     }
                 } footer: {
-                    Text("音声認識後にAIがテキストを整えます")
+                    Text(L10n.aiFooter)
                 }
 
                 // MARK: - Output
                 Section {
-                    Toggle("認識後に自動コピー", isOn: $autoCopy)
-                    Toggle("Macに自動送信", isOn: $autoSendMac)
-                    Toggle("連続認識モード", isOn: $continuousMode)
+                    Toggle(L10n.autoCopyAfterRecognition, isOn: $autoCopy)
+                    Toggle(L10n.autoSendToMac, isOn: $autoSendMac)
+                    Toggle(L10n.continuousMode, isOn: $continuousMode)
                 } footer: {
                     if continuousMode {
-                        Text("認識完了後に自動で次の録音を開始します")
+                        Text(L10n.continuousModeFooter)
                     }
                 }
 
                 // MARK: - Mac
                 Section {
                     HStack {
-                        Text("Mac連携")
+                        Text(L10n.macLink)
                         Spacer()
                         if macBridge.isConnected {
-                            Label("接続中", systemImage: "checkmark.circle.fill")
+                            Label(L10n.connected, systemImage: "checkmark.circle.fill")
                                 .font(.subheadline)
                                 .foregroundStyle(.green)
                         } else {
-                            Text("未接続")
+                            Text(L10n.notConnected)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
                     }
                 } footer: {
-                    Text("同じWiFiのMacでKoeが起動中なら自動接続します")
+                    Text(L10n.macAutoConnect)
                 }
 
                 // MARK: - Beta
                 Section {
-                    Toggle("Mac画面コンテキスト", isOn: $screenContextEnabled)
+                    Toggle(L10n.macScreenContext, isOn: $screenContextEnabled)
                 } header: {
-                    Text("ベータ機能")
+                    Text(L10n.betaFeatures)
                 } footer: {
-                    Text("Macのウィンドウ情報をiPhoneに表示します。Screenタブが有効になります。")
+                    Text(L10n.screenContextFooter)
                 }
 
                 // MARK: - Recording
-                Section("録音") {
-                    Picker("無音で自動停止", selection: $silenceDuration) {
-                        Text("1.5秒").tag(1.5)
-                        Text("2秒").tag(2.0)
-                        Text("3秒").tag(3.0)
-                        Text("5秒").tag(5.0)
+                Section {
+                    Picker(L10n.silenceAutoStop, selection: $silenceDuration) {
+                        Text(L10n.offManual).tag(0.0)
+                        Text("1.5s").tag(1.5)
+                        Text("2s").tag(2.0)
+                        Text("3s").tag(3.0)
+                        Text("5s").tag(5.0)
+                    }
+                    Toggle(L10n.realtimePreview, isOn: $streamingPreview)
+                } header: {
+                    Text(L10n.recording)
+                } footer: {
+                    if streamingPreview {
+                        Text(L10n.streamingPreviewFooter)
                     }
                 }
 
                 // MARK: - Whisper Model
-                Section("音声認識エンジン") {
+                Section(L10n.speechEngine) {
                     engineStatus
                     if !modelManager.isModelReady {
                         Button {
                             modelManager.download(modelManager.currentModel)
                         } label: {
-                            Label("高精度モデルをダウンロード (\(modelManager.currentModel.sizeMB)MB)",
+                            Label(L10n.downloadModelLabel(modelManager.currentModel.sizeMB),
                                   systemImage: "arrow.down.circle")
                         }
                     }
@@ -124,57 +133,23 @@ struct SettingsView: View {
                     }
                 }
 
-                // MARK: - More Features
-                Section("その他の機能") {
-                    NavigationLink {
-                        MeetingView()
-                    } label: {
-                        Label("議事録", systemImage: "doc.text")
-                    }
-                    NavigationLink {
-                        VoiceMemoView(recorder: recorder)
-                    } label: {
-                        Label("音声メモ検索", systemImage: "magnifyingglass")
-                    }
-                    NavigationLink {
-                        ConversationView()
-                    } label: {
-                        Label("対面翻訳", systemImage: "bubble.left.and.bubble.right")
-                    }
-                    NavigationLink {
-                        AudioToolsView()
-                    } label: {
-                        Label("オーディオツール", systemImage: "waveform")
-                    }
-                    NavigationLink {
-                        SolunaView()
-                    } label: {
-                        Label("Soluna", systemImage: "dot.radiowaves.left.and.right")
-                    }
-                    NavigationLink {
-                        SoundMemoryView()
-                    } label: {
-                        Label("Sound Memory", systemImage: "brain.head.profile")
-                    }
-                }
-
                 // MARK: - Quick Phrases
                 quickPhrasesSection
 
                 // MARK: - About
                 Section {
-                    LabeledContent("バージョン",
+                    LabeledContent(L10n.version,
                         value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?")
                     Link(destination: URL(string: "https://app.koe.live")!) {
-                        Label("公式サイト", systemImage: "globe")
+                        Label(L10n.officialSite, systemImage: "globe")
                     }
                 }
             }
-            .navigationTitle("設定")
+            .navigationTitle(L10n.settings)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("完了") { dismiss() }
+                    Button(L10n.done) { dismiss() }
                         .fontWeight(.semibold)
                 }
             }
@@ -186,8 +161,8 @@ struct SettingsView: View {
     @ViewBuilder
     private var historySection: some View {
         if recorder.history.isEmpty {
-            Section("履歴") {
-                Text("音声入力するとここに表示されます")
+            Section(L10n.history) {
+                Text(L10n.historyEmpty)
                     .foregroundStyle(.secondary)
                     .font(.subheadline)
             }
@@ -212,16 +187,16 @@ struct SettingsView: View {
                     NavigationLink {
                         HistoryView(recorder: recorder)
                     } label: {
-                        Text("すべて表示 (\(recorder.history.count)件)")
+                        Text(L10n.showAll(recorder.history.count))
                             .font(.subheadline)
                     }
                 }
             } header: {
                 HStack {
-                    Text("履歴")
+                    Text(L10n.history)
                     Spacer()
                     if !recorder.history.isEmpty {
-                        Button("全削除") { recorder.clearHistory() }
+                        Button(L10n.deleteAll) { recorder.clearHistory() }
                             .font(.caption)
                             .foregroundStyle(.red)
                     }
@@ -235,13 +210,13 @@ struct SettingsView: View {
     @ViewBuilder
     private var engineStatus: some View {
         HStack {
-            Text("エンジン")
+            Text(L10n.engine)
             Spacer()
             if WhisperContext.shared.isLoaded {
                 Text("whisper.cpp")
                     .foregroundStyle(.green)
             } else if modelManager.isModelReady {
-                Text("準備完了")
+                Text(L10n.ready)
                     .foregroundStyle(.orange)
             } else {
                 Text("Apple Speech")
@@ -277,24 +252,24 @@ struct SettingsView: View {
             Button {
                 showAddPhrase = true
             } label: {
-                Label("定型文を追加", systemImage: "plus.circle")
+                Label(L10n.addPhrase, systemImage: "plus.circle")
                     .font(.subheadline)
             }
         } header: {
-            Text("定型文（クイックフレーズ）")
+            Text(L10n.quickPhrases)
         } footer: {
-            Text("タップでMacに送信。左スワイプで削除。")
+            Text(L10n.quickPhrasesFooter)
         }
-        .alert("定型文を追加", isPresented: $showAddPhrase) {
-            TextField("フレーズを入力", text: $newPhrase)
-            Button("追加") {
+        .alert(L10n.addPhrase, isPresented: $showAddPhrase) {
+            TextField(L10n.enterPhrase, text: $newPhrase)
+            Button(L10n.add) {
                 let trimmed = newPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
                     recorder.addQuickPhrase(trimmed)
                 }
                 newPhrase = ""
             }
-            Button("キャンセル", role: .cancel) { newPhrase = "" }
+            Button(L10n.cancelAction, role: .cancel) { newPhrase = "" }
         }
     }
 

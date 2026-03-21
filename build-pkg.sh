@@ -28,7 +28,7 @@ pkill -9 Koe 2>/dev/null || true
 exit 0
 SCRIPT
 
-# --- Postinstall script (remove quarantine, launch) ---
+# --- Postinstall script (remove quarantine, reset TCC, launch) ---
 cat > "$STAGING/scripts/postinstall" << 'SCRIPT'
 #!/bin/bash
 xattr -dr com.apple.quarantine /Applications/Koe.app 2>/dev/null || true
@@ -36,6 +36,8 @@ xattr -dr com.apple.quarantine /Applications/Koe.app 2>/dev/null || true
 LOGGED_IN_USER=$(stat -f '%Su' /dev/console 2>/dev/null || echo "")
 if [ -n "$LOGGED_IN_USER" ] && [ "$LOGGED_IN_USER" != "root" ]; then
     chown -R "$LOGGED_IN_USER:staff" /Applications/Koe.app 2>/dev/null || true
+    # Reset stale accessibility entry so macOS re-prompts for new binary
+    su "$LOGGED_IN_USER" -c "tccutil reset Accessibility com.yuki.koe" 2>/dev/null || true
 fi
 # Open after a short delay so the installer finishes cleanly
 (sleep 2 && open /Applications/Koe.app) &

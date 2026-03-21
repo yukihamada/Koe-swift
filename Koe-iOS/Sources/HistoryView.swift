@@ -14,9 +14,9 @@ struct HistoryView: View {
             Group {
                 if recorder.history.isEmpty {
                     ContentUnavailableView(
-                        "履歴がありません",
+                        L10n.noHistory,
                         systemImage: "clock",
-                        description: Text("音声入力するとここに表示されます")
+                        description: Text(L10n.historyEmpty)
                     )
                 } else {
                     List(filteredHistory) { item in
@@ -33,21 +33,21 @@ struct HistoryView: View {
                             UIPasteboard.general.string = item.text
                         }
                     }
-                    .searchable(text: $searchText, prompt: "履歴を検索")
+                    .searchable(text: $searchText, prompt: L10n.searchHistory)
                 }
             }
-            .navigationTitle("履歴")
+            .navigationTitle(L10n.history)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if !recorder.history.isEmpty {
-                        Button("全削除", role: .destructive) {
+                        Button(L10n.deleteAll, role: .destructive) {
                             recorder.clearHistory()
                         }
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("閉じる") { dismiss() }
+                    Button(L10n.close) { dismiss() }
                 }
             }
         }

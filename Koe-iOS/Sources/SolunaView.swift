@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SolunaView: View {
-    @StateObject private var soluna = SolunaManager.shared
+    @StateObject private var soluna = SolunaSDKPlayer.shared
     @State private var animationTick: UInt64 = 0
     @State private var timer: Timer?
     @State private var showDebug = false

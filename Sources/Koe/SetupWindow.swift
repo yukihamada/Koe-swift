@@ -647,13 +647,45 @@ class SetupWindow: NSObject {
             tutorialView.addSubview(cardView)
         }
 
-        // Tip — subtle
-        let tip = NSTextField(labelWithString: L10n.tutorialTip)
-        tip.font = .systemFont(ofSize: 11, weight: .light)
-        tip.textColor = .tertiaryLabelColor
-        tip.alignment = .center
-        tip.frame = NSRect(x: 40, y: 56, width: w - 80, height: 16)
-        tutorialView.addSubview(tip)
+        // iPhone app promotion
+        let iphoneCard = NSView(frame: NSRect(x: 40, y: 86, width: w - 80, height: 76))
+        iphoneCard.wantsLayer = true
+        iphoneCard.layer?.backgroundColor = NSColor(red: 1, green: 0.58, blue: 0, alpha: 0.08).cgColor
+        iphoneCard.layer?.cornerRadius = 14
+        iphoneCard.layer?.borderWidth = 0.5
+        iphoneCard.layer?.borderColor = NSColor.orange.withAlphaComponent(0.2).cgColor
+
+        let phoneIcon = NSTextField(labelWithString: "📱")
+        phoneIcon.font = .systemFont(ofSize: 28)
+        phoneIcon.isBezeled = false; phoneIcon.isEditable = false; phoneIcon.drawsBackground = false
+        phoneIcon.frame = NSRect(x: 16, y: 22, width: 36, height: 36)
+        iphoneCard.addSubview(phoneIcon)
+
+        let phoneTitle = NSTextField(labelWithString: "iPhoneでもっと便利に")
+        phoneTitle.font = .systemFont(ofSize: 14, weight: .semibold)
+        phoneTitle.textColor = .labelColor
+        phoneTitle.isBezeled = false; phoneTitle.isEditable = false; phoneTitle.drawsBackground = false
+        phoneTitle.frame = NSRect(x: 60, y: 44, width: 240, height: 20)
+        iphoneCard.addSubview(phoneTitle)
+
+        let phoneDesc = NSTextField(labelWithString: "iPhoneから声でMac操作・画面AI・ハンズフリー入力")
+        phoneDesc.font = .systemFont(ofSize: 11)
+        phoneDesc.textColor = .secondaryLabelColor
+        phoneDesc.isBezeled = false; phoneDesc.isEditable = false; phoneDesc.drawsBackground = false
+        phoneDesc.frame = NSRect(x: 60, y: 26, width: 300, height: 16)
+        iphoneCard.addSubview(phoneDesc)
+
+        let phoneBtn = NSButton(frame: NSRect(x: 60, y: 4, width: 180, height: 22))
+        phoneBtn.bezelStyle = .rounded
+        phoneBtn.title = "iPhone版を入手 →"
+        phoneBtn.font = .systemFont(ofSize: 11, weight: .medium)
+        phoneBtn.target = self
+        phoneBtn.action = #selector(openIPhoneApp)
+        phoneBtn.isBordered = false
+        phoneBtn.contentTintColor = .orange
+        iphoneCard.addSubview(phoneBtn)
+
+        tutorialView.addSubview(iphoneCard)
 
         // Button — minimal
         let tryBtn = NSButton(frame: NSRect(x: (w - 200) / 2, y: 10, width: 200, height: 40))
@@ -727,6 +759,13 @@ class SetupWindow: NSObject {
     @objc private func onFinishTutorial() {
         window.close()
         completion?()
+    }
+
+    @objc private func openIPhoneApp() {
+        // TestFlight or App Store URL
+        if let url = URL(string: "https://app.koe.live") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func onAction() {

@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 import Speech
 import UniformTypeIdentifiers
 import UserNotifications
+import Vision
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var shared: AppDelegate?
@@ -128,12 +129,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         speech.requestPermissions()
         loadEmbeddedWhisper()
 
-        // iPhone連携: テキストをLLM処理→カーソル位置に自動入力→任意でEnter
+        // iPhone連携: AgentMode判定 → 画面AI or テキスト入力
         IPhoneBridge.shared.start { [weak self] text in
             guard let self else { return }
             klog("IPhoneBridge: received from iPhone: '\(String(text.prefix(60)))'")
             let settings = AppSettings.shared
 
+            // AgentMode: 音声コマンド判定（高速マッチ → LLMフォールバック）
+            if settings.agentModeEnabled {
+                let executeCommand = { (command: AgentCommand) in
+                    klog("IPhoneBridge: agent command — \(command.description)")
+                    self.overlay?.show(state: .recognizing)
+                    AgentMode.shared.execute(command) { [weak self] result in
+                        DispatchQueue.main.async {
+                            self?.overlay?.hide()
+                            klog("IPhoneBridge: agent result — \(result.prefix(60))")
+                            self?.sendNotification(text: "📱🤖 \(result.prefix(50))")
+                        }
+                    }
+                }
+
+                // 高速マッチ
+                if let command = AgentMode.shared.detectCommand(text) {
+                    executeCommand(command)
+                    return
+                }
+
+                // LLMインテント判定
+                if settings.voiceControlEnabled {
+                    AgentMode.shared.detectCommandAsync(text) { command in
+                        if let command {
+                            executeCommand(command)
+                        } else {
+                            // コマンドではない → 通常テキスト入力
+                            let typeAndEnter = { (finalText: String) in
+                                self.typer.typeInto(finalText, bundleID: "")
+                                if settings.iphoneBridgeAutoEnter {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.typer.postReturn() }
+                                }
+                                self.sendNotification(text: "📱→ \(String(finalText.prefix(30)))")
+                            }
+                            typeAndEnter(text)
+                        }
+                    }
+                    return
+                }
+            }
+
+            // 通常テキスト入力
             let typeAndEnter = { (finalText: String) in
                 self.typer.typeInto(finalText, bundleID: "")
                 if settings.iphoneBridgeAutoEnter {
@@ -159,7 +202,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         IPhoneBridge.shared.onBackspace = { [weak self] count in
             guard let self else { return }
-            for _ in 0..<count {
+            let clamped = min(max(count, 0), 500) // セキュリティ: 最大500文字に制限
+            for _ in 0..<clamped {
                 self.postKeyCombo(key: 0x33, modifiers: []) // 0x33 = Delete/Backspace
             }
         }
@@ -200,6 +244,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 IPhoneBridge.shared.postScroll(dy: 3)
             case "escape":
                 self.postKeyCombo(key: 0x35, modifiers: []) // ESC
+            case "appSwitch":
+                self.postKeyCombo(key: 0x30, modifiers: .maskCommand) // ⌘Tab
+            case "missionControl":
+                self.postKeyCombo(key: 0x7E, modifiers: .maskControl) // ⌃↑
+            case "volumeUp":
+                AgentMode.shared.execute(.volumeUp) { _ in }
+            case "volumeDown":
+                AgentMode.shared.execute(.volumeDown) { _ in }
             default:
                 klog("IPhoneBridge: unknown command '\(command)'")
             }
@@ -233,6 +285,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Timer.scheduledTimer(withTimeInterval: 4 * 3600, repeats: true) { _ in
             AutoUpdater.shared.checkForUpdates(silent: true)
         }
+
+        // アクセシビリティ権限の確認・プロンプト（IME切替・自動入力に必要）
+        checkAccessibility()
     }
 
     /// 組み込み whisper.cpp モデルのロード。モデルがなければダウンロード。
@@ -329,7 +384,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 item.state = (s.language == lang.code) ? .on : .off
                 otherMenu.addItem(item)
             }
-            let otherItem = NSMenuItem(title: "その他の言語…", action: nil, keyEquivalent: "")
+            let otherItem = NSMenuItem(title: L10n.menuOtherLanguages, action: nil, keyEquivalent: "")
             otherItem.submenu = otherMenu
             menu.addItem(otherItem)
         }
@@ -343,26 +398,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             item.state = (s.llmMode == mode) ? .on : .off
             modeMenu.addItem(item)
         }
-        let modeLabel = s.llmMode == .none ? "LLM: オフ" : "LLM: \(s.llmMode.displayName)"
+        let modeLabel = L10n.menuLLMLabel(mode: s.llmMode.displayName, isOff: s.llmMode == .none)
         let modeItem = NSMenuItem(title: modeLabel, action: nil, keyEquivalent: "")
         modeItem.submenu = modeMenu
         menu.addItem(modeItem)
 
-        let transItem = NSMenuItem(title: "翻訳 \(s.translateShortcutDisplayString)", action: nil, keyEquivalent: "")
+        let transItem = NSMenuItem(title: "\(L10n.menuTranslation) \(s.translateShortcutDisplayString)", action: nil, keyEquivalent: "")
         transItem.isEnabled = false
         menu.addItem(transItem)
         menu.addItem(.separator())
 
         // ツール
         let meetingTitle = MeetingMode.shared.isActive
-            ? "議事録停止 (\(MeetingMode.shared.entryCount)件)"
-            : "議事録開始"
+            ? L10n.menuMeetingStop(count: MeetingMode.shared.entryCount)
+            : L10n.menuMeetingStart
         menu.addItem(withTitle: meetingTitle, action: #selector(toggleMeetingMode), keyEquivalent: "m")
-        menu.addItem(withTitle: "ファイル文字起こし…", action: #selector(openFileTranscription), keyEquivalent: "t")
+        menu.addItem(withTitle: L10n.menuFileTranscription, action: #selector(openFileTranscription), keyEquivalent: "t")
         menu.addItem(.separator())
 
-        menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(withTitle: "終了", action: #selector(quit), keyEquivalent: "q")
+        menu.addItem(withTitle: "📱 iPhone版を入手 (TestFlight)", action: #selector(openTestFlight), keyEquivalent: "")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: L10n.menuSettings, action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: L10n.menuQuit, action: #selector(quit), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
@@ -382,10 +439,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrustedWithOptions(opts)
         klog("Accessibility trusted: \(trusted)")
         if !trusted {
-            DispatchQueue.global().async {
-                while !AXIsProcessTrusted() { Thread.sleep(forTimeInterval: 1) }
-                klog("Accessibility granted")
-                DispatchQueue.main.async { self.reregisterHotkey() }
+            // Show alert guiding user to enable accessibility
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                alert.messageText = L10n.accessibilityAlertTitle
+                alert.informativeText = L10n.accessibilityRequiredAlert
+                alert.alertStyle = .informational
+                alert.addButton(withTitle: L10n.openSystemSettings)
+                alert.addButton(withTitle: L10n.later)
+                if alert.runModal() == .alertFirstButtonReturn {
+                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+            // Poll until granted (max 5 minutes, weak self)
+            DispatchQueue.global().async { [weak self] in
+                for _ in 0..<300 {
+                    if AXIsProcessTrusted() {
+                        klog("Accessibility granted")
+                        DispatchQueue.main.async { self?.reregisterHotkey() }
+                        return
+                    }
+                    Thread.sleep(forTimeInterval: 1)
+                }
+                klog("Accessibility polling timed out (5min)")
             }
         }
     }
@@ -913,6 +991,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                          .replacingOccurrences(of: "\r", with: "")
                          .trimmingCharacters(in: .whitespaces)
 
+        // 空や無意味な認識結果はスキップ（ノイズ誤認識防止）
+        if cleaned.isEmpty || cleaned.count <= 1 || cleaned.allSatisfy({ $0.isPunctuation || $0.isWhitespace || $0 == "." || $0 == "。" }) {
+            klog("handleRecognitionResult: skipping empty/noise result: '\(cleaned)'")
+            overlay?.hide()
+            postRecognitionCleanup()
+            return
+        }
+
         // フィラーワード除去（えー、あの、えっと等）
         let defillered: String
         if AppSettings.shared.fillerRemovalEnabled {
@@ -960,22 +1046,57 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Agent mode: detect and execute voice commands instead of typing
-        if AppSettings.shared.agentModeEnabled, let command = AgentMode.shared.detectCommand(formatted) {
-            klog("Agent: detected command — \(command.description)")
-            if !isMeetingAutoRecording { overlay?.show(state: .recognizing) }
-            AgentMode.shared.execute(command) { [weak self] result in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    self.overlay?.hide()
-                    klog("Agent result: '\(result)'")
-                    HistoryStore.shared.add("[\(command.description)] \(result)")
-                    self.sendNotification(text: result)
-                    self.postRecognitionCleanup()
+        if AppSettings.shared.agentModeEnabled {
+            // まず高速文字列マッチ
+            if let command = AgentMode.shared.detectCommand(formatted) {
+                klog("Agent: detected command (fast) — \(command.description)")
+                if !isMeetingAutoRecording { overlay?.show(state: .recognizing) }
+                AgentMode.shared.execute(command) { [weak self] result in
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        self.overlay?.hide()
+                        klog("Agent result: '\(result)'")
+                        HistoryStore.shared.add("[\(command.description)] \(result)")
+                        self.sendNotification(text: result)
+                        self.postRecognitionCleanup()
+                    }
                 }
+                return
             }
-            return
+            // 文字列マッチで検出できない場合 → LLMインテント判定
+            if AppSettings.shared.voiceControlEnabled {
+                if !isMeetingAutoRecording { overlay?.show(state: .recognizing) }
+                AgentMode.shared.detectCommandAsync(formatted) { [weak self] command in
+                    guard let self else { return }
+                    if let command {
+                        klog("Agent: detected command (LLM) — \(command.description)")
+                        AgentMode.shared.execute(command) { [weak self] result in
+                            DispatchQueue.main.async {
+                                guard let self else { return }
+                                self.overlay?.hide()
+                                klog("Agent result: '\(result)'")
+                                HistoryStore.shared.add("[\(command.description)] \(result)")
+                                self.sendNotification(text: result)
+                                self.postRecognitionCleanup()
+                            }
+                        }
+                    } else {
+                        // LLMもコマンドと判定しなかった → 通常テキスト入力にフォールバック
+                        klog("Agent: LLM said not a command, falling back to text input")
+                        self.overlay?.hide()
+                        self.handleRecognitionAsText(formatted, profile: profile)
+                    }
+                }
+                return
+            }
         }
 
+        handleRecognitionAsText(formatted, profile: profile)
+    }
+
+    /// 通常のテキスト入力処理（エージェントモードで非コマンドと判定された場合のフォールバック）
+    private func handleRecognitionAsText(_ formatted: String, profile: AppProfile?) {
+        let recordingDuration = recordingStart.map { Date().timeIntervalSince($0) } ?? 0
         // Quick Translation mode: force LLM to translate regardless of current mode
         let instruction: String
         if isTranslateMode {
@@ -1058,7 +1179,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if selectedText.isEmpty {
             klog("CommandMode: no selected text")
             overlay?.hide()
-            sendNotification(text: "テキストを選択してからコマンドを使ってください")
+            sendNotification(text: L10n.selectTextFirst)
             postRecognitionCleanup()
             return
         }
@@ -1384,7 +1505,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openFileTranscription() {
         let panel = NSOpenPanel()
-        panel.title = "文字起こしするファイルを選択"
+        panel.title = L10n.fileTranscriptionTitle
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         if #available(macOS 12.0, *) {
@@ -1412,14 +1533,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "声 Koe"
         alert.informativeText = """
-        Mac で最も速い日本語音声入力
+        \(L10n.aboutTagline)
 
-        バージョン \(version) (Build \(build))
-        エンジン: \(engine.displayName)
-        モデル: \(model)
+        \(L10n.labelVersion) \(version) (Build \(build))
+        \(L10n.sectionEngine): \(engine.displayName)
+        \(L10n.labelModel): \(model)
 
         whisper.cpp + Metal GPU
-        完全ローカル処理
+        \(L10n.aboutLocalProcessing)
 
         © 2026 Yuki Hamada
         """
@@ -1495,6 +1616,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         up.post(tap: .cghidEventTap)
     }
 
+    @objc private func openTestFlight() {
+        if let url = URL(string: "https://testflight.apple.com/join/koe-voice") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     @objc private func quit() {
         NSApplication.shared.terminate(nil)
     }
@@ -1520,16 +1647,49 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
     var onStreamingText: ((String) -> Void)?
     var onCommand: ((String) -> Void)?
 
+    /// 4-digit PIN for pairing authentication
+    private(set) var pairingPIN: String = ""
+    /// Peer display names that have been authenticated via PIN
+    private var pairedPeerNames: Set<String> = {
+        let saved = UserDefaults.standard.stringArray(forKey: "koe_paired_peers") ?? []
+        return Set(saved)
+    }()
+
+    private func savePairedPeers() {
+        UserDefaults.standard.set(Array(pairedPeerNames), forKey: "koe_paired_peers")
+    }
+
+    private func generatePIN() -> String {
+        String(format: "%04d", Int.random(in: 0...9999))
+    }
+
     func start(onTextReceived: @escaping (String) -> Void) {
         self.onText = onTextReceived
         let s = MCSession(peer: peerID, securityIdentity: nil, encryptionPreference: .required)
         s.delegate = self
         session = s
-        let a = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: nil, serviceType: "koe-bridge")
+
+        // Generate a new PIN each time advertising starts
+        pairingPIN = generatePIN()
+        let discoveryInfo = ["pin": pairingPIN]
+
+        let a = MCNearbyServiceAdvertiser(peer: peerID, discoveryInfo: discoveryInfo, serviceType: "koe-bridge")
         a.delegate = self
         a.startAdvertisingPeer()
         advertiser = a
-        klog("IPhoneBridge: advertising")
+        klog("IPhoneBridge: advertising with PIN \(pairingPIN)")
+
+        // Show PIN as a user notification
+        showPINNotification()
+    }
+
+    private func showPINNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Koe ペアリングPIN"
+        content.body = "iPhoneから接続するには PIN: \(pairingPIN) を入力してください"
+        let request = UNNotificationRequest(identifier: "koe-pairing-pin", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        klog("IPhoneBridge: PIN notification posted")
     }
 
     func sendActiveApp(bundleID: String, name: String) {
@@ -1539,22 +1699,22 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
         try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
 
-    // MARK: - Screen Context (LLM-based)
+    // MARK: - Screen Context (OCR + LLM summary)
 
     var screenSharingEnabled = false
     private var screenTimer: Timer?
     private var isAnalyzing = false
+    private var lastOCRText: String = ""
+    private var lastSummary: String = ""
 
     func startScreenSharing() {
         guard !screenSharingEnabled else { return }
         screenSharingEnabled = true
-        // Analyze every 10 seconds (not streaming — LLM description)
         screenTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             self?.captureAndAnalyzeScreen()
         }
-        // First analysis immediately
         captureAndAnalyzeScreen()
-        klog("IPhoneBridge: screen context started")
+        klog("IPhoneBridge: screen context started (OCR+LLM)")
     }
 
     func stopScreenSharing() {
@@ -1567,37 +1727,210 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
     private func captureAndAnalyzeScreen() {
         guard let session, !session.connectedPeers.isEmpty, !isAnalyzing else { return }
 
-        // Get window list info (no screen recording permission needed)
-        var context = ""
-        if let app = NSWorkspace.shared.frontmostApplication {
-            context += "アプリ: \(app.localizedName ?? "不明")\n"
+        // 1. スクリーンショットを取得
+        let cgImage = captureScreenImage()
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "不明"
+        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+
+        // 即座にウィンドウタイトルベースのコンテキスト + フォールバック提案を送信
+        let windowContext = collectWindowContext(appName: appName)
+        if !windowContext.isEmpty {
+            sendScreenContext("[\(appName)] \(windowContext)")
+            sendSuggestions(generateFallbackSuggestions(appName: appName, bundleID: bundleID))
+            klog("IPhoneBridge: sent immediate context + suggestions for \(appName)")
         }
 
-        // Get window titles from accessibility (if available)
-        if let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
-            var titles: [String] = []
-            for win in windows.prefix(5) {
-                if let name = win[kCGWindowName as String] as? String, !name.isEmpty,
-                   let owner = win[kCGWindowOwnerName as String] as? String {
-                    titles.append("[\(owner)] \(name)")
+        if cgImage == nil {
+            klog("IPhoneBridge: screenshot failed, window-title-only mode")
+            return
+        }
+
+        // 2. Vision OCR でテキスト抽出（LLMで上書き）
+        isAnalyzing = true
+        performOCR(on: cgImage!) { [weak self] ocrText in
+            guard let self else { return }
+
+            // 3. 前回と同じならスキップ
+            let trimmed = ocrText.trimmingCharacters(in: .whitespacesAndNewlines)
+            klog("IPhoneBridge: OCR \(trimmed.count) chars for \(appName)")
+            if trimmed.isEmpty {
+                self.isAnalyzing = false
+                klog("IPhoneBridge: OCR empty, using window titles fallback")
+                let context = self.collectWindowContext(appName: appName)
+                if !context.isEmpty && context != self.lastOCRText {
+                    self.lastOCRText = context
+                    DispatchQueue.main.async {
+                        self.sendScreenContext("[\(appName)] \(context)")
+                        self.sendSuggestions(self.generateFallbackSuggestions(appName: appName, bundleID: bundleID))
+                    }
                 }
+                return
             }
-            if !titles.isEmpty {
-                context += "ウィンドウ:\n" + titles.joined(separator: "\n")
+            if trimmed == self.lastOCRText {
+                self.isAnalyzing = false
+                klog("IPhoneBridge: screen unchanged, skip LLM")
+                return
+            }
+            self.lastOCRText = trimmed
+            let ocrSnippet = String(trimmed.prefix(2000))
+
+            // 即座にフォールバック提案を送信（LLM結果は後から上書き）
+            DispatchQueue.main.async {
+                let quickContext = "[\(appName)] \(String(trimmed.prefix(200)))"
+                self.sendScreenContext(quickContext)
+                self.sendSuggestions(self.generateFallbackSuggestions(appName: appName, bundleID: bundleID))
+                klog("IPhoneBridge: sent quick context + fallback suggestions")
+            }
+
+            // 4. LLM で要約 + 提案を同時生成（上書き）
+            let prompt = """
+            以下はMacの画面「\(appName)」をOCRで読み取ったテキストです。2つの出力をしてください。
+
+            【要約】画面の状況を200文字以内で日本語で簡潔に説明。重要な情報（URL、ファイル名、エラー等）を含む。
+            【提案】ユーザーが次にやりそうなこと・入力しそうなテキストを3つ提案。各提案は短い文（タップして即入力できるもの）。
+
+            出力形式（厳守）:
+            SUMMARY: （要約テキスト）
+            SUGGEST: （提案1）
+            SUGGEST: （提案2）
+            SUGGEST: （提案3）
+
+            ---
+            \(ocrSnippet)
+            """
+
+            LLMProcessor.shared.processScreenContext(prompt: prompt) { [weak self] response in
+                guard let self else { return }
+                self.isAnalyzing = false
+
+                let result = response.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !result.isEmpty, result != prompt else {
+                    let fallback = "[\(appName)] \(String(trimmed.prefix(200)))"
+                    self.sendScreenContext(fallback)
+                    self.sendSuggestions(self.generateFallbackSuggestions(appName: appName, bundleID: bundleID))
+                    return
+                }
+
+                // パース: SUMMARY: と SUGGEST: を分離
+                var summary = ""
+                var suggestions: [String] = []
+                for line in result.components(separatedBy: "\n") {
+                    let l = line.trimmingCharacters(in: .whitespaces)
+                    if l.hasPrefix("SUMMARY:") {
+                        summary = String(l.dropFirst("SUMMARY:".count)).trimmingCharacters(in: .whitespaces)
+                            .replacingOccurrences(of: "\u{FFFD}", with: "").replacingOccurrences(of: "��", with: "")
+                    } else if l.hasPrefix("SUGGEST:") {
+                        var s = String(l.dropFirst("SUGGEST:".count)).trimmingCharacters(in: .whitespaces)
+                        s = s.replacingOccurrences(of: "\u{FFFD}", with: "").replacingOccurrences(of: "��", with: "")
+                        if !s.isEmpty { suggestions.append(s) }
+                    }
+                }
+
+                // パース失敗時はフォールバック
+                if summary.isEmpty { summary = String(result.prefix(200)) }
+                if suggestions.isEmpty { suggestions = self.generateFallbackSuggestions(appName: appName, bundleID: bundleID) }
+
+                self.lastSummary = summary
+                klog("IPhoneBridge: summary → \(summary.prefix(60)) | \(suggestions.count) suggestions")
+                self.sendScreenContext(summary)
+                self.sendSuggestions(suggestions)
             }
         }
+    }
 
-        guard !context.isEmpty else { return }
+    /// アプリに応じたフォールバック提案
+    private func generateFallbackSuggestions(appName: String, bundleID: String) -> [String] {
+        switch bundleID {
+        case let b where b.contains("slack"):
+            return ["了解です", "確認します", "ありがとうございます"]
+        case let b where b.contains("mail"):
+            return ["ご確認よろしくお願いいたします", "承知しました", "お忙しいところ恐れ入りますが"]
+        case let b where b.contains("terminal") || b.contains("iterm"):
+            return ["git status", "git diff", "git log --oneline -10"]
+        case let b where b.contains("xcode"):
+            return ["// TODO: ", "Command+B でビルド", "Command+R で実行"]
+        case let b where b.contains("safari") || b.contains("chrome") || b.contains("firefox"):
+            return ["検索する", "新しいタブを開く", "ブックマークに追加"]
+        case let b where b.contains("notes"):
+            return ["---", "## ", "- [ ] "]
+        default:
+            return ["了解", "確認します", "ありがとう"]
+        }
+    }
 
-        // Send raw context to iPhone (no LLM needed — just window info)
-        let msg: [String: String] = ["type": "screen_context", "text": context]
+    private func sendScreenContext(_ text: String) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg: [String: String] = ["type": "screen_context", "text": text]
         guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
         try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
 
+    /// ウィンドウタイトルからコンテキスト収集（スクショ取れない場合のフォールバック）
+    private func collectWindowContext(appName: String) -> String {
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return "" }
+        var titles: [String] = []
+        for win in windows.prefix(8) {
+            if let name = win[kCGWindowName as String] as? String, !name.isEmpty,
+               let owner = win[kCGWindowOwnerName as String] as? String {
+                titles.append("[\(owner)] \(name)")
+            }
+        }
+        return titles.joined(separator: "\n")
+    }
+
+    private func sendSuggestions(_ suggestions: [String]) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg: [String: Any] = ["type": "suggestions", "items": suggestions]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
+    /// screencaptureコマンド経由で確実にキャプチャ
+    private func captureScreenImage() -> CGImage? {
+        let tmpPath = "/tmp/koe_bridge_capture.png"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", tmpPath]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch { return nil }
+        guard let provider = CGDataProvider(url: URL(fileURLWithPath: tmpPath) as CFURL),
+              let image = CGImage(pngDataProviderSource: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent) else { return nil }
+        try? FileManager.default.removeItem(atPath: tmpPath)
+        return image
+    }
+
+    /// Vision Framework でOCR
+    private func performOCR(on image: CGImage, completion: @escaping (String) -> Void) {
+        let request = VNRecognizeTextRequest { request, error in
+            guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                completion(""); return
+            }
+            let text = observations.compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+            completion(text)
+        }
+        request.recognitionLevel = .accurate
+        request.recognitionLanguages = ["ja", "en"]
+        request.usesLanguageCorrection = true
+
+        DispatchQueue.global(qos: .utility).async {
+            let handler = VNImageRequestHandler(cgImage: image, options: [:])
+            try? handler.perform([request])
+        }
+    }
+
     func session(_ s: MCSession, peer: MCPeerID, didChange state: MCSessionState) {
         klog("IPhoneBridge: \(peer.displayName) \(state == .connected ? "connected" : "disconnected")")
-        // Screen sharing is opt-in (beta) — don't auto-start
+        DispatchQueue.main.async {
+            if state == .connected {
+                self.startScreenSharing()
+            } else if state == .notConnected && s.connectedPeers.isEmpty {
+                self.stopScreenSharing()
+            }
+        }
     }
     var onBackspace: ((Int) -> Void)?
 
@@ -1623,6 +1956,10 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
                       let dx = json["dx"] as? Double,
                       let dy = json["dy"] as? Double {
                 self.handleMouseMove(dx: dx, dy: dy)
+            } else if type == "toggle_agent", let enabled = json["enabled"] as? Bool {
+                AppSettings.shared.agentModeEnabled = enabled
+                AppSettings.shared.voiceControlEnabled = enabled
+                klog("IPhoneBridge: agent mode \(enabled ? "ON" : "OFF") (from iPhone)")
             }
         }
     }
@@ -1631,8 +1968,29 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
     func session(_ s: MCSession, didFinishReceivingResourceWithName: String, fromPeer: MCPeerID, at: URL?, withError: Error?) {}
     func advertiser(_ a: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peer: MCPeerID,
                     withContext: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
-        klog("IPhoneBridge: accepting \(peer.displayName)")
-        invitationHandler(true, session)
+        let peerName = peer.displayName
+
+        // Already paired devices reconnect automatically
+        if pairedPeerNames.contains(peerName) {
+            klog("IPhoneBridge: auto-accepting previously paired peer '\(peerName)'")
+            invitationHandler(true, session)
+            return
+        }
+
+        // Validate PIN from context data
+        if let contextData = withContext,
+           let contextJSON = try? JSONSerialization.jsonObject(with: contextData) as? [String: String],
+           let receivedPIN = contextJSON["pin"],
+           receivedPIN == pairingPIN {
+            klog("IPhoneBridge: PIN matched for '\(peerName)', accepting")
+            pairedPeerNames.insert(peerName)
+            savePairedPeers()
+            invitationHandler(true, session)
+        } else {
+            let receivedPIN = withContext.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: String] }?["pin"] ?? "(none)"
+            klog("IPhoneBridge: PIN mismatch for '\(peerName)' (received: \(receivedPIN), expected: \(pairingPIN)), rejecting")
+            invitationHandler(false, nil)
+        }
     }
     func advertiser(_ a: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: Error) {}
 

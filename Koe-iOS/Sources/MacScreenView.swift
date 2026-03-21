@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct MacScreenView: View {
     @ObservedObject private var macBridge = MacBridge.shared
@@ -34,7 +35,7 @@ struct MacScreenView: View {
                             // Screen context from LLM
                             if !macBridge.screenContext.isEmpty {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Label("画面の状況", systemImage: "eye")
+                                    Label(L10n.screenStatus, systemImage: "eye")
                                         .font(.caption.weight(.medium))
                                         .foregroundStyle(.orange)
 
@@ -49,15 +50,45 @@ struct MacScreenView: View {
                                 HStack(spacing: 8) {
                                     ProgressView()
                                         .tint(.orange)
-                                    Text("画面を解析中...")
+                                    Text(L10n.analyzingScreen)
                                         .foregroundStyle(.secondary)
                                 }
                                 .padding(16)
                             }
 
+                            // Suggestion chips
+                            if !macBridge.suggestions.isEmpty {
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Label(L10n.nextAction, systemImage: "sparkles")
+                                        .font(.caption.weight(.medium))
+                                        .foregroundStyle(.orange)
+
+                                    VStack(spacing: 6) {
+                                        ForEach(macBridge.suggestions, id: \.self) { suggestion in
+                                            Button {
+                                                MacBridge.shared.sendText(suggestion)
+                                                let gen = UIImpactFeedbackGenerator(style: .light)
+                                                gen.impactOccurred()
+                                            } label: {
+                                                Text(suggestion)
+                                                    .font(.body)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                    .padding(.horizontal, 14)
+                                                    .padding(.vertical, 10)
+                                                    .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                                                    .foregroundStyle(.white)
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                                .padding(16)
+                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+                            }
+
                             // Quick actions
                             VStack(alignment: .leading, spacing: 8) {
-                                Label("操作", systemImage: "hand.tap")
+                                Label(L10n.operations, systemImage: "hand.tap")
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(.orange)
 
@@ -65,12 +96,12 @@ struct MacScreenView: View {
                                     GridItem(.flexible()),
                                     GridItem(.flexible()),
                                 ], spacing: 8) {
-                                    actionButton("⌘C コピー", command: "copy")
-                                    actionButton("⌘V ペースト", command: "paste")
-                                    actionButton("⌘Z 取消", command: "undo")
-                                    actionButton("⌘Tab 切替", command: "nextTab")
-                                    actionButton("⌘W 閉じる", command: "closeWindow")
-                                    actionButton("Space 再生", command: "space")
+                                    actionButton(L10n.copyAction, command: "copy")
+                                    actionButton(L10n.pasteAction, command: "paste")
+                                    actionButton(L10n.undoAction, command: "undo")
+                                    actionButton(L10n.switchTab, command: "nextTab")
+                                    actionButton(L10n.closeWindow, command: "closeWindow")
+                                    actionButton(L10n.spacePlay, command: "space")
                                 }
                             }
                             .padding(16)
@@ -79,7 +110,7 @@ struct MacScreenView: View {
                             // Active app info
                             if !macBridge.activeAppName.isEmpty {
                                 HStack {
-                                    Text("アクティブ:")
+                                    Text(L10n.active)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                     Text(macBridge.activeAppName)
@@ -96,7 +127,7 @@ struct MacScreenView: View {
                         Image(systemName: "desktopcomputer")
                             .font(.system(size: 48))
                             .foregroundStyle(.gray)
-                        Text("Macに接続すると\n画面の状況が表示されます")
+                        Text(L10n.macDisconnectedMessage)
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.gray)
                     }

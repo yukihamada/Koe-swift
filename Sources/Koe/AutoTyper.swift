@@ -170,17 +170,23 @@ class AutoTyper {
 
     // MARK: - CGEvent Key Simulation (アクセシビリティ必要)
 
+    /// キー操作専用キュー（メインスレッドをブロックしない）
+    private static let keyQueue = DispatchQueue(label: "com.yuki.koe.keyEvents", qos: .userInteractive)
+
     private func deleteBackward(count: Int) {
-        let src = CGEventSource(stateID: .hidSystemState)
-        for _ in 0..<count {
-            guard
-                let down = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Delete), keyDown: true),
-                let up   = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Delete), keyDown: false)
-            else { continue }
-            down.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.003)
-            up.post(tap: .cghidEventTap)
-            Thread.sleep(forTimeInterval: 0.003)
+        let clamped = min(count, 500)
+        Self.keyQueue.sync {
+            let src = CGEventSource(stateID: .hidSystemState)
+            for _ in 0..<clamped {
+                guard
+                    let down = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Delete), keyDown: true),
+                    let up   = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_Delete), keyDown: false)
+                else { continue }
+                down.post(tap: .cghidEventTap)
+                usleep(3000) // 3ms — メインスレッドをブロックしない
+                up.post(tap: .cghidEventTap)
+                usleep(3000)
+            }
         }
     }
 
@@ -193,7 +199,7 @@ class AutoTyper {
         down.flags = flags
         up.flags   = flags
         down.post(tap: .cghidEventTap)
-        Thread.sleep(forTimeInterval: 0.012)
+        usleep(12000) // 12ms
         up.post(tap: .cghidEventTap)
     }
 }

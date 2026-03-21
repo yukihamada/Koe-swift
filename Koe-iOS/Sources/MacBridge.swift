@@ -16,19 +16,40 @@ final class MacBridge: NSObject, ObservableObject {
     @Published var activeAppBundleID: String = ""
     @Published var screenImage: UIImage?
     @Published var screenContext: String = ""
+    @Published var suggestions: [String] = []
+
+    /// Set to a peer when PIN entry is needed; observe this to show PIN alert
+    @Published var pendingPINPeer: MCPeerID?
+    /// The PIN advertised by the Mac (from discoveryInfo), shown as hint if desired
+    @Published var pendingPINHint: String = ""
 
     private let serviceType = "koe-bridge"
     private let myPeerID = MCPeerID(displayName: UIDevice.current.name)
     private var session: MCSession?
     private var browser: MCNearbyServiceBrowser?
 
+    /// Paired Mac display names persisted for auto-reconnect without PIN
+    private var pairedMacNames: Set<String> = {
+        let saved = UserDefaults.standard.stringArray(forKey: "koe_paired_macs") ?? []
+        return Set(saved)
+    }()
+
+    /// Temporarily stores discoveryInfo PIN per peer for use during invitation
+    private var discoveredPINs: [MCPeerID: String] = [:]
+
     private override init() {
         super.init()
+    }
+
+    private func savePairedMacs() {
+        UserDefaults.standard.set(Array(pairedMacNames), forKey: "koe_paired_macs")
     }
 
     func startBrowsing() {
         // 既存のセッション・ブラウザを停止してリソースリークを防止
         browser?.stopBrowsingForPeers()
+        browser?.delegate = nil
+        session?.delegate = nil
         session?.disconnect()
 
         let session = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .required)
@@ -41,9 +62,39 @@ final class MacBridge: NSObject, ObservableObject {
         browser.startBrowsingForPeers()
     }
 
-    func connect(to peer: MCPeerID) {
+    /// Connect to a peer, sending PIN as context data
+    func connect(to peer: MCPeerID, pin: String? = nil) {
         guard let browser, let session else { return }
-        browser.invitePeer(peer, to: session, withContext: nil, timeout: 10)
+        var contextData: Data? = nil
+        if let pin {
+            let context: [String: String] = ["pin": pin]
+            contextData = try? JSONSerialization.data(withJSONObject: context)
+        }
+        browser.invitePeer(peer, to: session, withContext: contextData, timeout: 10)
+    }
+
+    /// Called from UI after user enters the PIN displayed on Mac
+    func submitPIN(_ pin: String) {
+        guard let peer = pendingPINPeer else { return }
+        connect(to: peer, pin: pin)
+        // Mark as paired (Mac will reject if PIN is wrong; on next successful
+        // connection the peer stays in the set for auto-reconnect)
+        pairedMacNames.insert(peer.displayName)
+        savePairedMacs()
+        pendingPINPeer = nil
+        pendingPINHint = ""
+    }
+
+    /// Cancel pending PIN entry
+    func cancelPINEntry() {
+        pendingPINPeer = nil
+        pendingPINHint = ""
+    }
+
+    /// Clear all paired devices (useful for settings / debug)
+    func clearPairedDevices() {
+        pairedMacNames.removeAll()
+        savePairedMacs()
     }
 
     /// テキストをMacに送信（認識完了後）
@@ -58,6 +109,14 @@ final class MacBridge: NSObject, ObservableObject {
     func sendStreamingText(_ text: String) {
         guard let session, !session.connectedPeers.isEmpty else { return }
         let msg = ["type": "streaming_text", "text": text]
+        guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
+    }
+
+    /// Macのエージェントモードをトグル
+    func sendToggleAgent(enabled: Bool) {
+        guard let session, !session.connectedPeers.isEmpty else { return }
+        let msg: [String: Any] = ["type": "toggle_agent", "enabled": enabled]
         guard let data = try? JSONSerialization.data(withJSONObject: msg) else { return }
         try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
@@ -139,7 +198,21 @@ extension MacBridge: MCSessionDelegate {
     nonisolated func session(_ session: MCSession, peer peerID: MCPeerID,
                              didChange state: MCSessionState) {
         Task { @MainActor in
+            let wasConnected = self.isConnected
             self.isConnected = !session.connectedPeers.isEmpty
+            if state == .connected {
+                print("MacBridge: connected to \(peerID.displayName)")
+            } else if state == .notConnected && wasConnected {
+                print("MacBridge: disconnected from \(peerID.displayName), will retry in 3s")
+                // 切断時に3秒後に再接続を試行
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    guard let self, !self.isConnected else { return }
+                    if let peer = self.nearbyMacs.first(where: { $0.displayName == peerID.displayName }) {
+                        let pin = self.discoveredPINs[peer]
+                        self.connect(to: peer, pin: pin)
+                    }
+                }
+            }
         }
     }
     nonisolated func session(_ session: MCSession, didReceive data: Data, fromPeer: MCPeerID) {
@@ -175,6 +248,11 @@ extension MacBridge: MCSessionDelegate {
                 if let text = json["text"] as? String {
                     self.screenContext = text
                 }
+            } else if type == "suggestions" {
+                if let items = json["items"] as? [String] {
+                    self.suggestions = items
+                    print("MacBridge: received \(items.count) suggestions: \(items)")
+                }
             }
         }
     }
@@ -189,17 +267,37 @@ extension MacBridge: MCSessionDelegate {
 extension MacBridge: MCNearbyServiceBrowserDelegate {
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID,
                              withDiscoveryInfo info: [String: String]?) {
-        // Macが見つかったら自動接続を試みる
+        let pin = info?["pin"]
         Task { @MainActor in
             if !self.nearbyMacs.contains(peerID) {
                 self.nearbyMacs.append(peerID)
             }
-            self.connect(to: peerID)
+            // Store the advertised PIN for this peer
+            if let pin {
+                self.discoveredPINs[peerID] = pin
+            }
+
+            // Skip if already connected
+            if self.isConnected {
+                return
+            }
+
+            // Previously paired devices auto-connect without PIN
+            if self.pairedMacNames.contains(peerID.displayName) {
+                print("MacBridge: auto-connecting to paired Mac '\(peerID.displayName)'")
+                self.connect(to: peerID, pin: pin)
+            } else {
+                // New device: prompt user for PIN
+                print("MacBridge: new Mac '\(peerID.displayName)' found, requesting PIN")
+                self.pendingPINPeer = peerID
+                self.pendingPINHint = pin ?? ""
+            }
         }
     }
     nonisolated func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
         Task { @MainActor in
             self.nearbyMacs.removeAll { $0 == peerID }
+            self.discoveredPINs.removeValue(forKey: peerID)
         }
     }
     nonisolated func browser(_ browser: MCNearbyServiceBrowser,

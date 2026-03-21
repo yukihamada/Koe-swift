@@ -35,7 +35,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.mac
         INFOPLIST_FILE: Info-macOS.plist
-        MARKETING_VERSION: "2.7.1"
+        MARKETING_VERSION: "2.8.0"
         CURRENT_PROJECT_VERSION: "1"
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         ARCHS: "arm64"

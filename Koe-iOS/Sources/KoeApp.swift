@@ -30,7 +30,9 @@ struct KoeApp: App {
 
 struct MainTabView: View {
     @ObservedObject private var appState = AppState.shared
+    @ObservedObject private var macBridge = MacBridge.shared
     @AppStorage("koe_screen_context") private var screenContextEnabled = false
+    @StateObject private var sharedRecorder = RecordingManager()
 
     var body: some View {
         TabView(selection: $appState.selectedTab) {
@@ -41,42 +43,28 @@ struct MainTabView: View {
                 }
                 .tag(0)
 
-            if screenContextEnabled {
+            if screenContextEnabled && macBridge.isConnected {
                 MacScreenView()
                     .tabItem {
                         Image(systemName: "display")
-                        Text("Screen")
+                        Text("Mac")
                     }
                     .tag(10)
             }
 
-            SolunaView()
+            HistoryView(recorder: sharedRecorder)
                 .tabItem {
-                    Image(systemName: "dot.radiowaves.left.and.right")
-                    Text("Soluna")
+                    Image(systemName: "clock")
+                    Text("履歴")
                 }
                 .tag(1)
 
-            SoundMemoryView()
+            MoreView()
                 .tabItem {
-                    Image(systemName: "brain")
-                    Text("Memory")
+                    Image(systemName: "ellipsis.circle")
+                    Text("More")
                 }
                 .tag(2)
-
-            ConversationView()
-                .tabItem {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                    Text("翻訳")
-                }
-                .tag(3)
-
-            AudioToolsView()
-                .tabItem {
-                    Image(systemName: "waveform")
-                    Text("Tools")
-                }
-                .tag(4)
         }
         .tint(.orange)
     }

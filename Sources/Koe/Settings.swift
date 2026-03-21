@@ -306,6 +306,9 @@ class AppSettings: ObservableObject {
     // Agent mode (voice commands)
     @Published var agentModeEnabled: Bool { didSet { ud.set(agentModeEnabled, forKey: "agentModeEnabled") } }
 
+    // Voice control (system control commands: volume, brightness, media, sleep, lock)
+    @Published var voiceControlEnabled: Bool { didSet { ud.set(voiceControlEnabled, forKey: "voiceControlEnabled") } }
+
     // iPhone Bridge
     @Published var iphoneBridgeLLM: Bool { didSet { ud.set(iphoneBridgeLLM, forKey: "iphoneBridgeLLM") } }
     @Published var iphoneBridgeAutoEnter: Bool { didSet { ud.set(iphoneBridgeAutoEnter, forKey: "iphoneBridgeAutoEnter") } }
@@ -489,6 +492,7 @@ class AppSettings: ObservableObject {
         llmMemorySaveMode = ud.object(forKey: "llmMemorySaveMode") as? Bool ?? false  // デフォルトOFF（常時読み込み）
         superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
         agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF
+        voiceControlEnabled = ud.object(forKey: "voiceControlEnabled") as? Bool ?? false  // デフォルトOFF
         iphoneBridgeLLM = ud.object(forKey: "iphoneBridgeLLM") as? Bool ?? true  // デフォルトON
         iphoneBridgeAutoEnter = ud.object(forKey: "iphoneBridgeAutoEnter") as? Bool ?? false  // デフォルトOFF
         streamingPreviewEnabled = ud.object(forKey: "streamingPreviewEnabled") as? Bool ?? false  // デフォルトOFF: Apple Speechでリアルタイム入力

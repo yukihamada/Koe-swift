@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 class LLMProcessor {
     static let shared = LLMProcessor()
@@ -68,6 +69,120 @@ class LLMProcessor {
         completion(text)
     }
 
+    /// VLM（Vision Language Model）: 画像 + テキストプロンプトで処理
+    /// スクリーンショットを直接VLMに送って画面の内容を理解させる
+    func processWithVision(image: CGImage, prompt: String, completion: @escaping (String) -> Void) {
+        let s = AppSettings.shared
+
+        // 画像をJPEG Base64に変換（品質70%でサイズ削減）
+        let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+        guard let tiff = nsImage.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) else {
+            klog("LLM(VLM): failed to encode image")
+            completion("")
+            return
+        }
+        let base64 = jpegData.base64EncodedString()
+        klog("LLM(VLM): image \(image.width)x\(image.height), base64 \(base64.count / 1024)KB")
+
+        // OpenAI Vision API 互換形式で送信
+        let messages: [[String: Any]] = [
+            ["role": "user", "content": [
+                ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(base64)"]],
+                ["type": "text", "text": prompt]
+            ] as [[String: Any]]]
+        ]
+
+        // リモートAPI（VLM対応モデル: gpt-4o, claude, qwen3-vl等）
+        var baseURL = "https://chatweb.ai/api/v1/chat/completions"
+        var model = "auto"
+        var apiKey = ""
+
+        if !s.llmProvider.requiresAPIKey || !s.llmAPIKey.isEmpty {
+            baseURL = s.llmProvider.baseURL
+            model = s.llmModel.isEmpty ? s.llmProvider.defaultModel : s.llmModel
+            apiKey = s.llmAPIKey
+        }
+
+        let body: [String: Any] = [
+            "model": model,
+            "messages": messages,
+            "max_tokens": 1024,
+            "temperature": 0.3
+        ]
+
+        guard let url = URL(string: baseURL),
+              let bodyData = try? JSONSerialization.data(withJSONObject: body) else {
+            klog("LLM(VLM): invalid URL or body")
+            completion("")
+            return
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if !apiKey.isEmpty {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = bodyData
+        request.timeoutInterval = 60
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let message = choices.first?["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                klog("LLM(VLM): API error: \(error?.localizedDescription ?? "parse failed")")
+                completion("")
+                return
+            }
+            let cleaned = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "\u{FFFD}", with: "")
+            klog("LLM(VLM): result \(cleaned.count) chars")
+            completion(cleaned)
+        }.resume()
+    }
+
+    /// 画面コンテキスト専用: llmEnabled/llmModeに関係なく、利用可能なLLMで処理
+    func processScreenContext(prompt: String, completion: @escaping (String) -> Void) {
+        guard !prompt.isEmpty else { completion(""); return }
+        let s = AppSettings.shared
+
+        // UTF-8文字化けをサニタイズするラッパー
+        let sanitizedCompletion: (String) -> Void = { result in
+            // マルチバイト途中切断による文字化け（U+FFFD）を除去
+            let cleaned = result.replacingOccurrences(of: "\u{FFFD}", with: "")
+                .replacingOccurrences(of: "��", with: "")
+            completion(cleaned)
+        }
+
+        // ローカルLLM
+        if s.llmUseLocal {
+            klog("LLM(screen): using local")
+            processLocalOnDemand(text: prompt, instruction: "要約と提案のみ出力", completion: sanitizedCompletion)
+            return
+        }
+
+        // リモートAPI
+        if !s.llmProvider.requiresAPIKey || !s.llmAPIKey.isEmpty {
+            klog("LLM(screen): using remote \(s.llmProvider.rawValue)")
+            if s.llmProvider == .anthropic {
+                processAnthropic(text: prompt, instruction: "要約と提案のみ出力", completion: sanitizedCompletion)
+            } else {
+                processRemote(text: prompt, instruction: "要約と提案のみ出力", completion: sanitizedCompletion)
+            }
+            return
+        }
+
+        // chatweb.ai (APIキー不要)
+        klog("LLM(screen): trying chatweb.ai fallback")
+        processRemoteWith(text: prompt, instruction: "要約と提案のみ出力",
+                          baseURL: "https://chatweb.ai/api/v1/chat/completions",
+                          model: "auto", apiKey: "", completion: sanitizedCompletion)
+    }
+
     // MARK: - Local (通常モード: 常時ロード / メモリ省略モード: 使用時にロード→即解放)
 
     private func processLocalOnDemand(text: String, instruction: String, completion: @escaping (String) -> Void) {
@@ -103,7 +218,7 @@ class LLMProcessor {
     private func runLocalGeneration(text: String, instruction: String, completion: @escaping (String) -> Void) {
         // thinking tokens (≈300) + 回答用（入力の2倍 or 最低200）
         let answerBudget = max(200, text.count)
-        let tokens = min(1024, 400 + answerBudget)
+        let tokens = min(2048, 400 + answerBudget)  // 画面コンテキスト用に2048まで拡大
         klog("LLM: local processing (maxTokens=\(tokens))...")
         LlamaContext.shared.generate(system: instruction, user: text, maxTokens: tokens) { [weak self] result in
             if let result, !result.isEmpty {

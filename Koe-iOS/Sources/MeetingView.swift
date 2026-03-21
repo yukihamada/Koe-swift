@@ -22,7 +22,7 @@ struct MeetingView: View {
 
             // Transcript
             if meeting.entries.isEmpty && !meeting.isRecording {
-                ContentUnavailableView("議事録", systemImage: "doc.text", description: Text("録音を開始すると文字起こしが表示されます"))
+                ContentUnavailableView(L10n.meetingNotes, systemImage: "doc.text", description: Text(L10n.meetingEmpty))
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -66,7 +66,7 @@ struct MeetingView: View {
             if meeting.isSummarizing {
                 HStack {
                     ProgressView()
-                    Text("要約を生成中…")
+                    Text(L10n.generatingSummary)
                         .font(.caption)
                 }
                 .padding(8)
@@ -80,7 +80,7 @@ struct MeetingView: View {
                     Button {
                         meeting.stopMeeting()
                     } label: {
-                        Label("停止", systemImage: "stop.fill")
+                        Label(L10n.stop, systemImage: "stop.fill")
                             .font(.headline)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 24)
@@ -91,7 +91,7 @@ struct MeetingView: View {
                     Button {
                         meeting.startMeeting()
                     } label: {
-                        Label("録音開始", systemImage: "record.circle")
+                        Label(L10n.startRecording, systemImage: "record.circle")
                             .font(.headline)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 24)
@@ -102,13 +102,13 @@ struct MeetingView: View {
 
                 if !meeting.entries.isEmpty && !meeting.isRecording {
                     ShareLink(item: meeting.summary.isEmpty ? meeting.fullTranscript : "\(meeting.summary)\n\n---\n\n\(meeting.fullTranscript)") {
-                        Label("共有", systemImage: "square.and.arrow.up")
+                        Label(L10n.share, systemImage: "square.and.arrow.up")
                     }
                 }
             }
             .padding()
         }
-        .navigationTitle("議事録")
+        .navigationTitle(L10n.meetingNotes)
         .navigationBarTitleDisplayMode(.inline)
     }
 

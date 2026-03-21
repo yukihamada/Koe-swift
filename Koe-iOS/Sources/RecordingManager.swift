@@ -22,11 +22,19 @@ final class RecordingManager: ObservableObject {
         didSet { UserDefaults.standard.set(continuousMode, forKey: "koe_continuous_mode") }
     }
     @Published var quickPhrases: [String] = UserDefaults.standard.stringArray(forKey: "koe_quick_phrases") ?? ["お世話になっております。", "承知いたしました。", "よろしくお願いいたします。"]
+    @Published var streamingText: String = ""
 
     private var audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let speechRecognizer: SFSpeechRecognizer?
+
+    // Streaming preview (Apple Speech running in parallel with Whisper)
+    private var streamingRecognitionRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var streamingRecognitionTask: SFSpeechRecognitionTask?
+    private var streamingPreviewEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "koe_streaming_preview")
+    }
 
     // whisper.cpp: オーディオスレッドで直接書き込む (ロックで保護)
     private let samplesLock = NSLock()
@@ -115,6 +123,9 @@ final class RecordingManager: ObservableObject {
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: hwFormat) { [weak self] buffer, _ in
             guard let self else { return }
 
+            // Feed audio to streaming preview recognizer
+            self.streamingRecognitionRequest?.append(buffer)
+
             // Audio level (軽量: vDSP は十分高速)
             var rms: Float = 0
             if let ch = buffer.floatChannelData?[0] {
@@ -154,6 +165,9 @@ final class RecordingManager: ObservableObject {
             statusText = "録音開始エラー"
             return
         }
+
+        // Start streaming preview after audio engine is running
+        startStreamingPreview()
 
         isRecording = true
         statusText = "録音中…"
@@ -312,6 +326,42 @@ final class RecordingManager: ObservableObject {
         }
     }
 
+    // MARK: - Streaming Preview (Apple Speech in parallel with Whisper)
+
+    private func startStreamingPreview() {
+        guard streamingPreviewEnabled, useWhisper,
+              let speechRecognizer, speechRecognizer.isAvailable else { return }
+
+        streamingRecognitionRequest = SFSpeechAudioBufferRecognitionRequest()
+        guard let request = streamingRecognitionRequest else { return }
+        request.shouldReportPartialResults = true
+        if #available(iOS 16, *) {
+            request.addsPunctuation = true
+        }
+        if speechRecognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
+        }
+
+        streamingText = ""
+        streamingRecognitionTask = speechRecognizer.recognitionTask(with: request) { [weak self] result, error in
+            guard let self else { return }
+            if let result {
+                DispatchQueue.main.async {
+                    self.streamingText = result.bestTranscription.formattedString
+                }
+            }
+            // Errors are expected when we end audio — just ignore
+        }
+    }
+
+    private func stopStreamingPreview() {
+        streamingRecognitionRequest?.endAudio()
+        streamingRecognitionTask?.cancel()
+        streamingRecognitionRequest = nil
+        streamingRecognitionTask = nil
+        streamingText = ""
+    }
+
     // MARK: - Stop
 
     func stopRecording() {
@@ -319,10 +369,21 @@ final class RecordingManager: ObservableObject {
         silenceTimer?.invalidate()
         silenceTimer = nil
         silenceStart = nil
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
+        stopStreamingPreview()
+        if audioEngine.isRunning {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+        }
         isRecording = false
         audioLevel = 0
+
+        // 安全策: 30秒後にステータスが「認識中」のままならリセット
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self else { return }
+            if self.statusText.contains("認識中") || self.statusText.contains("処理中") {
+                self.statusText = "タップして録音"
+            }
+        }
         endLiveActivity()
 
         if useWhisper {

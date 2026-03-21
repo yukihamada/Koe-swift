@@ -25,5 +25,20 @@ v1.8.3 adds `flash_attn`, Metal fusion/concurrency/graph-optimize, but on Apple 
 ## nohup launch doesn't capture NSLog output
 `open Koe.app` and `nohup ./Koe >> log 2>&1` don't capture NSLog output. Logs go to `~/Library/Logs/Koe/koe.log` (custom klog function) and system log. Use `log show --predicate 'process == "Koe"'` for NSLog.
 
+## リリース時にMARKETING_VERSIONを必ず更新する
+**Date**: 2026-03-20
+**解決済み**: `release.sh` が全バージョン参照を一括更新するように修正。
+- `Info.plist` (CFBundleShortVersionString + CFBundleVersion)
+- `project-macos.yml` (MARKETING_VERSION)
+- `Koe-macOS.xcodeproj/project.pbxproj` (MARKETING_VERSION x2)
+
+## 再インストール時にアクセシビリティ権限がリセットされる
+**Date**: 2026-03-21
+macOSはバイナリのCDHashが変わるとTCC権限をリセットする。対策:
+- `build.sh`: インストール前に `tccutil reset Accessibility com.yuki.koe`
+- `build-pkg.sh`: postinstall で同様にリセット
+- `AppDelegate.checkAccessibility()`: 起動時にプロンプト＋設定画面誘導＋ポーリングで権限付与後に自動再登録
+- **`checkAccessibility()` を `finishLaunch()` から呼ぶこと**（呼び忘れで機能しなかった前例あり）
+
 ## C string lifetime in Swift-to-C interop
 `(str as NSString).utf8String` creates a temporary that can be freed before the C function uses it. Use `strdup(str)` + `free()` after the C call completes for safe lifetime management.

@@ -30,91 +30,50 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Mac install promotion (when not connected)
-                if !macBridge.isConnected && !dismissedMacPromo {
-                    macPromoBanner
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                        .transition(.opacity)
-                }
-
-                // Mac connection status + agent toggle
+                // Minimal status bar
                 if macBridge.isConnected {
-                    VStack(spacing: 4) {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(.green)
-                                .frame(width: 6, height: 6)
-                            Text(L10n.connectedToMac)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if !macBridge.activeAppName.isEmpty {
-                                Text("· \(macBridge.activeAppName)")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Spacer()
-                            // Agent mode toggle
+                    HStack(spacing: 6) {
+                        Circle().fill(.green).frame(width: 6, height: 6)
+                        Text(macBridge.activeAppName.isEmpty ? "Mac" : macBridge.activeAppName)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        if agentModeEnabled {
                             Button {
                                 agentModeEnabled.toggle()
                                 MacBridge.shared.sendToggleAgent(enabled: agentModeEnabled)
-                                let gen = UIImpactFeedbackGenerator(style: .light)
-                                gen.impactOccurred()
                             } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: agentModeEnabled ? "brain.filled.head.profile" : "brain.head.profile")
-                                        .font(.caption)
-                                    Text(agentModeEnabled ? "Agent ON" : "Agent OFF")
-                                        .font(.caption2.weight(.medium))
-                                }
-                                .foregroundStyle(agentModeEnabled ? .orange : .secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(agentModeEnabled ? Color.orange.opacity(0.15) : Color.clear, in: Capsule())
-                            }
-                        }
-                        if llmEnabled && llmMode == "translate" {
-                            HStack(spacing: 4) {
-                                Text("\u{1f1ef}\u{1f1f5}\u{2192}\u{1f1fa}\u{1f1f8}")
-                                    .font(.caption2)
-                                Text(L10n.translateMode)
-                                    .font(.caption2)
-                                    .foregroundStyle(.blue)
+                                Text("Agent")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(.orange)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Color.orange.opacity(0.15), in: Capsule())
                             }
                         }
                     }
+                    .padding(.horizontal, 20)
                     .padding(.top, 8)
-                    .transition(.opacity)
-                }
-
-                // Suggestion chips (Mac → iPhone, 設定でオン時のみ)
-                if screenContextEnabled && !macBridge.suggestions.isEmpty {
-                    suggestionChips
-                        .transition(.opacity)
-                        .animation(.easeInOut, value: macBridge.suggestions)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
-                }
-
-                // Phrase palette chips
-                if phrasePaletteEnabled && macBridge.isConnected && !phraseManager.phrases.isEmpty {
-                    phraseChips
-                        .transition(.opacity)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
                 }
 
                 Spacer()
 
-                // Result text area — swipe left/right to switch Mac tabs
+                // Result — the only thing that matters
                 if !recorder.recognizedText.isEmpty {
                     resultCard
                         .transition(.scale(scale: 0.95).combined(with: .opacity))
                 }
 
-                // Mac tab switcher (swipe area when connected)
-                if macBridge.isConnected {
+                // Quick actions (only when Mac connected + result exists)
+                if macBridge.isConnected && !recorder.recognizedText.isEmpty {
                     macSwipeArea
+                }
+
+                // Phrase chips (compact, only when enabled + connected)
+                if phrasePaletteEnabled && macBridge.isConnected && !phraseManager.phrases.isEmpty {
+                    phraseChips
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
                 }
 
                 Spacer()

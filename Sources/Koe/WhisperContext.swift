@@ -178,10 +178,10 @@ final class WhisperContext {
                     ctx, ptr, Int32(samples.count),
                     langC, promptC,
                     nThreads,
-                    Int32(ws.bestOf),
+                    1,  // best_of=1 for speed (was ws.bestOf=5)
                     true,   // suppress_blank
                     ws.temperature,
-                    ws.temperatureInc,
+                    0.0,  // temperature_inc=0 for speed (was ws.temperatureInc=0.2)
                     ws.entropyThreshold,
                     -1.0,   // logprob_thold
                     0.6,    // no_speech_thold
@@ -228,7 +228,7 @@ final class WhisperContext {
                     ctx, ptr, Int32(samples.count),
                     langC, promptC,
                     nThreads,
-                    Int32(ws.bestOf),
+                    1,  // best_of=1 for speed (was ws.bestOf=5)
                     flagPtr,
                     &outputBuf, Int32(bufSize)
                 )

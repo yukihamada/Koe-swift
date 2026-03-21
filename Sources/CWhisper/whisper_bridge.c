@@ -37,8 +37,8 @@ int whisper_bridge_transcribe(
     params.print_special    = false;
     params.print_realtime   = false;
     params.print_timestamps = false;
-    params.no_timestamps    = false;
-    params.single_segment   = false;
+    params.no_timestamps    = true;
+    params.single_segment   = true;   // Speed: skip segment splitting
     params.suppress_blank   = suppress_blank;
     params.suppress_nst     = false;
     params.no_context       = false;

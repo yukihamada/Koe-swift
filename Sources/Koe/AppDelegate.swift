@@ -115,13 +115,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             finishLaunch()
         }
 
-        // アクセシビリティ権限がない場合 — 基本機能は動作するが自動ペーストにはアクセシビリティが必要
+        // アクセシビリティ権限がない場合のログ（設定画面は checkAccessibility() で処理）
         if !AXIsProcessTrusted() {
             klog("Accessibility not granted — clipboard-only mode (auto-paste disabled)")
-            // システム環境設定のアクセシビリティ画面を開く
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                NSWorkspace.shared.open(url)
-            }
         }
     }
 
@@ -435,11 +431,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Accessibility check
 
     private func checkAccessibility() {
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(opts)
+        let trusted = AXIsProcessTrusted()
         klog("Accessibility trusted: \(trusted)")
-        if !trusted {
-            // Show alert guiding user to enable accessibility
+        if trusted { return }
+
+        // システムのアクセシビリティプロンプトを1回だけ表示（kAXTrustedCheckOptionPrompt）
+        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(opts)
+
+        // カスタムアラートは初回インストール時のみ（UserDefaultsで制御）
+        let key = "koe_accessibility_alert_shown"
+        if !UserDefaults.standard.bool(forKey: key) {
+            UserDefaults.standard.set(true, forKey: key)
             DispatchQueue.main.async {
                 let alert = NSAlert()
                 alert.messageText = L10n.accessibilityAlertTitle
@@ -453,18 +456,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
-            // Poll until granted (max 5 minutes, weak self)
-            DispatchQueue.global().async { [weak self] in
-                for _ in 0..<300 {
-                    if AXIsProcessTrusted() {
-                        klog("Accessibility granted")
-                        DispatchQueue.main.async { self?.reregisterHotkey() }
-                        return
-                    }
-                    Thread.sleep(forTimeInterval: 1)
+        }
+
+        // バックグラウンドで権限付与を待つ（max 5分）
+        DispatchQueue.global().async { [weak self] in
+            for _ in 0..<300 {
+                if AXIsProcessTrusted() {
+                    klog("Accessibility granted")
+                    DispatchQueue.main.async { self?.reregisterHotkey() }
+                    return
                 }
-                klog("Accessibility polling timed out (5min)")
+                Thread.sleep(forTimeInterval: 1)
             }
+            klog("Accessibility polling timed out (5min)")
         }
     }
 

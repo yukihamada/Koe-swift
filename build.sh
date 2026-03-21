@@ -279,8 +279,8 @@ fi
 echo "→ Installing to /Applications and launching..."
 pkill -9 Koe 2>/dev/null
 sleep 0.5
-# Reset stale TCC entry so macOS re-prompts for new binary
-tccutil reset Accessibility com.yuki.koe 2>/dev/null || true
+# TCC reset は release.sh / build-pkg.sh でのみ実行（開発中は権限を保持）
+# tccutil reset Accessibility com.yuki.koe 2>/dev/null || true
 # Copy to /Applications
 rsync -a --delete "$APP/" /Applications/Koe.app/
 open /Applications/Koe.app

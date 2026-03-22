@@ -500,7 +500,7 @@ class AppSettings: ObservableObject {
         whisperEntropyThreshold = ud.object(forKey: "whisperEntropyThreshold") as? Double ?? 2.4
         whisperTemperature = ud.object(forKey: "whisperTemperature") as? Double ?? 0.0
         whisperTemperatureInc = ud.object(forKey: "whisperTemperatureInc") as? Double ?? 0.2
-        silenceAutoStopSeconds = ud.object(forKey: "silenceAutoStopSeconds") as? Double ?? 2.0
+        silenceAutoStopSeconds = ud.object(forKey: "silenceAutoStopSeconds") as? Double ?? 0.5
         whisperBeamSearch = ud.object(forKey: "whisperBeamSearch") as? Bool ?? false  // デフォルトOFF（速度優先、greedyで十分）
         whisperUseContext = ud.object(forKey: "whisperUseContext") as? Bool ?? true   // デフォルトON（長文の一貫性）
         diarizationEnabled = ud.object(forKey: "diarizationEnabled") as? Bool ?? false  // デフォルトOFF

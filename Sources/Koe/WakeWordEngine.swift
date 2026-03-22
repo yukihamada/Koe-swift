@@ -35,7 +35,7 @@ class WakeWordEngine {
     private let bufMax    = 24000  // 1.5s @ 16kHz (テンプレートと同じ長さ)
     private let minSamples = 6000  // 0.375s minimum before checking
     private var lastCheck  = Date()
-    private let checkEvery: TimeInterval = 0.25  // 250ms毎にチェック（高速化）
+    private let checkEvery: TimeInterval = 0.1   // 100ms毎にチェック（低レイテンシ）
     private var targetFmt: AVAudioFormat?         // キャッシュ: 毎回生成しない
     private(set) var isRunning = false
 

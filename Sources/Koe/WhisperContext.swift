@@ -152,11 +152,28 @@ final class WhisperContext {
                 return
             }
 
-            // 音量情報（デバッグ用）
-            let peak = samples.map { abs($0) }.max() ?? 0
-            let rms = sqrt(samples.map { $0 * $0 }.reduce(0, +) / Float(max(samples.count, 1)))
+            // 先頭・末尾の無音をトリム（認識サンプル数を削減して高速化）
+            let trimThreshold: Float = 0.002
+            let trimBlock = 160  // 10ms @ 16kHz
+            var trimStart = 0
+            while trimStart + trimBlock < samples.count {
+                let block = samples[trimStart..<(trimStart + trimBlock)]
+                if block.contains(where: { abs($0) > trimThreshold }) { break }
+                trimStart += trimBlock
+            }
+            var trimEnd = samples.count
+            while trimEnd - trimBlock > trimStart {
+                let block = samples[(trimEnd - trimBlock)..<trimEnd]
+                if block.contains(where: { abs($0) > trimThreshold }) { break }
+                trimEnd -= trimBlock
+            }
+            // 前後に0.1秒のマージンを残す
+            trimStart = max(0, trimStart - 1600)
+            trimEnd = min(samples.count, trimEnd + 1600)
+            samples = Array(samples[trimStart..<trimEnd])
+
             let nThreads = Int32(max(1, ProcessInfo.processInfo.activeProcessorCount - 2))
-            klog("WhisperContext: [bridge] lang=\(language) samples=\(samples.count) rms=\(String(format:"%.4f",rms)) peak=\(String(format:"%.4f",peak)) threads=\(nThreads)")
+            klog("WhisperContext: [bridge] lang=\(language) samples=\(samples.count) trimmed=\(trimStart)-\(trimEnd) threads=\(nThreads)")
             let start = CFAbsoluteTimeGetCurrent()
 
             // 音声がなければスキップ (生データで判定)
@@ -184,7 +201,7 @@ final class WhisperContext {
                     0.0,  // temperature_inc=0 for speed (was ws.temperatureInc=0.2)
                     ws.entropyThreshold,
                     -1.0,   // logprob_thold
-                    0.6,    // no_speech_thold
+                    0.8,    // no_speech_thold (高めで無音区間を素早くスキップ)
                     &outputBuf, Int32(bufSize)
                 )
             }

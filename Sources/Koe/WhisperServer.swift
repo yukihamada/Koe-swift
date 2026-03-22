@@ -122,7 +122,7 @@ class WhisperServer {
             guard remaining > 0 else {
                 klog("WhisperServer: timeout waiting for ready"); return
             }
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) {
                 if self.isAlive() {
                     klog("WhisperServer: ready")
                     DispatchQueue.main.async { onReady() }

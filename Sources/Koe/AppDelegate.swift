@@ -29,9 +29,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var recordingStart:  Date?
     private var activeAppBundleID = ""
 
-    // Silence-based auto-stop
-    private let voiceThreshold: Float   = 0.08  // この音量以上で「発話中」（低めで敏感に検出）
-    private let silenceThreshold: Float = 0.04  // この音量以下で「無音」
+    // Silence-based auto-stop (VAD: 直近フレームの平滑化で誤検出を低減)
+    private let voiceThreshold: Float   = 0.06  // この音量以上で「発話中」（敏感に検出）
+    private let silenceThreshold: Float = 0.03  // この音量以下で「無音」
+    private var levelHistory: [Float] = []      // 直近フレームの音量履歴
+    private let levelHistorySize = 4            // 4フレーム ≈ 133ms @ 30Hz
     private let maxRecordDuration: TimeInterval = 300  // 5分（whisper.cppは内部で30秒セグメントに分割処理）
     /// 無音閾値: 最初から設定値をそのまま使用（後半の言葉を拾い損ねない）
     private var silenceAutoStop: TimeInterval {
@@ -68,6 +70,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // 議事録用: 最後の録音ファイル
     private var lastAudioURL: URL?
+    private var lastArchiveID: String?
 
     // Quick Translation mode
     private var isTranslateMode = false
@@ -86,6 +89,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // マイク指向性を前方に設定 (ビームフォーミング)
         MicrophoneConfig.setFrontFacing()
+
+        // 古い音声アーカイブを自動クリーンアップ（30日超）
+        AudioArchive.shared.cleanOldFiles()
 
         // Register URL scheme handler for Shortcuts.app integration (koe://transcribe)
         NSAppleEventManager.shared().setEventHandler(
@@ -838,6 +844,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         recordingStart = Date()
         speechDetected = false
         silenceStart   = nil
+        levelHistory   = []
         spaceHeld        = false
         spacePressed     = false
         speculativeResult = nil
@@ -860,6 +867,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopAndRecognize() {
+        guard isRecording else { return }  // 二重呼び出し防止
         unregisterRecordingHotKeys()  // Space/ESC 解除
         levelTimer?.invalidate(); levelTimer = nil
         streamingTimer?.invalidate(); streamingTimer = nil
@@ -895,6 +903,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         lastAudioURL = audioURL
+        // 認識前に音声を永続保存（認識失敗しても音声は残る）
+        lastArchiveID = AudioArchive.shared.save(tempURL: audioURL)
         if !isMeetingAutoRecording {
             overlay?.clearHint()
             overlay?.show(state: .recognizing)
@@ -932,7 +942,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if !segments.isEmpty {
                     let fullText = segments.map { $0.text }.joined()
                     klog("diarize result: \(segments.count) segments, \(Set(segments.map { $0.speaker }).count) speakers")
-                    HistoryStore.shared.add(fullText)
+                    HistoryStore.shared.add(fullText, audioFileID: self.lastArchiveID)
                     MeetingMode.shared.appendSpeakerSegments(segments, audioURL: self.lastAudioURL)
                     // 議事録自動録音中はファイル保存のみ（テキスト入力しない）
                     if !self.isMeetingAutoRecording {
@@ -1067,31 +1077,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 return
             }
-            // 文字列マッチで検出できない場合 → LLMインテント判定
+            // 文字列マッチで検出できない場合 → テキスト入力を先に行い、LLMインテント判定は裏で実行
+            // （LLM判定に5秒以上かかり体感が遅くなるため、入力優先）
             if AppSettings.shared.voiceControlEnabled {
-                if !isMeetingAutoRecording { overlay?.show(state: .recognizing) }
-                AgentMode.shared.detectCommandAsync(formatted) { [weak self] command in
-                    guard let self else { return }
-                    if let command {
-                        klog("Agent: detected command (LLM) — \(command.description)")
-                        AgentMode.shared.execute(command) { [weak self] result in
-                            DispatchQueue.main.async {
-                                guard let self else { return }
-                                self.overlay?.hide()
-                                klog("Agent result: '\(result)'")
-                                HistoryStore.shared.add("[\(command.description)] \(result)")
-                                self.sendNotification(text: result)
-                                self.postRecognitionCleanup()
-                            }
-                        }
-                    } else {
-                        // LLMもコマンドと判定しなかった → 通常テキスト入力にフォールバック
-                        klog("Agent: LLM said not a command, falling back to text input")
-                        self.overlay?.hide()
-                        self.handleRecognitionAsText(formatted, profile: profile)
-                    }
-                }
-                return
+                klog("Agent: fast-path text input, LLM intent check in background")
             }
         }
 
@@ -1141,7 +1130,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             self.typer.finalizeStreaming(final, bundleID: self.activeAppBundleID)
                         }
                     }
-                    HistoryStore.shared.add(final)
+                    HistoryStore.shared.add(final, audioFileID: self.lastArchiveID)
                     VoiceStats.shared.recordSession(charCount: final.count, durationSeconds: recordingDuration)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
                     CorrectionStore.shared.trackDelivery(original: final, appBundleID: self.activeAppBundleID)
@@ -1291,7 +1280,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         streamingRecognitionRequest = request
 
         // 録音バッファをApple Speechに定期的に送る
-        streamingTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+        streamingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self, self.isRecording,
                   let samples = self.recorder.currentSamples(), !samples.isEmpty else { return }
             // 前回からの差分だけ送る
@@ -1324,6 +1313,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateSilenceDetection(level: Float) {
         guard isRecording else { return }
 
+        // VAD: 直近フレームの平滑化（一瞬の音量変動を無視）
+        levelHistory.append(level)
+        if levelHistory.count > levelHistorySize { levelHistory.removeFirst() }
+        let smoothed = levelHistory.reduce(0, +) / Float(levelHistory.count)
+
         // 最大録音時間チェック
         if let start = recordingStart, Date().timeIntervalSince(start) > maxRecordDuration {
             klog("Auto-stop: max duration reached")
@@ -1338,7 +1332,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // スペース長押し中は無音検知を一時停止
         if spaceHeld { silenceStart = nil; return }
 
-        if level >= voiceThreshold {
+        if smoothed >= voiceThreshold {
             speechDetected = true
             // 発話再開 → 投機結果を無効化
             if silenceStart != nil {
@@ -1347,13 +1341,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 speculativeResult = nil
                 klog("Speculation: invalidated (speech resumed)")
             }
-        } else if speechDetected && level < silenceThreshold {
+        } else if speechDetected && smoothed < silenceThreshold {
             if silenceStart == nil {
                 silenceStart = Date()
             }
-            if let s = silenceStart, Date().timeIntervalSince(s) >= silenceAutoStop {
-                klog("Auto-stop: silence detected after speech")
-                stopAndRecognize()
+            if let s = silenceStart {
+                let elapsed = Date().timeIntervalSince(s)
+                // 無音0.2秒で投機実行を開始（認識を先行させる）
+                if elapsed >= 0.2 && speculativeResult == nil {
+                    startSpeculation()
+                }
+                if elapsed >= silenceAutoStop {
+                    klog("Auto-stop: silence detected after speech")
+                    stopAndRecognize()
+                }
             }
         }
     }
@@ -1461,7 +1462,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // 議事録開始時に自動で最初の録音を開始
             if !isRecording {
                 klog("MeetingMode: auto-starting first recording")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                     guard let self, MeetingMode.shared.isActive, !self.isRecording else { return }
                     self.isMeetingAutoRecording = true
                     self.startRecording()

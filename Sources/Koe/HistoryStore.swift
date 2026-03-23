@@ -73,8 +73,27 @@ class HistoryStore: ObservableObject {
 
     func search(_ query: String) -> [HistoryEntry] {
         guard !query.isEmpty else { return entries }
-        let lowered = query.lowercased()
-        return entries.filter { $0.text.lowercased().contains(lowered) }
+        // 複数キーワードAND検索（スペース区切り）
+        let keywords = query.lowercased().split(separator: " ").map(String.init)
+        guard !keywords.isEmpty else { return entries }
+        return entries.filter { entry in
+            let text = entry.text.lowercased()
+            return keywords.allSatisfy { text.contains($0) }
+        }
+    }
+
+    /// 日付範囲で検索
+    func search(from: Date?, to: Date?) -> [HistoryEntry] {
+        entries.filter { entry in
+            if let from, entry.date < from { return false }
+            if let to, entry.date > to { return false }
+            return true
+        }
+    }
+
+    /// 音声付きエントリのみ
+    var entriesWithAudio: [HistoryEntry] {
+        entries.filter { $0.audioFileID != nil }
     }
 
     func toggleFavorite(id: UUID) {

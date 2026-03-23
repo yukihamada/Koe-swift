@@ -5,7 +5,7 @@ import Combine
 /// 議事録モード中のリアルタイム文字起こしウィンドウ
 class MeetingLiveWindow {
     private var window: NSWindow?
-    private let model = MeetingLiveModel()
+    let model = MeetingLiveModel()
     private var cancellables: [AnyCancellable] = []
 
     func show() {
@@ -45,10 +45,29 @@ class MeetingLiveWindow {
     }
 
     func appendText(_ text: String, speaker: Int? = nil) {
-        let entry = LiveEntry(text: text, speaker: speaker, timestamp: Date(), isImportant: false)
+        let entry = LiveEntry(text: text, speaker: speaker, timestamp: Date(), isImportant: false, translation: nil)
         model.entries.append(entry)
         // 自動スクロール
         model.scrollToBottom += 1
+
+        // リアルタイム翻訳（有効な場合）
+        if AppSettings.shared.translateTargetLang != AppSettings.shared.language {
+            let idx = model.entries.count - 1
+            translateAsync(text: text, index: idx)
+        }
+    }
+
+    private func translateAsync(text: String, index: Int) {
+        let targetLang = AppSettings.shared.translateTargetLang
+        let langName = targetLang.hasPrefix("ja") ? "日本語" : (targetLang.hasPrefix("en") ? "English" : targetLang)
+        let instruction = "以下のテキストを\(langName)に翻訳してください。翻訳のみ出力: \(text)"
+
+        LLMProcessor.shared.process(text: text, instruction: instruction) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self, index < self.model.entries.count, result != text else { return }
+                self.model.entries[index].translation = result
+            }
+        }
     }
 
     func markImportant() {
@@ -70,6 +89,7 @@ struct LiveEntry: Identifiable {
     let speaker: Int?
     let timestamp: Date
     var isImportant: Bool
+    var translation: String?
 }
 
 class MeetingLiveModel: ObservableObject {
@@ -160,9 +180,17 @@ struct MeetingLiveView: View {
                                         .cornerRadius(3)
                                 }
 
-                                Text(entry.text)
-                                    .font(.system(size: 12))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(entry.text)
+                                        .font(.system(size: 12))
+                                    if let translation = entry.translation {
+                                        Text(translation)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.blue.opacity(0.7))
+                                            .italic()
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
 
                                 if entry.isImportant {
                                     Image(systemName: "star.fill")

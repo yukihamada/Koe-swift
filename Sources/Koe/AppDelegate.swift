@@ -26,6 +26,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var carbonRerecognizeHotKeyRef: EventHotKeyRef?
     private var meetingOverlay: MeetingOverlayWindow?
     private var meetingLiveWindow: MeetingLiveWindow?
+    private var meetingChatWindow: MeetingChatWindow?
     private var levelTimer: Timer?
     private var isRecording      = false
     private var recordingStart:  Date?
@@ -1594,6 +1595,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // 議事録オーバーレイ非表示
             meetingOverlay?.hideMeeting()
+
+            // リアルタイムウィンドウのテキストからAIチャットを開く
+            if let entries = meetingLiveWindow?.model.entries, !entries.isEmpty {
+                let transcript = entries.map { e in
+                    let sp = e.speaker.map { "[話者\($0+1)] " } ?? ""
+                    return "\(sp)\(e.text)"
+                }.joined(separator: "\n")
+                if meetingChatWindow == nil { meetingChatWindow = MeetingChatWindow() }
+                meetingChatWindow?.show(transcript: transcript, title: "議事録")
+            }
             meetingLiveWindow?.hide()
             // 議事録停止時に録音中なら停止
             if isRecording {

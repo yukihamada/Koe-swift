@@ -11,6 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const PAGE: &str = include_str!("../index.html");
+const VS_NOTTA: &str = include_str!("../vs-notta.html");
 const OG_SVG: &str = include_str!("../og.svg");
 const OG_PNG: &[u8] = include_bytes!("../og.png");
 const INSTALL_SH: &str = include_str!("../install.sh");
@@ -219,6 +220,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(|| async { Html(PAGE) }))
+        .route("/vs-notta", get(|| async { Html(VS_NOTTA) }))
         .route("/og.svg", get(og_image_svg))
         .route("/og.png", get(og_image_png))
         .route("/install.sh", get(install_script))

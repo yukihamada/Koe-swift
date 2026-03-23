@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Koe vs Notta — 完全無料・ローカル処理の議事録AI | Nottaからの乗り換えガイド</title>
+<meta name="description" content="Nottaの月額料金にお悩みですか？Koeは完全無料・ローカル処理で同等以上の議事録機能を提供。Zoom/Teams対応、AI要約、話者分離を、クラウドに送信せずに実現。">
+<meta name="keywords" content="Notta 代替,Notta 無料,議事録 AI,文字起こし 無料,Zoom 議事録,Teams 文字起こし,ローカル AI,プライバシー,Koe">
+<meta property="og:title" content="Koe vs Notta — 月額0円で同等の議事録AI">
+<meta property="og:description" content="Nottaの代わりに。完全無料・ローカル処理・プライバシー完全保護の議事録AIツール。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://koe.elio.love/vs-notta">
+<meta property="og:image" content="https://koe.elio.love/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0a0a'/%3E%3Cg transform='translate(16,16)'%3E%3Crect x='-1' y='-9' width='2' height='18' rx='1' fill='url(%23g)'/%3E%3Crect x='-5' y='-6' width='2' height='12' rx='1' fill='url(%23g)' opacity='.8'/%3E%3Crect x='3' y='-7' width='2' height='14' rx='1' fill='url(%23g)' opacity='.85'/%3E%3Crect x='-9' y='-4' width='2' height='8' rx='1' fill='url(%23g)' opacity='.6'/%3E%3Crect x='7' y='-5' width='2' height='10' rx='1' fill='url(%23g)' opacity='.65'/%3E%3C/g%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32'%3E%3Cstop stop-color='%23ff3b30'/%3E%3Cstop offset='1' stop-color='%23ff9500'/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E">
+<meta name="theme-color" content="#0a0a0a">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;background:#0a0a0a;color:#e8e4df;line-height:1.7}
+a{color:#ff6b35;text-decoration:none}
+a:hover{text-decoration:underline}
+
+.hero{text-align:center;padding:80px 20px 60px;background:linear-gradient(180deg,#1a1008 0%,#0a0a0a 100%)}
+.hero h1{font-size:clamp(28px,5vw,48px);font-weight:700;margin-bottom:16px;background:linear-gradient(135deg,#ff6b35,#ffb347);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero .subtitle{font-size:clamp(16px,2.5vw,22px);color:#a09888;max-width:600px;margin:0 auto 32px}
+.hero .badge{display:inline-block;background:#1a1a1a;border:1px solid #333;border-radius:20px;padding:6px 16px;font-size:13px;color:#ff9500;margin-bottom:24px}
+
+.cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:24px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:14px 28px;border-radius:10px;font-size:16px;font-weight:600;transition:all .2s}
+.btn-primary{background:linear-gradient(135deg,#ff6b35,#ff9500);color:#fff}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(255,107,53,.3);text-decoration:none}
+.btn-secondary{background:#1a1a1a;border:1px solid #333;color:#e8e4df}
+.btn-secondary:hover{border-color:#ff6b35;text-decoration:none}
+
+.section{max-width:900px;margin:0 auto;padding:60px 20px}
+.section h2{font-size:28px;margin-bottom:32px;text-align:center}
+
+/* 比較テーブル */
+.compare{width:100%;border-collapse:collapse;margin:0 auto;font-size:15px}
+.compare th,.compare td{padding:14px 16px;text-align:left;border-bottom:1px solid #1a1a1a}
+.compare thead th{font-weight:600;color:#a09888;font-size:13px;text-transform:uppercase;letter-spacing:1px}
+.compare thead th:nth-child(2){color:#ff6b35}
+.compare thead th:nth-child(3){color:#666}
+.compare td:first-child{color:#a09888;font-weight:500}
+.compare td:nth-child(2){color:#e8e4df}
+.compare td:nth-child(3){color:#666}
+.win{color:#4ade80!important;font-weight:600}
+.lose{color:#666!important}
+.check{color:#4ade80}
+.cross{color:#ef4444}
+
+/* 特徴カード */
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:40px}
+.feature-card{background:#111;border:1px solid #1a1a1a;border-radius:12px;padding:24px;transition:border-color .2s}
+.feature-card:hover{border-color:#ff6b3540}
+.feature-card .icon{font-size:28px;margin-bottom:12px}
+.feature-card h3{font-size:17px;margin-bottom:8px;color:#e8e4df}
+.feature-card p{font-size:14px;color:#888;line-height:1.6}
+
+/* 料金比較 */
+.pricing{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:700px;margin:40px auto 0}
+.price-card{background:#111;border:1px solid #1a1a1a;border-radius:16px;padding:32px;text-align:center}
+.price-card.highlight{border-color:#ff6b35;position:relative}
+.price-card.highlight::before{content:'おすすめ';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#ff6b35,#ff9500);color:#fff;font-size:12px;font-weight:600;padding:4px 16px;border-radius:12px}
+.price-card .name{font-size:14px;color:#888;margin-bottom:8px}
+.price-card .price{font-size:36px;font-weight:700;margin-bottom:4px}
+.price-card .price span{font-size:16px;color:#888}
+.price-card .period{font-size:13px;color:#666;margin-bottom:20px}
+.price-card ul{list-style:none;text-align:left;font-size:14px}
+.price-card li{padding:6px 0;color:#a09888}
+.price-card li::before{content:'';display:inline-block;width:16px;height:16px;margin-right:8px;vertical-align:-2px;border-radius:50%}
+.price-card.highlight li::before{background:#4ade8020;box-shadow:inset 0 0 0 2px #4ade80}
+.price-card:not(.highlight) li::before{background:#66666620;box-shadow:inset 0 0 0 2px #666}
+
+/* 乗り換えステップ */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-top:40px}
+.step{text-align:center;padding:24px}
+.step .num{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;background:#ff6b3520;color:#ff6b35;font-weight:700;font-size:18px;margin-bottom:12px}
+.step h3{font-size:16px;margin-bottom:8px}
+.step p{font-size:14px;color:#888}
+
+/* FAQ */
+.faq{margin-top:40px}
+.faq-item{border-bottom:1px solid #1a1a1a;padding:20px 0}
+.faq-item summary{cursor:pointer;font-weight:600;font-size:16px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.faq-item summary::after{content:'+';font-size:20px;color:#ff6b35}
+.faq-item[open] summary::after{content:'-'}
+.faq-item p{margin-top:12px;color:#888;font-size:14px;line-height:1.7}
+
+/* CTA */
+.cta-section{text-align:center;padding:80px 20px;background:linear-gradient(180deg,#0a0a0a 0%,#1a1008 100%)}
+.cta-section h2{font-size:32px;margin-bottom:16px}
+.cta-section p{color:#888;max-width:500px;margin:0 auto 32px}
+
+footer{text-align:center;padding:40px 20px;color:#444;font-size:13px}
+footer a{color:#666}
+
+@media(max-width:600px){
+  .pricing{grid-template-columns:1fr}
+  .compare{font-size:13px}
+  .compare th,.compare td{padding:10px 8px}
+}
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="badge">Notta検討中のあなたへ</div>
+  <h1>月額0円で、Nottaと同じことができる。</h1>
+  <p class="subtitle">Koeは完全無料・完全ローカルの議事録AI。<br>会議の音声を文字起こし、要約、共有まで。データはあなたのMacから一切出ません。</p>
+  <div class="cta-row">
+    <a href="https://github.com/yukihamada/Koe-swift/releases/latest" class="btn btn-primary">Mac版を無料ダウンロード</a>
+    <a href="https://apps.apple.com/app/id6760352863" class="btn btn-secondary">iPhone版</a>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Koe vs Notta 機能比較</h2>
+  <table class="compare">
+    <thead>
+      <tr><th>機能</th><th>Koe</th><th>Notta</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>料金</td><td class="win">完全無料</td><td class="lose">月額1,700円〜</td></tr>
+      <tr><td>データの保存先</td><td class="win">あなたのMac/iPhone</td><td class="lose">クラウドサーバー</td></tr>
+      <tr><td>オフライン動作</td><td class="win"><span class="check">&#10003;</span> 完全対応</td><td><span class="cross">&#10007;</span></td></tr>
+      <tr><td>リアルタイム文字起こし</td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td></tr>
+      <tr><td>AI要約</td><td><span class="check">&#10003;</span> ローカルLLM</td><td><span class="check">&#10003;</span> クラウドAI</td></tr>
+      <tr><td>話者分離</td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td></tr>
+      <tr><td>Zoom/Teams音声キャプチャ</td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td></tr>
+      <tr><td>要約テンプレート</td><td class="win"><span class="check">&#10003;</span> 6種類</td><td>基本のみ</td></tr>
+      <tr><td>Slack/Notion連携</td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td></tr>
+      <tr><td>カレンダー連携</td><td><span class="check">&#10003;</span> 自動開始</td><td><span class="check">&#10003;</span></td></tr>
+      <tr><td>Appleリマインダー連携</td><td class="win"><span class="check">&#10003;</span> TODO自動登録</td><td><span class="cross">&#10007;</span></td></tr>
+      <tr><td>音声コマンド「ここ重要」</td><td class="win"><span class="check">&#10003;</span></td><td><span class="cross">&#10007;</span></td></tr>
+      <tr><td>議事録AIチャット</td><td class="win"><span class="check">&#10003;</span></td><td><span class="cross">&#10007;</span></td></tr>
+      <tr><td>電話の書き起こし</td><td class="win"><span class="check">&#10003;</span> iPhone</td><td><span class="cross">&#10007;</span></td></tr>
+      <tr><td>リアルタイム翻訳</td><td><span class="check">&#10003;</span></td><td><span class="check">&#10003;</span></td></tr>
+      <tr><td>どのアプリにも直接入力</td><td class="win"><span class="check">&#10003;</span></td><td><span class="cross">&#10007;</span></td></tr>
+      <tr><td>月間利用制限</td><td class="win">無制限</td><td class="lose">無料は月120分</td></tr>
+      <tr><td>オープンソース</td><td class="win"><span class="check">&#10003;</span></td><td><span class="cross">&#10007;</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="section">
+  <h2>Nottaユーザーが乗り換える3つの理由</h2>
+  <div class="features">
+    <div class="feature-card">
+      <div class="icon">&#128274;</div>
+      <h3>会議データが外に出ない</h3>
+      <p>Nottaはクラウドに音声を送信しますが、Koeは全てローカル処理。機密性の高い会議でも安心。GDPR・ISMS対応にも有利です。</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#128176;</div>
+      <h3>永久に0円</h3>
+      <p>Nottaは無料プランだと月120分まで。Koeは無制限・永久無料。チーム全員に導入してもコスト0円です。</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">&#9889;</div>
+      <h3>Nottaにない機能がある</h3>
+      <p>音声コマンド「ここ重要」、議事録AIチャット、6種類の要約テンプレート、Appleリマインダー連携、電話の書き起こし。Nottaにはない機能をKoeは無料で提供します。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>料金比較</h2>
+  <div class="pricing">
+    <div class="price-card highlight">
+      <div class="name">Koe</div>
+      <div class="price">&#165;0<span>/月</span></div>
+      <div class="period">永久無料・全機能利用可能</div>
+      <ul>
+        <li>無制限の文字起こし</li>
+        <li>AI要約（ローカル）</li>
+        <li>話者分離</li>
+        <li>Zoom/Teams対応</li>
+        <li>Slack/Notion連携</li>
+        <li>6種類の要約テンプレート</li>
+        <li>完全オフライン対応</li>
+        <li>電話の書き起こし</li>
+      </ul>
+    </div>
+    <div class="price-card">
+      <div class="name">Notta Pro</div>
+      <div class="price">&#165;1,700<span>/月</span></div>
+      <div class="period">年額&#165;13,900 (年払い)</div>
+      <ul>
+        <li>月1,800分の文字起こし</li>
+        <li>AI要約</li>
+        <li>話者分離</li>
+        <li>Zoom/Teams対応</li>
+        <li>Slack連携（有料のみ）</li>
+        <li>テンプレート（基本）</li>
+        <li>オフライン非対応</li>
+        <li>電話の書き起こし非対応</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Nottaからの乗り換え 3ステップ</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="num">1</div>
+      <h3>ダウンロード</h3>
+      <p>Mac版は1クリックでインストール。iPhone版はApp Storeから。</p>
+    </div>
+    <div class="step">
+      <div class="num">2</div>
+      <h3>初回設定</h3>
+      <p>Whisperモデルが自動ダウンロード。マイクとスクリーン録画の権限を許可するだけ。</p>
+    </div>
+    <div class="step">
+      <div class="num">3</div>
+      <h3>会議で使う</h3>
+      <p>&#x2325;&#x2318;M で議事録モード開始。Zoomの音声も自動キャプチャ。終了後にAI要約が自動生成。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>よくある質問</h2>
+  <div class="faq">
+    <details class="faq-item">
+      <summary>Nottaと同じ精度で文字起こしできますか？</summary>
+      <p>KoeはOpenAIが開発したWhisper（Large V3 Turbo）をローカルで実行します。Nottaと同等以上の認識精度があり、日本語特化モデル（Kotoba）も利用可能です。</p>
+    </details>
+    <details class="faq-item">
+      <summary>本当に無料ですか？有料プランはありますか？</summary>
+      <p>完全無料です。有料プランはありません。オープンソースで開発されており、今後もすべての機能を無料で提供します。</p>
+    </details>
+    <details class="faq-item">
+      <summary>Zoomの会議を文字起こしできますか？</summary>
+      <p>はい。議事録モード（&#x2325;&#x2318;M）を開始すると、ScreenCaptureKitでZoom/Teams/Google Meetの音声を自動キャプチャします。初回のみスクリーン録画の権限が必要です。</p>
+    </details>
+    <details class="faq-item">
+      <summary>iPhoneの電話も文字起こしできますか？</summary>
+      <p>はい。Koe iOSアプリの「通話」タブで自動書き起こしをONにすると、電話の開始を検出して自動で録音を開始します。スピーカーホンにすれば相手の声も拾えます。</p>
+    </details>
+    <details class="faq-item">
+      <summary>データのセキュリティは大丈夫ですか？</summary>
+      <p>Koeは音声データを一切外部に送信しません。全ての処理はあなたのMac/iPhone上で完結します。Nottaのようなクラウドサービスよりも高いセキュリティレベルです。</p>
+    </details>
+    <details class="faq-item">
+      <summary>Apple Siliconでないと使えませんか？</summary>
+      <p>Whisper.cppはApple Silicon (M1/M2/M3/M4) で最速ですが、Intel Macでも動作します（Apple Speech Recognitionを使用）。</p>
+    </details>
+  </div>
+</div>
+
+<div class="cta-section">
+  <h2>Nottaの料金を払い続ける必要はありません。</h2>
+  <p>Koeは完全無料。今すぐ乗り換えて、プライバシーを守りながら会議の生産性を上げましょう。</p>
+  <div class="cta-row">
+    <a href="https://github.com/yukihamada/Koe-swift/releases/latest" class="btn btn-primary">今すぐ無料ダウンロード</a>
+    <a href="/" class="btn btn-secondary">Koeの全機能を見る</a>
+  </div>
+</div>
+
+<footer>
+  <p>&copy; 2026 Koe by <a href="https://yukihamada.jp">Yuki Hamada</a> &mdash; <a href="https://github.com/yukihamada/Koe-swift">GitHub</a></p>
+</footer>
+
+<script>
+fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:'pageview',r:document.referrer,p:'/vs-notta'})}).catch(()=>{});
+</script>
+</body>
+</html>

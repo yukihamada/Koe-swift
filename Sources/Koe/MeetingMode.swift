@@ -200,28 +200,10 @@ class MeetingMode: ObservableObject {
             : rawText
         klog("MeetingMode: formatting \(entries.count) entries (\(truncatedText.count) chars) with LLM...")
 
-        let systemPrompt = """
-        あなたは議事録整形アシスタントです。以下の音声認識テキストを整形してください。
-
-        ルール:
-        - 誤字・脱字を修正
-        - 句読点を適切に追加
-        - 話題ごとに段落分け
-        - タイムスタンプは残す
-        - 話者情報があれば活かす
-        - 元の意味を変えない
-        - Markdown形式で出力
-
-        最後に必ず以下のセクションを追加:
-        ## 要約
-        会議の概要を3-5文で簡潔にまとめる
-
-        ## 決定事項
-        決まったこと・合意したことを箇条書き（なければ「特になし」）
-
-        ## TODO
-        次にやるべきことを担当者付きで箇条書き（なければ「特になし」）
-        """
+        // 要約テンプレート選択
+        let template = MeetingTemplate(rawValue: AppSettings.shared.meetingTemplate) ?? .general
+        let systemPrompt = template.systemPrompt
+        klog("MeetingMode: using template '\(template.displayName)'")
 
         let userPrompt = """
         所要時間: \(duration)
@@ -281,6 +263,34 @@ class MeetingMode: ObservableObject {
             klog("MeetingMode: formatted file saved")
             // 整形済みファイルを開く
             NSWorkspace.shared.open(formattedURL)
+
+            // 自動連携
+            let s = AppSettings.shared
+            let title = outputDir.lastPathComponent
+
+            // Slack連携
+            if s.autoSlackPost && !s.slackWebhookURL.isEmpty {
+                MeetingIntegrations.shared.postToSlack(webhookURL: s.slackWebhookURL, summary: text, meetingTitle: title) { ok in
+                    klog("MeetingMode: Slack post \(ok ? "OK" : "failed")")
+                }
+            }
+
+            // Notion連携
+            if s.autoNotionPost && !s.notionToken.isEmpty && !s.notionDatabaseID.isEmpty {
+                MeetingIntegrations.shared.postToNotion(token: s.notionToken, databaseID: s.notionDatabaseID, title: title, content: text) { ok in
+                    klog("MeetingMode: Notion post \(ok ? "OK" : "failed")")
+                }
+            }
+
+            // TODOをリマインダーに登録
+            if s.autoReminders {
+                let todos = MeetingIntegrations.extractTodos(from: text)
+                if !todos.isEmpty {
+                    MeetingIntegrations.shared.addReminders(todos: todos) { count in
+                        klog("MeetingMode: added \(count) reminders")
+                    }
+                }
+            }
         }
 
         // SRT字幕ファイルを生成

@@ -352,6 +352,17 @@ class AppSettings: ObservableObject {
     // Speaker diarization (tinydiarize)
     @Published var diarizationEnabled: Bool { didSet { ud.set(diarizationEnabled, forKey: "diarizationEnabled") } }
 
+    // Meeting integrations
+    @Published var meetingTemplate: String { didSet { ud.set(meetingTemplate, forKey: "meetingTemplate") } }
+    @Published var slackWebhookURL: String { didSet { ud.set(slackWebhookURL, forKey: "slackWebhookURL") } }
+    @Published var notionToken: String { didSet { ud.set(notionToken, forKey: "notionToken") } }
+    @Published var notionDatabaseID: String { didSet { ud.set(notionDatabaseID, forKey: "notionDatabaseID") } }
+    @Published var autoSlackPost: Bool { didSet { ud.set(autoSlackPost, forKey: "autoSlackPost") } }
+    @Published var autoNotionPost: Bool { didSet { ud.set(autoNotionPost, forKey: "autoNotionPost") } }
+    @Published var autoReminders: Bool { didSet { ud.set(autoReminders, forKey: "autoReminders") } }
+    @Published var calendarAutoStart: Bool { didSet { ud.set(calendarAutoStart, forKey: "calendarAutoStart") } }
+    @Published var meetingLiveWindow: Bool { didSet { ud.set(meetingLiveWindow, forKey: "meetingLiveWindow") } }
+
     // IME switch (左⌘→英語, 右⌘→日本語)
     @Published var cmdIMESwitchEnabled: Bool { didSet { ud.set(cmdIMESwitchEnabled, forKey: "cmdIMESwitchEnabled") } }
 
@@ -504,6 +515,15 @@ class AppSettings: ObservableObject {
         whisperBeamSearch = ud.object(forKey: "whisperBeamSearch") as? Bool ?? false  // デフォルトOFF（速度優先、greedyで十分）
         whisperUseContext = ud.object(forKey: "whisperUseContext") as? Bool ?? true   // デフォルトON（長文の一貫性）
         diarizationEnabled = ud.object(forKey: "diarizationEnabled") as? Bool ?? false  // デフォルトOFF
+        meetingTemplate = ud.string(forKey: "meetingTemplate") ?? "general"
+        slackWebhookURL = ud.string(forKey: "slackWebhookURL") ?? ""
+        notionToken = ud.string(forKey: "notionToken") ?? ""
+        notionDatabaseID = ud.string(forKey: "notionDatabaseID") ?? ""
+        autoSlackPost = ud.bool(forKey: "autoSlackPost")
+        autoNotionPost = ud.bool(forKey: "autoNotionPost")
+        autoReminders = ud.bool(forKey: "autoReminders")
+        calendarAutoStart = ud.bool(forKey: "calendarAutoStart")
+        meetingLiveWindow = ud.object(forKey: "meetingLiveWindow") as? Bool ?? true  // デフォルトON
         cmdIMESwitchEnabled = ud.object(forKey: "cmdIMESwitchEnabled") as? Bool ?? true  // デフォルトON
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]

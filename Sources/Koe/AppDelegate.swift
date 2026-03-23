@@ -25,6 +25,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var carbonMeetingHotKeyRef: EventHotKeyRef?
     private var carbonRerecognizeHotKeyRef: EventHotKeyRef?
     private var meetingOverlay: MeetingOverlayWindow?
+    private var meetingLiveWindow: MeetingLiveWindow?
     private var levelTimer: Timer?
     private var isRecording      = false
     private var recordingStart:  Date?
@@ -96,6 +97,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // クラッシュで中断した議事録を復旧
         MeetingMode.shared.recoverIfNeeded()
+
+        // カレンダー監視: 会議の1分前に自動で議事録開始
+        if AppSettings.shared.calendarAutoStart {
+            MeetingIntegrations.shared.startCalendarMonitoring { [weak self] event in
+                guard let self, !MeetingMode.shared.isActive else { return }
+                klog("Calendar: auto-starting meeting mode for '\(event.title ?? "?")'")
+                DispatchQueue.main.async { self.toggleMeetingMode() }
+            }
+        }
 
         // Register URL scheme handler for Shortcuts.app integration (koe://transcribe)
         NSAppleEventManager.shared().setEventHandler(
@@ -972,6 +982,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                            modelName: ModelDownloader.shared.currentModel.name)
                     MeetingMode.shared.appendSpeakerSegments(segments, audioURL: self.lastAudioURL)
                     self.meetingOverlay?.updateLastText(fullText)
+                    // リアルタイムウィンドウに話者別で追加
+                    for seg in segments {
+                        self.meetingLiveWindow?.appendText(seg.text, speaker: seg.speaker)
+                    }
                     // 議事録自動録音中はファイル保存のみ（テキスト入力しない）
                     if !self.isMeetingAutoRecording {
                         if AppSettings.shared.streamingPreviewEnabled {
@@ -1059,6 +1073,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 句読点スタイル変換
         if let style = VoiceCommands.PunctuationStyle(rawValue: AppSettings.shared.punctuationStyle) {
             formatted = VoiceCommands.applyPunctuationStyle(formatted, style: style)
+        }
+
+        // 議事録音声コマンド: 「ここ重要」等
+        if MeetingMode.shared.isActive, let meetingCmd = VoiceCommands.detectMeetingCommand(formatted) {
+            switch meetingCmd {
+            case .markImportant:
+                klog("MeetingCommand: mark important")
+                meetingLiveWindow?.markImportant()
+                // 重要マーク付きで議事録に追記
+                MeetingMode.shared.append(text: "★ \(formatted)", audioURL: lastAudioURL)
+                meetingOverlay?.updateLastText("★ \(formatted)")
+                meetingLiveWindow?.appendText("★ \(formatted)")
+            }
+            overlay?.hide()
+            postRecognitionCleanup()
+            return
         }
 
         // 音声編集コマンド: 「削除」「取り消し」等
@@ -1164,6 +1194,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     VoiceStats.shared.recordSession(charCount: final.count, durationSeconds: recordingDuration)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
                     self.meetingOverlay?.updateLastText(final)
+                    self.meetingLiveWindow?.appendText(final)
                     CorrectionStore.shared.trackDelivery(original: final, appBundleID: self.activeAppBundleID)
                     self.publishHandoffActivity(text: final)
                     if AppSettings.shared.autoCopyToClipboard {
@@ -1520,6 +1551,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             meetingOverlay?.showMeeting()
 
+            // リアルタイム文字起こしウィンドウを表示
+            if AppSettings.shared.meetingLiveWindow {
+                if meetingLiveWindow == nil { meetingLiveWindow = MeetingLiveWindow() }
+                meetingLiveWindow?.show()
+            }
+
             // システム音声キャプチャ開始（Zoom/Teams等の音声を取得）
             if #available(macOS 13.0, *) {
                 SystemAudioCapture.shared.startCapture { ok in
@@ -1557,6 +1594,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // 議事録オーバーレイ非表示
             meetingOverlay?.hideMeeting()
+            meetingLiveWindow?.hide()
             // 議事録停止時に録音中なら停止
             if isRecording {
                 klog("MeetingMode: stopping recording")

@@ -225,4 +225,20 @@ enum VoiceCommands {
         case undo       // Cmd+Z
         case deleteAll  // Cmd+A → Delete
     }
+
+    // MARK: - Meeting Voice Commands
+
+    /// 議事録用音声コマンドの検出
+    enum MeetingCommand {
+        case markImportant  // 「ここ重要」「重要」「マーク」
+    }
+
+    static func detectMeetingCommand(_ text: String) -> MeetingCommand? {
+        let t = text.trimmingCharacters(in: .whitespaces).lowercased()
+        let importantTriggers = ["ここ重要", "重要", "マーク", "ここマーク", "important", "mark this", "mark it"]
+        if importantTriggers.contains(where: { t.contains($0) }) {
+            return .markImportant
+        }
+        return nil
+    }
 }

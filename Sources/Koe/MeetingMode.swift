@@ -15,6 +15,14 @@ class MeetingMode: ObservableObject {
     /// LLM整形用に生テキストを蓄積
     private var rawEntries: [String] = []
 
+    /// 進行中セッションの状態ファイルパス
+    private let sessionStatePath: URL = {
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("com.yuki.koe", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("meeting_session.json")
+    }()
+
     func toggle() {
         if isActive { stop() } else { start() }
     }
@@ -54,6 +62,9 @@ class MeetingMode: ObservableObject {
 
         """
         fileHandle?.write(Data(header.utf8))
+
+        // セッション状態を保存（クラッシュ復旧用）
+        saveSessionState()
     }
 
     func stop() {
@@ -77,7 +88,10 @@ class MeetingMode: ObservableObject {
         startDate = nil
         klog("MeetingMode: stopped (\(entryCount)件)")
 
-        // LLMで整形
+        // セッション状態ファイルを削除（正常終了）
+        clearSessionState()
+
+        // LLMで整形（クラッシュ保護付き）
         if !savedEntries.isEmpty, let dir = savedDir {
             formatWithLLM(entries: savedEntries, duration: durationText,
                           count: savedCount, outputDir: dir)
@@ -86,13 +100,105 @@ class MeetingMode: ObservableObject {
         }
     }
 
-    // MARK: - LLM整形
+    // MARK: - セッション状態の永続化（クラッシュ復旧用）
+
+    private func saveSessionState() {
+        guard let dir = outputURL else { return }
+        let state: [String: Any] = [
+            "outputDir": dir.path,
+            "startDate": startDate?.timeIntervalSince1970 ?? 0,
+            "entryCount": entryCount
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: state) {
+            try? data.write(to: sessionStatePath)
+        }
+    }
+
+    private func clearSessionState() {
+        try? FileManager.default.removeItem(at: sessionStatePath)
+    }
+
+    /// 起動時に呼び出し: クラッシュで中断した議事録を復旧
+    func recoverIfNeeded() {
+        guard let data = try? Data(contentsOf: sessionStatePath),
+              let state = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dirPath = state["outputDir"] as? String else { return }
+
+        let outputDir = URL(fileURLWithPath: dirPath)
+        guard FileManager.default.fileExists(atPath: outputDir.path) else {
+            clearSessionState()
+            return
+        }
+
+        klog("MeetingMode: recovering crashed session from \(outputDir.lastPathComponent)")
+        clearSessionState()
+
+        // 音声ファイルから再認識
+        let audioDir = outputDir.appendingPathComponent("audio")
+        guard let audioFiles = try? FileManager.default.contentsOfDirectory(at: audioDir, includingPropertiesForKeys: [.creationDateKey])
+            .filter({ $0.pathExtension == "wav" })
+            .sorted(by: { a, b in
+                let da = (try? a.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                let db = (try? b.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+                return da < db
+            }),
+              !audioFiles.isEmpty else {
+            klog("MeetingMode: no audio files to recover")
+            // テキストファイルは残っているのでフォルダを開く
+            NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: outputDir.path)
+            return
+        }
+
+        klog("MeetingMode: found \(audioFiles.count) audio files, re-transcribing...")
+
+        // 復旧テキストファイルを作成
+        let recoveredURL = outputDir.appendingPathComponent("議事録_復旧済み.txt")
+        FileManager.default.createFile(atPath: recoveredURL.path, contents: nil)
+        let handle = try? FileHandle(forWritingTo: recoveredURL)
+        handle?.write(Data("# Koe 議事録（クラッシュ復旧）\n---\n\n".utf8))
+
+        reTranscribeFiles(audioFiles, index: 0, handle: handle, outputDir: outputDir) {
+            try? handle?.close()
+            klog("MeetingMode: recovery complete (\(audioFiles.count) files)")
+            DispatchQueue.main.async {
+                NSWorkspace.shared.open(recoveredURL)
+            }
+        }
+    }
+
+    private func reTranscribeFiles(_ files: [URL], index: Int, handle: FileHandle?, outputDir: URL, completion: @escaping () -> Void) {
+        guard index < files.count else { completion(); return }
+        let file = files[index]
+        let lang = AppSettings.shared.language == "auto" ? "auto" : (AppSettings.shared.language.components(separatedBy: "-").first ?? "en")
+
+        WhisperContext.shared.transcribe(url: file, language: lang) { [self] text in
+            if let text, !text.isEmpty {
+                let line = "[\(file.deletingPathExtension().lastPathComponent)] \(text)\n"
+                handle?.write(Data(line.utf8))
+                // 履歴にも追加
+                let archiveID = AudioArchive.shared.save(tempURL: file)
+                HistoryStore.shared.add(text, audioFileID: archiveID,
+                                        recognitionTime: WhisperContext.shared.lastTranscriptionTime,
+                                        modelName: ModelDownloader.shared.currentModel.name)
+                klog("MeetingMode: recovered [\(index+1)/\(files.count)] '\(text.prefix(30))'")
+            }
+            reTranscribeFiles(files, index: index + 1, handle: handle, outputDir: outputDir, completion: completion)
+        }
+    }
+
+    // MARK: - LLM整形（クラッシュ保護付き）
 
     private func formatWithLLM(entries: [String], duration: String,
                                 count: Int, outputDir: URL) {
         isFormatting = true
         let rawText = entries.joined(separator: "\n")
-        klog("MeetingMode: formatting \(entries.count) entries with LLM...")
+
+        // テキスト量が多すぎるとLLMがクラッシュするため制限（Qwen3 0.6Bのコンテキスト上限）
+        let maxChars = 3000
+        let truncatedText = rawText.count > maxChars
+            ? String(rawText.prefix(maxChars)) + "\n\n（以降省略: 全\(rawText.count)文字中\(maxChars)文字まで処理）"
+            : rawText
+        klog("MeetingMode: formatting \(entries.count) entries (\(truncatedText.count) chars) with LLM...")
 
         let systemPrompt = """
         あなたは議事録整形アシスタントです。以下の音声認識テキストを整形してください。
@@ -122,7 +228,7 @@ class MeetingMode: ObservableObject {
         発言数: \(count)件
 
         --- 生テキスト ---
-        \(rawText)
+        \(truncatedText)
         """
 
         // ローカルLLMのみ使用（リモートには送らない）
@@ -194,7 +300,6 @@ class MeetingMode: ObservableObject {
             // "[HH:mm:ss] text" format
             let parts = entry.split(separator: "]", maxSplits: 1)
             guard parts.count == 2 else { continue }
-            let timeStr = String(parts[0].dropFirst()) // remove "["
             let text = parts[1].trimmingCharacters(in: .whitespaces)
             // Approximate: each entry is ~5 seconds
             let startSec = i * 5
@@ -264,6 +369,9 @@ class MeetingMode: ObservableObject {
         fileHandle?.write(Data(line.utf8))
         rawEntries.append("[\(timeStr)]\(speakerLabel) \(text)")
         charCount += text.count
+
+        // セッション状態を更新
+        saveSessionState()
     }
 
     /// 話者分離付きセグメントを一括追記
@@ -306,5 +414,8 @@ class MeetingMode: ObservableObject {
             // audioNote は最初のエントリのみ
             audioNote = ""
         }
+
+        // セッション状態を更新
+        saveSessionState()
     }
 }

@@ -94,6 +94,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 古い音声アーカイブを自動クリーンアップ（30日超）
         AudioArchive.shared.cleanOldFiles()
 
+        // クラッシュで中断した議事録を復旧
+        MeetingMode.shared.recoverIfNeeded()
+
         // Register URL scheme handler for Shortcuts.app integration (koe://transcribe)
         NSAppleEventManager.shared().setEventHandler(
             self,

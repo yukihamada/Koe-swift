@@ -1356,7 +1356,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var streamingRecognitionTask: SFSpeechRecognitionTask?
 
     private func startStreamingPreview() {
-        guard AppSettings.shared.streamingPreviewEnabled else { return }
+        // 議事録モード中は常にストリーミングを有効化（リアルタイム表示のため）
+        guard AppSettings.shared.streamingPreviewEnabled || MeetingMode.shared.isActive else { return }
 
         // Apple Speech APIでリアルタイムプレビュー（whisperとは独立）
         let lang = AppSettings.shared.language
@@ -1397,6 +1398,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.lastStreamingResult = text
                 if self.isRecording {
                     self.overlay?.updateStreamingText(text)
+                    // 議事録モード: リアルタイムウィンドウにストリーミングテキスト表示
+                    if MeetingMode.shared.isActive {
+                        self.meetingLiveWindow?.updateStreamingText(text)
+                        self.meetingOverlay?.updateLastText(text)
+                    }
                 }
             }
         }
@@ -1606,14 +1612,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 meetingChatWindow?.show(transcript: transcript, title: "議事録")
             }
             meetingLiveWindow?.hide()
-            // 議事録停止時に録音中なら停止
+            // 議事録停止時に録音中なら最後の認識を実行（キャンセルではなく認識）
             if isRecording {
-                klog("MeetingMode: stopping recording")
-                cancelRecording()
-            }
-            if isRecognizing {
-                overlay?.hide()
-                isRecognizing = false
+                klog("MeetingMode: final recognition before stop")
+                isMeetingAutoRecording = false  // 自動録音ループを停止
+                stopAndRecognize()
+            } else if isRecognizing {
+                // 認識中なら完了を待つ（postRecognitionCleanupで自動停止）
+                klog("MeetingMode: waiting for final recognition")
+                isMeetingAutoRecording = false
             }
         }
     }

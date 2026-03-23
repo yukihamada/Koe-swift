@@ -178,6 +178,13 @@ final class WhisperContext {
             klog("WhisperContext: [bridge] lang=\(language) samples=\(samples.count) trimmed=\(trimStart)-\(trimEnd) threads=\(nThreads)")
             let start = CFAbsoluteTimeGetCurrent()
 
+            // 短すぎる音声はスキップ（0.5秒未満 = ハルシネーション防止）
+            guard samples.count >= 8000 else {
+                klog("WhisperContext: too short (\(samples.count) samples), skipping")
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+
             // 音声がなければスキップ (生データで判定)
             guard AudioDSP.hasVoice(samples, threshold: 0.003, minVoiceFrames: 3) else {
                 klog("WhisperContext: no voice detected, skipping")
@@ -203,7 +210,7 @@ final class WhisperContext {
                     0.0,  // temperature_inc=0 for speed (was ws.temperatureInc=0.2)
                     ws.entropyThreshold,
                     -1.0,   // logprob_thold
-                    0.8,    // no_speech_thold (高めで無音区間を素早くスキップ)
+                    0.6,    // no_speech_thold
                     &outputBuf, Int32(bufSize)
                 )
             }

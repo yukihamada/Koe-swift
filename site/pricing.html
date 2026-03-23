@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Koe 料金プラン — 無料から始めて、必要な時だけアップグレード</title>
+<meta name="description" content="Koeは永久無料。Pro(¥980/月)でクラウドAI要約・同期機能、Team(¥1,980/月)でチーム共有・管理機能を追加。">
+<meta property="og:title" content="Koe 料金プラン">
+<meta property="og:description" content="永久無料から始めて、必要な時だけアップグレード。">
+<meta property="og:url" content="https://koe.elio.love/pricing">
+<meta property="og:image" content="https://koe.elio.love/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0a0a'/%3E%3Cg transform='translate(16,16)'%3E%3Crect x='-1' y='-9' width='2' height='18' rx='1' fill='url(%23g)'/%3E%3Crect x='-5' y='-6' width='2' height='12' rx='1' fill='url(%23g)' opacity='.8'/%3E%3Crect x='3' y='-7' width='2' height='14' rx='1' fill='url(%23g)' opacity='.85'/%3E%3Crect x='-9' y='-4' width='2' height='8' rx='1' fill='url(%23g)' opacity='.6'/%3E%3Crect x='7' y='-5' width='2' height='10' rx='1' fill='url(%23g)' opacity='.65'/%3E%3C/g%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='32' y2='32'%3E%3Cstop stop-color='%23ff3b30'/%3E%3Cstop offset='1' stop-color='%23ff9500'/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E">
+<meta name="theme-color" content="#0a0a0a">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans',sans-serif;background:#0a0a0a;color:#e8e4df;line-height:1.7}
+a{color:#ff6b35;text-decoration:none}
+a:hover{text-decoration:underline}
+
+.hero{text-align:center;padding:80px 20px 40px}
+.hero h1{font-size:clamp(28px,5vw,44px);font-weight:700;margin-bottom:12px}
+.hero p{color:#888;font-size:18px;max-width:500px;margin:0 auto}
+
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:1000px;margin:40px auto;padding:0 20px}
+.plan{background:#111;border:1px solid #1a1a1a;border-radius:20px;padding:36px 28px;position:relative;transition:border-color .3s}
+.plan:hover{border-color:#333}
+.plan.featured{border-color:#ff6b35;transform:scale(1.03)}
+.plan.featured::before{content:'人気';position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#ff6b35,#ff9500);color:#fff;font-size:12px;font-weight:700;padding:4px 20px;border-radius:12px}
+
+.plan-name{font-size:14px;color:#888;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px}
+.plan-price{font-size:48px;font-weight:700;margin-bottom:4px}
+.plan-price .currency{font-size:20px;vertical-align:super;color:#888}
+.plan-price .period{font-size:16px;color:#666;font-weight:400}
+.plan-price.free{background:linear-gradient(135deg,#4ade80,#22c55e);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.plan-price.pro{background:linear-gradient(135deg,#ff6b35,#ff9500);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.plan-price.team{background:linear-gradient(135deg,#818cf8,#6366f1);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.plan-desc{font-size:14px;color:#666;margin-bottom:24px;min-height:40px}
+.plan-annual{font-size:13px;color:#4ade80;margin-bottom:20px}
+
+.plan-features{list-style:none;margin-bottom:28px}
+.plan-features li{padding:8px 0;font-size:14px;color:#a09888;display:flex;align-items:flex-start;gap:8px}
+.plan-features li::before{content:'';flex-shrink:0;width:18px;height:18px;margin-top:2px;border-radius:50%;background-size:12px;background-position:center;background-repeat:no-repeat}
+.plan-features .yes::before{background-color:#4ade8020;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%234ade80' stroke-width='3'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E")}
+.plan-features .no::before{background-color:#66666620;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='3'%3E%3Cline x1='18' y1='6' x2='6' y2='18'/%3E%3Cline x1='6' y1='6' x2='18' y2='18'/%3E%3C/svg%3E")}
+.plan-features .limit::before{background-color:#f59e0b20;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23f59e0b' stroke-width='3'%3E%3Cline x1='5' y1='12' x2='19' y2='12'/%3E%3C/svg%3E")}
+
+.btn{display:block;text-align:center;padding:14px;border-radius:10px;font-size:16px;font-weight:600;transition:all .2s;cursor:pointer;border:none;width:100%}
+.btn-free{background:#1a1a1a;color:#e8e4df;border:1px solid #333}
+.btn-free:hover{border-color:#4ade80;text-decoration:none}
+.btn-pro{background:linear-gradient(135deg,#ff6b35,#ff9500);color:#fff}
+.btn-pro:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(255,107,53,.3);text-decoration:none}
+.btn-team{background:linear-gradient(135deg,#818cf8,#6366f1);color:#fff}
+.btn-team:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(99,102,241,.3);text-decoration:none}
+
+.section{max-width:800px;margin:0 auto;padding:60px 20px}
+.section h2{font-size:28px;text-align:center;margin-bottom:32px}
+
+.faq{margin-top:20px}
+.faq-item{border-bottom:1px solid #1a1a1a;padding:20px 0}
+.faq-item summary{cursor:pointer;font-weight:600;font-size:16px;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.faq-item summary::after{content:'+';font-size:20px;color:#ff6b35}
+.faq-item[open] summary::after{content:'-'}
+.faq-item p{margin-top:12px;color:#888;font-size:14px}
+
+.guarantee{text-align:center;padding:60px 20px;background:#111;margin:60px 0;border-radius:20px;max-width:800px;margin-left:auto;margin-right:auto}
+.guarantee h3{font-size:24px;margin-bottom:12px}
+.guarantee p{color:#888;font-size:15px;max-width:500px;margin:0 auto}
+
+footer{text-align:center;padding:40px 20px;color:#444;font-size:13px}
+footer a{color:#666}
+
+@media(max-width:768px){
+  .plans{grid-template-columns:1fr;max-width:400px}
+  .plan.featured{transform:none}
+}
+</style>
+</head>
+<body>
+
+<nav style="padding:16px 20px;display:flex;justify-content:space-between;align-items:center;max-width:1000px;margin:0 auto">
+  <a href="/" style="font-size:20px;font-weight:700;color:#e8e4df">Koe</a>
+  <div style="display:flex;gap:20px;font-size:14px">
+    <a href="/vs-notta">vs Notta</a>
+    <a href="/pricing" style="color:#ff6b35">料金</a>
+    <a href="https://github.com/yukihamada/Koe-swift">GitHub</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <h1>無料から始めて、<br>必要な時だけアップグレード</h1>
+  <p>ローカル処理は永久無料。クラウドAIとチーム機能が必要な時だけ。</p>
+</div>
+
+<!-- 年額/月額トグル -->
+<div style="text-align:center;margin-bottom:20px">
+  <span id="toggle-label" style="font-size:14px;color:#888">月額</span>
+  <label style="position:relative;display:inline-block;width:48px;height:26px;margin:0 8px;vertical-align:middle;cursor:pointer">
+    <input type="checkbox" id="annual-toggle" style="display:none" onchange="toggleBilling()">
+    <span style="position:absolute;inset:0;background:#333;border-radius:13px;transition:.3s"></span>
+    <span id="toggle-knob" style="position:absolute;top:3px;left:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.3s"></span>
+  </label>
+  <span style="font-size:14px;color:#888">年額 <span style="color:#4ade80;font-weight:600">2ヶ月分お得</span></span>
+</div>
+
+<div class="plans">
+  <!-- Free -->
+  <div class="plan">
+    <div class="plan-name">Free</div>
+    <div class="plan-price free">&#165;0</div>
+    <div class="plan-desc">個人利用に。ローカル処理は永久無料。</div>
+    <ul class="plan-features">
+      <li class="yes">ローカル文字起こし（無制限）</li>
+      <li class="limit">AI要約（ローカルLLM・月10回）</li>
+      <li class="limit">話者分離（2人まで）</li>
+      <li class="yes">Zoom/Teams音声キャプチャ</li>
+      <li class="yes">リアルタイム文字起こし</li>
+      <li class="limit">要約テンプレート（一般のみ）</li>
+      <li class="limit">電話書き起こし（月5回）</li>
+      <li class="limit">音声保存（7日間）</li>
+      <li class="no">クラウドAI要約</li>
+      <li class="no">Mac↔iPhone同期</li>
+      <li class="no">Slack/Notion連携</li>
+    </ul>
+    <a href="https://github.com/yukihamada/Koe-swift/releases/latest" class="btn btn-free">無料ダウンロード</a>
+  </div>
+
+  <!-- Pro -->
+  <div class="plan featured">
+    <div class="plan-name">Pro</div>
+    <div class="plan-price pro"><span class="currency">&#165;</span><span id="pro-price">980</span><span class="period" id="pro-period">/月</span></div>
+    <div class="plan-annual" id="pro-annual">年額 &#165;9,800（月あたり&#165;817）</div>
+    <div class="plan-desc">パワーユーザーに。クラウドAIで精度アップ。</div>
+    <ul class="plan-features">
+      <li class="yes">Freeの全機能</li>
+      <li class="yes"><strong>クラウドAI要約（GPT-4o）無制限</strong></li>
+      <li class="yes"><strong>Mac↔iPhone同期</strong></li>
+      <li class="yes">話者分離（無制限）</li>
+      <li class="yes">要約テンプレート（6種類）</li>
+      <li class="yes">電話書き起こし（無制限）</li>
+      <li class="yes">音声保存（90日間）</li>
+      <li class="yes">Slack/Notion連携（1つ）</li>
+      <li class="yes">リアルタイム翻訳</li>
+      <li class="yes">メールサポート</li>
+      <li class="no">チーム共有</li>
+    </ul>
+    <a href="#" id="pro-btn" class="btn btn-pro" onclick="checkout('pro')">Proを始める</a>
+  </div>
+
+  <!-- Team -->
+  <div class="plan">
+    <div class="plan-name">Team</div>
+    <div class="plan-price team"><span class="currency">&#165;</span><span id="team-price">1,980</span><span class="period" id="team-period">/人/月</span></div>
+    <div class="plan-annual" id="team-annual">年額 &#165;19,800/人（月あたり&#165;1,650）</div>
+    <div class="plan-desc">チーム・法人に。共有と管理機能。</div>
+    <ul class="plan-features">
+      <li class="yes">Proの全機能</li>
+      <li class="yes"><strong>チーム議事録共有</strong></li>
+      <li class="yes"><strong>全文検索（クラウド）</strong></li>
+      <li class="yes"><strong>管理者ダッシュボード</strong></li>
+      <li class="yes">カスタム要約テンプレート</li>
+      <li class="yes">Slack/Notion連携（無制限）</li>
+      <li class="yes">音声保存（無制限）</li>
+      <li class="yes"><strong>SSO/SAML対応</strong></li>
+      <li class="yes"><strong>監査ログ</strong></li>
+      <li class="yes">Slackサポート</li>
+      <li class="yes">オンボーディング支援</li>
+    </ul>
+    <a href="#" id="team-btn" class="btn btn-team" onclick="checkout('team')">Teamを始める</a>
+  </div>
+</div>
+
+<div class="guarantee">
+  <div style="font-size:40px;margin-bottom:16px">&#128170;</div>
+  <h3>30日間 返金保証</h3>
+  <p>満足いただけない場合は、理由を問わず30日以内に全額返金します。リスクゼロでお試しください。</p>
+</div>
+
+<div class="section">
+  <h2>よくある質問</h2>
+  <div class="faq">
+    <details class="faq-item">
+      <summary>無料プランに期限はありますか？</summary>
+      <p>ありません。ローカル処理（文字起こし、リアルタイム表示、Zoom/Teams音声キャプチャ）は永久に無料です。有料プランはクラウドAIやチーム機能の付加価値です。</p>
+    </details>
+    <details class="faq-item">
+      <summary>有料プランの支払い方法は？</summary>
+      <p>クレジットカード（Visa/Mastercard/Amex/JCB）に対応。Stripeで安全に処理されます。</p>
+    </details>
+    <details class="faq-item">
+      <summary>いつでも解約できますか？</summary>
+      <p>はい。いつでもワンクリックで解約でき、次の請求日以降は課金されません。解約後もFreeプランの機能はそのまま使えます。</p>
+    </details>
+    <details class="faq-item">
+      <summary>クラウドAI要約とローカルAI要約の違いは？</summary>
+      <p>ローカルAI（Qwen3 0.6B）はMac上で動くため軽量ですが、精度はそこそこ。クラウドAI（GPT-4o）は圧倒的に高精度な要約・決定事項・TODO抽出ができます。議事録の品質が大きく変わります。</p>
+    </details>
+    <details class="faq-item">
+      <summary>Teamプランは何人から使えますか？</summary>
+      <p>2人から利用可能です。管理者が招待リンクを発行し、メンバーはKoeアプリからログインするだけです。</p>
+    </details>
+    <details class="faq-item">
+      <summary>Nottaから乗り換えた場合、データは移行できますか？</summary>
+      <p>NottaからエクスポートしたテキストファイルをKoeにドラッグ&ドロップすれば、履歴に取り込めます。音声ファイルも同様です。</p>
+    </details>
+  </div>
+</div>
+
+<footer>
+  <p>&copy; 2026 Koe by <a href="https://yukihamada.jp">Yuki Hamada</a> &mdash; <a href="/">ホーム</a> &middot; <a href="/vs-notta">vs Notta</a> &middot; <a href="https://github.com/yukihamada/Koe-swift">GitHub</a></p>
+</footer>
+
+<script>
+function toggleBilling(){
+  const annual = document.getElementById('annual-toggle').checked;
+  const knob = document.getElementById('toggle-knob');
+  knob.style.left = annual ? '25px' : '3px';
+  document.getElementById('pro-price').textContent = annual ? '9,800' : '980';
+  document.getElementById('pro-period').textContent = annual ? '/年' : '/月';
+  document.getElementById('pro-annual').style.display = annual ? 'none' : 'block';
+  document.getElementById('team-price').textContent = annual ? '19,800' : '1,980';
+  document.getElementById('team-period').textContent = annual ? '/人/年' : '/人/月';
+  document.getElementById('team-annual').style.display = annual ? 'none' : 'block';
+}
+
+function checkout(plan){
+  const annual = document.getElementById('annual-toggle').checked;
+  const interval = annual ? 'annual' : 'monthly';
+  // Stripe Checkout にリダイレクト
+  window.location.href = `/api/checkout?plan=${plan}&interval=${interval}`;
+}
+
+fetch('/api/event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({t:'pageview',r:document.referrer,p:'/pricing'})}).catch(()=>{});
+</script>
+</body>
+</html>

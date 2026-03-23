@@ -12,6 +12,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const PAGE: &str = include_str!("../index.html");
 const VS_NOTTA: &str = include_str!("../vs-notta.html");
+const PRICING: &str = include_str!("../pricing.html");
 const OG_SVG: &str = include_str!("../og.svg");
 const OG_PNG: &[u8] = include_bytes!("../og.png");
 const INSTALL_SH: &str = include_str!("../install.sh");
@@ -212,6 +213,181 @@ async fn install_script() -> impl IntoResponse {
     )
 }
 
+// --- Stripe Checkout ---
+
+#[derive(Deserialize)]
+struct CheckoutQuery {
+    plan: String,
+    interval: Option<String>,
+}
+
+async fn stripe_checkout(axum::extract::Query(q): axum::extract::Query<CheckoutQuery>) -> impl IntoResponse {
+    let stripe_key = std::env::var("STRIPE_SECRET_KEY").unwrap_or_default();
+    if stripe_key.is_empty() {
+        return axum::response::Redirect::temporary("/pricing?error=stripe_not_configured").into_response();
+    }
+
+    let annual = q.interval.as_deref() == Some("annual");
+
+    // Stripe Price IDsを環境変数から取得
+    let price_id = match (q.plan.as_str(), annual) {
+        ("pro", false)  => std::env::var("STRIPE_PRICE_PRO_MONTHLY").unwrap_or_default(),
+        ("pro", true)   => std::env::var("STRIPE_PRICE_PRO_ANNUAL").unwrap_or_default(),
+        ("team", false) => std::env::var("STRIPE_PRICE_TEAM_MONTHLY").unwrap_or_default(),
+        ("team", true)  => std::env::var("STRIPE_PRICE_TEAM_ANNUAL").unwrap_or_default(),
+        _ => return axum::response::Redirect::temporary("/pricing?error=invalid_plan").into_response(),
+    };
+
+    if price_id.is_empty() {
+        return axum::response::Redirect::temporary("/pricing?error=price_not_configured").into_response();
+    }
+
+    // Stripe Checkout Session作成
+    let client = reqwest::Client::new();
+    let params = [
+        ("mode", "subscription"),
+        ("payment_method_types[]", "card"),
+        ("line_items[0][price]", &price_id),
+        ("line_items[0][quantity]", "1"),
+        ("success_url", "https://koe.elio.love/pricing?success=true"),
+        ("cancel_url", "https://koe.elio.love/pricing?canceled=true"),
+        ("allow_promotion_codes", "true"),
+    ];
+
+    match client.post("https://api.stripe.com/v1/checkout/sessions")
+        .basic_auth(&stripe_key, None::<&str>)
+        .form(&params)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                if let Some(url) = body["url"].as_str() {
+                    return axum::response::Redirect::temporary(url).into_response();
+                }
+            }
+            axum::response::Redirect::temporary("/pricing?error=stripe_error").into_response()
+        }
+        Err(_) => axum::response::Redirect::temporary("/pricing?error=network_error").into_response(),
+    }
+}
+
+// --- License Verification API ---
+
+#[derive(Deserialize)]
+struct LicenseQuery {
+    email: Option<String>,
+    device_id: Option<String>,
+}
+
+#[derive(Serialize)]
+struct LicenseResponse {
+    plan: String,
+    valid: bool,
+    features: Vec<String>,
+}
+
+async fn verify_license(
+    axum::extract::Query(q): axum::extract::Query<LicenseQuery>,
+) -> impl IntoResponse {
+    let stripe_key = std::env::var("STRIPE_SECRET_KEY").unwrap_or_default();
+    let email = q.email.unwrap_or_default();
+
+    if stripe_key.is_empty() || email.is_empty() {
+        return Json(LicenseResponse {
+            plan: "free".into(),
+            valid: true,
+            features: vec!["local_transcription".into(), "basic_summary".into()],
+        }).into_response();
+    }
+
+    // Stripeでアクティブなサブスクリプションを検索
+    let client = reqwest::Client::new();
+    let search_url = format!(
+        "https://api.stripe.com/v1/customers/search?query=email:'{}'",
+        email
+    );
+
+    let plan = match client.get(&search_url)
+        .basic_auth(&stripe_key, None::<&str>)
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                let customers = body["data"].as_array();
+                if let Some(customers) = customers {
+                    // 最初のカスタマーのサブスクリプションを確認
+                    if let Some(customer) = customers.first() {
+                        if let Some(cid) = customer["id"].as_str() {
+                            check_subscription(&client, &stripe_key, cid).await
+                        } else { "free".to_string() }
+                    } else { "free".to_string() }
+                } else { "free".to_string() }
+            } else { "free".to_string() }
+        }
+        Err(_) => "free".to_string(),
+    };
+
+    let features = match plan.as_str() {
+        "team" => vec![
+            "local_transcription", "cloud_ai_summary", "sync", "unlimited_speakers",
+            "all_templates", "unlimited_calls", "unlimited_storage",
+            "slack_notion", "team_sharing", "search", "admin_dashboard", "sso",
+        ],
+        "pro" => vec![
+            "local_transcription", "cloud_ai_summary", "sync", "unlimited_speakers",
+            "all_templates", "unlimited_calls", "90day_storage",
+            "slack_notion", "realtime_translation",
+        ],
+        _ => vec!["local_transcription", "basic_summary"],
+    };
+
+    Json(LicenseResponse {
+        plan: plan.clone(),
+        valid: true,
+        features: features.into_iter().map(String::from).collect(),
+    }).into_response()
+}
+
+async fn check_subscription(client: &reqwest::Client, key: &str, customer_id: &str) -> String {
+    let url = format!(
+        "https://api.stripe.com/v1/subscriptions?customer={}&status=active",
+        customer_id
+    );
+    match client.get(&url).basic_auth(key, None::<&str>).send().await {
+        Ok(resp) => {
+            if let Ok(body) = resp.json::<serde_json::Value>().await {
+                if let Some(subs) = body["data"].as_array() {
+                    for sub in subs {
+                        if let Some(items) = sub["items"]["data"].as_array() {
+                            for item in items {
+                                let price_id = item["price"]["id"].as_str().unwrap_or("");
+                                let team_prices = [
+                                    std::env::var("STRIPE_PRICE_TEAM_MONTHLY").unwrap_or_default(),
+                                    std::env::var("STRIPE_PRICE_TEAM_ANNUAL").unwrap_or_default(),
+                                ];
+                                if team_prices.contains(&price_id.to_string()) {
+                                    return "team".to_string();
+                                }
+                                let pro_prices = [
+                                    std::env::var("STRIPE_PRICE_PRO_MONTHLY").unwrap_or_default(),
+                                    std::env::var("STRIPE_PRICE_PRO_ANNUAL").unwrap_or_default(),
+                                ];
+                                if pro_prices.contains(&price_id.to_string()) {
+                                    return "pro".to_string();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            "free".to_string()
+        }
+        Err(_) => "free".to_string(),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
@@ -221,6 +397,9 @@ async fn main() {
     let app = Router::new()
         .route("/", get(|| async { Html(PAGE) }))
         .route("/vs-notta", get(|| async { Html(VS_NOTTA) }))
+        .route("/pricing", get(|| async { Html(PRICING) }))
+        .route("/api/checkout", get(stripe_checkout))
+        .route("/api/license", get(verify_license))
         .route("/og.svg", get(og_image_svg))
         .route("/og.png", get(og_image_png))
         .route("/install.sh", get(install_script))

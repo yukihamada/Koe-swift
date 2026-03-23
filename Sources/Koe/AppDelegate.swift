@@ -965,6 +965,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
         klog("Context prompt: '\(String(contextPrompt.prefix(100)))'")
 
+        // 議事録モード: Apple Speechのストリーミング結果を優先（Whisperより圧倒的に速い）
+        if MeetingMode.shared.isActive, let streamingText = lastStreamingResult, !streamingText.isEmpty {
+            isRecognizing = false
+            overlay?.hide()
+            lastStreamingResult = nil
+            klog("Meeting: using Apple Speech result '\(streamingText.prefix(40))'")
+            HistoryStore.shared.add(streamingText, audioFileID: lastArchiveID,
+                                   recognitionTime: 0, modelName: "Apple Speech")
+            MeetingMode.shared.append(text: streamingText, audioURL: lastAudioURL)
+            meetingOverlay?.updateLastText(streamingText)
+            meetingLiveWindow?.appendText(streamingText)
+            postRecognitionCleanup()
+            return
+        }
+
         // 議事録モード + 話者分離が有効な場合、speaker-aware transcription を使用
         if MeetingMode.shared.isActive,
            AppSettings.shared.diarizationEnabled,

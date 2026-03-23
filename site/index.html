@@ -289,8 +289,10 @@ footer a:hover{color:var(--text);opacity:1}
   <div class="nav-links">
     <a href="#demo" data-i18n="nav_demo">Demo</a>
     <a href="#features" data-i18n="nav_features">Features</a>
-    <a href="#compare" data-i18n="nav_compare">Compare</a>
-    <span class="nav-badge">v2.8.0</span>
+    <a href="#meeting" data-i18n="nav_meeting">Meeting</a>
+    <a href="/pricing" data-i18n="nav_pricing">Pricing</a>
+    <a href="/vs-notta" style="color:var(--accent2)">vs Notta</a>
+    <span class="nav-badge">v2.9.0</span>
     <select class="lang-select" id="langSelect" onchange="switchLang(this.value)" style="position:static;display:inline-block;padding:4px 24px 4px 8px;font-size:12px;border-radius:6px;background-color:rgba(255,255,255,.06);border-color:rgba(255,255,255,.08)">
       <option value="ja">JP</option>
       <option value="en">EN</option>
@@ -342,7 +344,7 @@ footer a:hover{color:var(--text);opacity:1}
       <span data-i18n="hero_cta_iphone">Get iPhone App</span>
     </a>
   </div>
-  <p class="hero-meta" data-i18n="hero_meta">macOS 13+ / Apple Silicon & Intel / v2.8.0</p>
+  <p class="hero-meta" data-i18n="hero_meta">macOS 13+ / Apple Silicon & Intel / v2.9.0</p>
   <div class="hero-badges">
     <span class="badge">
       <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
@@ -553,6 +555,51 @@ footer a:hover{color:var(--text);opacity:1}
   </div>
 </section>
 
+<!-- ==================== MEETING TRANSCRIPTION ==================== -->
+<section id="meeting" class="reveal">
+  <div class="container section-center">
+    <div class="section-label" data-i18n="meeting_label">Meeting AI</div>
+    <h2 class="section-heading" data-i18n="meeting_heading">Notta-level meeting transcription.<br>100% free. 100% local.</h2>
+    <p class="section-desc" data-i18n="meeting_desc">Start meeting mode with Option+Cmd+M. Koe captures Zoom/Teams audio, transcribes in real-time with speaker labels, and generates AI summaries with action items.</p>
+    <div class="features-grid" style="margin-top:40px">
+      <div class="feat-card">
+        <div class="feat-card-icon">&#127908;</div>
+        <h3 data-i18n="meeting_f1_title">Zoom/Teams Audio Capture</h3>
+        <p data-i18n="meeting_f1_desc">ScreenCaptureKit grabs remote participant audio. No bot needed, no meeting link sharing required.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-card-icon">&#128101;</div>
+        <h3 data-i18n="meeting_f2_title">Speaker Diarization</h3>
+        <p data-i18n="meeting_f2_desc">Automatic speaker labeling with tinydiarize. Know who said what, without any setup.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-card-icon">&#9889;</div>
+        <h3 data-i18n="meeting_f3_title">Real-time Transcription</h3>
+        <p data-i18n="meeting_f3_desc">Live transcription window with searchable text, speaker colors, and "mark important" voice commands.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-card-icon">&#128221;</div>
+        <h3 data-i18n="meeting_f4_title">AI Summary + TODO</h3>
+        <p data-i18n="meeting_f4_desc">6 templates: general, 1-on-1, standup, sales, brainstorm, interview. Auto-extracts action items to Apple Reminders.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-card-icon">&#128172;</div>
+        <h3 data-i18n="meeting_f5_title">Chat with Transcript</h3>
+        <p data-i18n="meeting_f5_desc">Ask questions about your meeting. "What did we decide about the budget?" AI answers from the transcript.</p>
+      </div>
+      <div class="feat-card">
+        <div class="feat-card-icon">&#128279;</div>
+        <h3 data-i18n="meeting_f6_title">Slack / Notion / Calendar</h3>
+        <p data-i18n="meeting_f6_desc">Auto-post summaries to Slack. Create Notion pages. Auto-start recording when calendar meetings begin.</p>
+      </div>
+    </div>
+    <div style="margin-top:40px">
+      <a href="/vs-notta" class="btn-primary" style="display:inline-flex" data-i18n="meeting_cta">See how Koe compares to Notta</a>
+      <a href="/pricing" class="btn-secondary" style="display:inline-flex;margin-left:12px" data-i18n="meeting_pricing">View pricing</a>
+    </div>
+  </div>
+</section>
+
 <!-- ==================== COMPARISON TABLE ==================== -->
 <section id="compare" class="reveal">
   <div class="section-center">
@@ -674,7 +721,7 @@ footer a:hover{color:var(--text);opacity:1}
       DMG
     </a>
   </div>
-  <p class="hero-meta" style="margin-top:20px" data-i18n="cta_meta">macOS 13+ / Apple Silicon & Intel / v2.8.0 / MIT License</p>
+  <p class="hero-meta" style="margin-top:20px" data-i18n="cta_meta">macOS 13+ / Apple Silicon & Intel / v2.9.0 / MIT License</p>
   <div class="hero-badges" style="margin-top:20px">
     <a class="badge" href="https://x.com/intent/tweet?text=Koe%20%E2%80%94%20the%20first%20AI%20agent%20that%20sees%20your%20screen%20and%20acts%20on%20voice%20commands.%20100%25%20local%2C%20free%2C%20open%20source.&url=https%3A%2F%2Fkoe.elio.love" target="_blank" style="cursor:pointer">
       <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
@@ -725,7 +772,7 @@ footer a:hover{color:var(--text);opacity:1}
     hero_sub: 'Koe is the first AI agent that sees your screen, understands context, and acts on your voice commands. Completely local. Zero cloud. Free.',
     hero_cta_mac: 'Download for Mac',
     hero_cta_iphone: 'Get iPhone App',
-    hero_meta: 'macOS 13+ / Apple Silicon & Intel / v2.8.0',
+    hero_meta: 'macOS 13+ / Apple Silicon & Intel / v2.9.0',
     badge_privacy: '100% Local',
     nav_demo: 'Demo',
     nav_features: 'Features',
@@ -813,9 +860,28 @@ footer a:hover{color:var(--text);opacity:1}
     cta_heading: 'Start controlling your Mac<br>with your <span class="gradient">voice</span>.',
     cta_sub: 'Free. Private. Open source. No account needed.',
     cta_download: 'Download for Mac (Free)',
-    cta_meta: 'macOS 13+ / Apple Silicon & Intel / v2.8.0 / MIT License',
+    cta_meta: 'macOS 13+ / Apple Silicon & Intel / v2.9.0 / MIT License',
     cta_share_x: 'Share on X',
-    footer_desc: 'Built with Swift + whisper.cpp + Metal GPU. The first voice assistant that sees your screen.'
+    footer_desc: 'Built with Swift + whisper.cpp + Metal GPU. The first voice assistant that sees your screen.',
+    nav_meeting: 'Meeting',
+    nav_pricing: 'Pricing',
+    meeting_label: 'Meeting AI',
+    meeting_heading: 'Notta-level meeting transcription.<br>100% free. 100% local.',
+    meeting_desc: 'Start meeting mode with Option+Cmd+M. Koe captures Zoom/Teams audio, transcribes in real-time with speaker labels, and generates AI summaries with action items.',
+    meeting_f1_title: 'Zoom/Teams Audio Capture',
+    meeting_f1_desc: 'ScreenCaptureKit grabs remote participant audio. No bot needed, no meeting link sharing required.',
+    meeting_f2_title: 'Speaker Diarization',
+    meeting_f2_desc: 'Automatic speaker labeling with tinydiarize. Know who said what, without any setup.',
+    meeting_f3_title: 'Real-time Transcription',
+    meeting_f3_desc: 'Live transcription window with searchable text, speaker colors, and "mark important" voice commands.',
+    meeting_f4_title: 'AI Summary + TODO',
+    meeting_f4_desc: '6 templates: general, 1-on-1, standup, sales, brainstorm, interview. Auto-extracts action items to Apple Reminders.',
+    meeting_f5_title: 'Chat with Transcript',
+    meeting_f5_desc: 'Ask questions about your meeting. "What did we decide about the budget?" AI answers from the transcript.',
+    meeting_f6_title: 'Slack / Notion / Calendar',
+    meeting_f6_desc: 'Auto-post summaries to Slack. Create Notion pages. Auto-start recording when calendar meetings begin.',
+    meeting_cta: 'See how Koe compares to Notta',
+    meeting_pricing: 'View pricing'
   };
 
   var T = {
@@ -825,7 +891,7 @@ footer a:hover{color:var(--text);opacity:1}
       hero_sub: 'Koe は画面を見て、文脈を理解し、声の指示で操作する、初めてのAIエージェント。完全ローカル処理。クラウドゼロ。無料。',
       hero_cta_mac: 'Mac版ダウンロード',
       hero_cta_iphone: 'iPhoneアプリを入手',
-      hero_meta: 'macOS 13以降 / Apple Silicon & Intel / v2.8.0',
+      hero_meta: 'macOS 13以降 / Apple Silicon & Intel / v2.9.0',
       badge_privacy: '100%ローカル',
       nav_demo: 'デモ',
       nav_features: '機能',
@@ -913,9 +979,28 @@ footer a:hover{color:var(--text);opacity:1}
       cta_heading: '声で<span class="gradient">Mac</span>を<br>操り始めよう。',
       cta_sub: '無料。プライバシー安心。オープンソース。アカウント不要。',
       cta_download: 'Mac版を無料ダウンロード',
-      cta_meta: 'macOS 13以降 / Apple Silicon & Intel / v2.8.0 / MIT License',
+      cta_meta: 'macOS 13以降 / Apple Silicon & Intel / v2.9.0 / MIT License',
       cta_share_x: 'Xでシェア',
-      footer_desc: 'Swift + whisper.cpp + Metal GPUで構築。画面を見る初めての音声アシスタント。'
+      footer_desc: 'Swift + whisper.cpp + Metal GPUで構築。画面を見る初めての音声アシスタント。',
+      nav_meeting: '議事録',
+      nav_pricing: '料金',
+      meeting_label: '議事録AI',
+      meeting_heading: 'Nottaレベルの議事録。<br>完全無料。完全ローカル。',
+      meeting_desc: 'Option+Cmd+Mで議事録モード開始。Zoom/Teamsの音声をキャプチャし、話者分離付きでリアルタイム文字起こし。AI要約とアクションアイテムを自動生成。',
+      meeting_f1_title: 'Zoom/Teams音声キャプチャ',
+      meeting_f1_desc: 'ScreenCaptureKitで相手の音声を取得。ボット不要、会議URLの共有も不要。',
+      meeting_f2_title: '話者分離',
+      meeting_f2_desc: 'tinydiarizeで自動話者ラベリング。誰が何を言ったか、設定なしで分かる。',
+      meeting_f3_title: 'リアルタイム文字起こし',
+      meeting_f3_desc: '検索可能なテキスト、話者の色分け、「ここ重要」音声コマンドで重要箇所をマーク。',
+      meeting_f4_title: 'AI要約 + TODO',
+      meeting_f4_desc: '6テンプレート: 一般/1on1/朝会/商談/ブレスト/面接。TODOをAppleリマインダーに自動登録。',
+      meeting_f5_title: '議事録AIチャット',
+      meeting_f5_desc: '会議の内容をAIに質問。「予算についてどう決まった？」議事録から回答。',
+      meeting_f6_title: 'Slack / Notion / カレンダー',
+      meeting_f6_desc: '要約をSlackに自動投稿。Notionページ自動作成。カレンダーの会議開始時に自動録音。',
+      meeting_cta: 'Nottaとの比較を見る',
+      meeting_pricing: '料金プランを見る'
     },
     'zh-CN': {
       hero_title: '用声音，<span class="gradient">掌控Mac</span>。',

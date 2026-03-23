@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import AVFoundation
 
 class SettingsWindowController: NSWindowController, NSWindowDelegate {
     var onClose: (() -> Void)?
@@ -2117,6 +2118,9 @@ struct HistoryTab: View {
     @ObservedObject private var history = HistoryStore.shared
     @State private var searchQuery = ""
     @State private var showFavoritesOnly = false
+    @State private var playingID: UUID?
+    @State private var rerecognizingID: UUID?
+    @StateObject private var audioPlayer = HistoryAudioPlayer()
 
     private let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -2183,9 +2187,34 @@ struct HistoryTab: View {
                                     .font(.caption)
                             }
                             .buttonStyle(.plain)
-                            Text(entry.text)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.text)
+                                    .lineLimit(2)
+                                if rerecognizingID == entry.id {
+                                    Text("再認識中...")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            if entry.audioFileID != nil {
+                                Button {
+                                    if audioPlayer.isPlaying && playingID == entry.id {
+                                        audioPlayer.stop()
+                                        playingID = nil
+                                    } else if let fid = entry.audioFileID,
+                                              let url = AudioArchive.shared.url(for: fid) {
+                                        audioPlayer.play(url: url)
+                                        playingID = entry.id
+                                    }
+                                } label: {
+                                    Image(systemName: (audioPlayer.isPlaying && playingID == entry.id) ? "stop.fill" : "play.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.accentColor)
+                                }
+                                .buttonStyle(.plain)
+                                .help("音声を再生")
+                            }
                             Text(dateFormatter.string(from: entry.date))
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -2198,6 +2227,25 @@ struct HistoryTab: View {
                                 NSPasteboard.general.setString(entry.text, forType: .string)
                             } label: {
                                 Label(L10n.labelCopy, systemImage: "doc.on.doc")
+                            }
+                            if let fid = entry.audioFileID, AudioArchive.shared.url(for: fid) != nil {
+                                Button {
+                                    if let url = AudioArchive.shared.url(for: fid) {
+                                        audioPlayer.play(url: url)
+                                        playingID = entry.id
+                                    }
+                                } label: {
+                                    Label("音声を再生", systemImage: "play.fill")
+                                }
+                                Menu {
+                                    ForEach(downloadedModels(), id: \.id) { model in
+                                        Button(model.name) {
+                                            rerecognizeEntry(entry, model: model)
+                                        }
+                                    }
+                                } label: {
+                                    Label("再認識", systemImage: "arrow.clockwise")
+                                }
                             }
                             Button {
                                 history.toggleFavorite(id: entry.id)
@@ -2265,5 +2313,60 @@ struct HistoryTab: View {
         case .json: content = history.exportAsJSON()
         }
         try? content.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    private func downloadedModels() -> [WhisperModel] {
+        ModelDownloader.availableModels.filter { ModelDownloader.shared.isDownloaded($0) }
+    }
+
+    private func rerecognizeEntry(_ entry: HistoryEntry, model: WhisperModel) {
+        guard let fid = entry.audioFileID,
+              let url = AudioArchive.shared.url(for: fid) else { return }
+        rerecognizingID = entry.id
+        let lang = AppSettings.shared.language == "auto" ? "auto" : (AppSettings.shared.language.components(separatedBy: "-").first ?? "en")
+        let modelPath = ModelDownloader.shared.path(for: model)
+
+        // 一時的に別モデルをロードして認識、完了後に元のモデルに戻す
+        klog("Re-recognize: loading \(model.name) for entry \(entry.id)")
+        let ctx = WhisperContext()
+        ctx.loadModel(path: modelPath) { ok in
+            guard ok else {
+                klog("Re-recognize: failed to load \(model.name)")
+                self.rerecognizingID = nil
+                return
+            }
+            ctx.transcribe(url: url, language: lang) { text in
+                self.rerecognizingID = nil
+                ctx.unload()
+                guard let text, !text.isEmpty else { return }
+                klog("Re-recognize (\(model.name)): '\(text)'")
+                self.history.updateText(id: entry.id, newText: text)
+            }
+        }
+    }
+}
+
+/// 履歴タブ用の音声再生ヘルパー
+class HistoryAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
+    @Published var isPlaying = false
+    private var player: AVAudioPlayer?
+
+    func play(url: URL) {
+        stop()
+        guard let p = try? AVAudioPlayer(contentsOf: url) else { return }
+        p.delegate = self
+        p.play()
+        player = p
+        isPlaying = true
+    }
+
+    func stop() {
+        player?.stop()
+        player = nil
+        isPlaying = false
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { self.isPlaying = false }
     }
 }

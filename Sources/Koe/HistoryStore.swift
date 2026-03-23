@@ -2,7 +2,7 @@ import Foundation
 
 struct HistoryEntry: Codable, Identifiable {
     var id: UUID = UUID()
-    let text: String
+    var text: String
     let date: Date
     var isFavorite: Bool = false
     /// 紐付く音声ファイルのID（AudioArchive で保存）
@@ -72,6 +72,16 @@ class HistoryStore: ObservableObject {
     func delete(id: UUID) {
         entries.removeAll { $0.id == id }
         debouncedSave()
+    }
+
+    func updateText(id: UUID, newText: String) {
+        DispatchQueue.main.async {
+            guard let index = self.entries.firstIndex(where: { $0.id == id }) else { return }
+            var updated = self.entries[index]
+            updated.text = newText
+            self.entries[index] = updated
+            self.debouncedSave()
+        }
     }
 
     func exportAsText() -> String {

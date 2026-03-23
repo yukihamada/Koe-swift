@@ -2120,6 +2120,11 @@ struct HistoryTab: View {
     @State private var showFavoritesOnly = false
     @State private var playingID: UUID?
     @State private var rerecognizingID: UUID?
+    @State private var batchRerecognizing = false
+    @State private var batchProgress = 0
+    @State private var batchTotal = 0
+    @State private var selectedWaveformID: UUID?
+    @State private var waveformSamples: [Float] = []
     @StateObject private var audioPlayer = HistoryAudioPlayer()
 
     private let dateFormatter: DateFormatter = {
@@ -2190,10 +2195,33 @@ struct HistoryTab: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.text)
                                     .lineLimit(2)
-                                if rerecognizingID == entry.id {
-                                    Text("再認識中...")
-                                        .font(.caption2)
-                                        .foregroundColor(.orange)
+                                HStack(spacing: 6) {
+                                    if let time = entry.recognitionTime {
+                                        Text(String(format: "%.1fs", time))
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundColor(.secondary.opacity(0.6))
+                                    }
+                                    if let model = entry.modelName {
+                                        Text(model)
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.secondary.opacity(0.6))
+                                    }
+                                    if entry.originalText != nil {
+                                        Image(systemName: "arrow.triangle.2.circlepath")
+                                            .font(.system(size: 8))
+                                            .foregroundColor(.orange.opacity(0.6))
+                                            .help("再認識済み（元: \(entry.originalText ?? "")）")
+                                    }
+                                    if rerecognizingID == entry.id {
+                                        Text("再認識中...")
+                                            .font(.caption2)
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                // 波形プレビュー
+                                if selectedWaveformID == entry.id && !waveformSamples.isEmpty {
+                                    WaveformPreviewView(samples: waveformSamples)
+                                        .frame(height: 30)
                                 }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2237,6 +2265,11 @@ struct HistoryTab: View {
                                 } label: {
                                     Label("音声を再生", systemImage: "play.fill")
                                 }
+                                Button {
+                                    loadWaveform(for: entry)
+                                } label: {
+                                    Label("波形を表示", systemImage: "waveform")
+                                }
                                 Menu {
                                     ForEach(downloadedModels(), id: \.id) { model in
                                         Button(model.name) {
@@ -2272,6 +2305,22 @@ struct HistoryTab: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
+                if batchRerecognizing {
+                    ProgressView(value: Double(batchProgress), total: Double(max(batchTotal, 1)))
+                        .frame(width: 60)
+                    Text("\(batchProgress)/\(batchTotal)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                } else {
+                    Menu("一括再認識") {
+                        ForEach(downloadedModels(), id: \.id) { model in
+                            Button(model.name) { batchRerecognize(model: model) }
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .disabled(history.entries.filter { $0.audioFileID != nil }.isEmpty)
+                }
                 Menu(L10n.labelExport) {
                     Button("テキスト (.txt)") { exportFile(type: .text) }
                     Button("CSV (.csv)") { exportFile(type: .csv) }
@@ -2326,7 +2375,6 @@ struct HistoryTab: View {
         let lang = AppSettings.shared.language == "auto" ? "auto" : (AppSettings.shared.language.components(separatedBy: "-").first ?? "en")
         let modelPath = ModelDownloader.shared.path(for: model)
 
-        // 一時的に別モデルをロードして認識、完了後に元のモデルに戻す
         klog("Re-recognize: loading \(model.name) for entry \(entry.id)")
         let ctx = WhisperContext()
         ctx.loadModel(path: modelPath) { ok in
@@ -2337,10 +2385,85 @@ struct HistoryTab: View {
             }
             ctx.transcribe(url: url, language: lang) { text in
                 self.rerecognizingID = nil
+                let time = ctx.lastTranscriptionTime
                 ctx.unload()
                 guard let text, !text.isEmpty else { return }
-                klog("Re-recognize (\(model.name)): '\(text)'")
-                self.history.updateText(id: entry.id, newText: text)
+                klog("Re-recognize (\(model.name)): '\(text)' in \(String(format: "%.2f", time))s")
+                self.history.updateText(id: entry.id, newText: text, modelName: model.name, recognitionTime: time)
+            }
+        }
+    }
+
+    private func batchRerecognize(model: WhisperModel) {
+        let targets = history.entries.filter { $0.audioFileID != nil }
+        guard !targets.isEmpty else { return }
+        batchRerecognizing = true
+        batchTotal = targets.count
+        batchProgress = 0
+
+        let lang = AppSettings.shared.language == "auto" ? "auto" : (AppSettings.shared.language.components(separatedBy: "-").first ?? "en")
+        let modelPath = ModelDownloader.shared.path(for: model)
+        let ctx = WhisperContext()
+
+        klog("Batch re-recognize: \(targets.count) entries with \(model.name)")
+        ctx.loadModel(path: modelPath) { ok in
+            guard ok else {
+                klog("Batch re-recognize: failed to load \(model.name)")
+                self.batchRerecognizing = false
+                return
+            }
+            self.processNext(targets: targets, index: 0, ctx: ctx, lang: lang, model: model)
+        }
+    }
+
+    private func processNext(targets: [HistoryEntry], index: Int, ctx: WhisperContext, lang: String, model: WhisperModel) {
+        guard index < targets.count else {
+            ctx.unload()
+            batchRerecognizing = false
+            klog("Batch re-recognize: complete (\(targets.count) entries)")
+            return
+        }
+        let entry = targets[index]
+        guard let fid = entry.audioFileID,
+              let url = AudioArchive.shared.url(for: fid) else {
+            batchProgress = index + 1
+            processNext(targets: targets, index: index + 1, ctx: ctx, lang: lang, model: model)
+            return
+        }
+        rerecognizingID = entry.id
+        ctx.transcribe(url: url, language: lang) { [self] text in
+            rerecognizingID = nil
+            let time = ctx.lastTranscriptionTime
+            if let text, !text.isEmpty {
+                history.updateText(id: entry.id, newText: text, modelName: model.name, recognitionTime: time)
+            }
+            batchProgress = index + 1
+            processNext(targets: targets, index: index + 1, ctx: ctx, lang: lang, model: model)
+        }
+    }
+
+    private func loadWaveform(for entry: HistoryEntry) {
+        if selectedWaveformID == entry.id {
+            selectedWaveformID = nil
+            waveformSamples = []
+            return
+        }
+        guard let fid = entry.audioFileID,
+              let url = AudioArchive.shared.url(for: fid) else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let samples = WhisperContext.loadWAVPublic(url: url) else { return }
+            // ダウンサンプリング（表示用に200点に間引き）
+            let targetCount = 200
+            let step = max(1, samples.count / targetCount)
+            var downsampled: [Float] = []
+            for i in stride(from: 0, to: samples.count, by: step) {
+                let end = min(i + step, samples.count)
+                let chunk = samples[i..<end]
+                downsampled.append(chunk.map { abs($0) }.max() ?? 0)
+            }
+            DispatchQueue.main.async {
+                self.waveformSamples = downsampled
+                self.selectedWaveformID = entry.id
             }
         }
     }
@@ -2368,5 +2491,32 @@ class HistoryAudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         DispatchQueue.main.async { self.isPlaying = false }
+    }
+}
+
+/// 音声波形プレビュー
+struct WaveformPreviewView: View {
+    let samples: [Float]
+
+    var body: some View {
+        Canvas { context, size in
+            let barWidth: CGFloat = 2
+            let gap: CGFloat = 1
+            let totalBars = min(samples.count, Int(size.width / (barWidth + gap)))
+            let step = max(1, samples.count / totalBars)
+            let midY = size.height / 2
+
+            for i in 0..<totalBars {
+                let idx = i * step
+                guard idx < samples.count else { break }
+                let level = CGFloat(min(samples[idx] * 8, 1.0))  // 増幅 + クランプ
+                let barH = max(1, level * (size.height - 2))
+                let x = CGFloat(i) * (barWidth + gap)
+
+                let color: Color = level > 0.7 ? .orange : (level > 0.3 ? .yellow : .green)
+                let rect = CGRect(x: x, y: midY - barH / 2, width: barWidth, height: barH)
+                context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(color.opacity(0.7)))
+            }
+        }
     }
 }

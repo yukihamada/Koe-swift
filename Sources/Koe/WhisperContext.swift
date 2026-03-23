@@ -13,6 +13,8 @@ final class WhisperContext {
     // 投機実行は同じqueueを使用（whisper_contextは並行アクセス不可）
     private(set) var isLoaded = false
     private(set) var isLoading = false
+    /// 直前の認識にかかった時間（秒）
+    private(set) var lastTranscriptionTime: Double = 0
     /// 投機実行をキャンセルするフラグ
     /// UnsafeMutablePointer経由でCコールバックからアクセスするためclass変数として管理
     private var cancelSpeculation = false
@@ -207,7 +209,7 @@ final class WhisperContext {
             }
 
             let elapsed = CFAbsoluteTimeGetCurrent() - start
-            let samplesSec = String(format: "%.1f", Double(samples.count) / 16000.0)
+            self.lastTranscriptionTime = elapsed
             let text = String(cString: outputBuf).trimmingCharacters(in: .whitespacesAndNewlines)
             klog("WhisperContext: [bridge] \(nSeg) segments in \(String(format: "%.3f", elapsed))s → '\(text.isEmpty ? "(empty)" : String(text.prefix(80)))'")
 

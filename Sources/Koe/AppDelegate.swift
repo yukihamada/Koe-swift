@@ -23,6 +23,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var carbonEscHotKeyRef: EventHotKeyRef?
     private var carbonCmdKHotKeyRef: EventHotKeyRef?
     private var carbonMeetingHotKeyRef: EventHotKeyRef?
+    private var carbonRerecognizeHotKeyRef: EventHotKeyRef?
     private var meetingOverlay: MeetingOverlayWindow?
     private var levelTimer: Timer?
     private var isRecording      = false
@@ -356,6 +357,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.toolTip = "Koe — 声で入力"
         setIcon(recording: false)
         rebuildMenu()
+
+        // ドラッグ&ドロップ: 音声ファイルをメニューバーアイコンにドロップで文字起こし
+        statusItem.button?.registerForDraggedTypes([.fileURL])
+        let dropDelegate = StatusBarDropDelegate(appDelegate: self)
+        // DropDelegateをretainしておく
+        objc_setAssociatedObject(statusItem.button!, "dropDelegate", dropDelegate, .OBJC_ASSOCIATION_RETAIN)
+        statusItem.button?.wantsLayer = true
     }
 
     private func rebuildMenu() {
@@ -581,6 +589,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } else if hotKeyID.id == 6 {
                 // ⌥⌘M pressed → 議事録トグル
                 DispatchQueue.main.async { delegate.toggleMeetingMode() }
+            } else if hotKeyID.id == 7 {
+                // ⌃⌥R pressed → 直前の認識をやり直す
+                DispatchQueue.main.async { delegate.rerecognizeLast() }
             } else if hotKeyID.id == 4 {
                 // ESC pressed → キャンセル
                 DispatchQueue.main.async {
@@ -653,6 +664,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                                  UInt32(cmdKey | optionKey),
                                                  meetingID, GetApplicationEventTarget(), 0, &carbonMeetingHotKeyRef)
         klog("Carbon hotkey ⌥⌘M: status=\(meetingStatus)")
+
+        // ⌃⌥R 直前の認識をやり直す
+        if let ref = carbonRerecognizeHotKeyRef {
+            UnregisterEventHotKey(ref)
+            carbonRerecognizeHotKeyRef = nil
+        }
+        var rerecID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 7)
+        let rerecStatus = RegisterEventHotKey(UInt32(kVK_ANSI_R),
+                                               UInt32(controlKey | optionKey),
+                                               rerecID, GetApplicationEventTarget(), 0, &carbonRerecognizeHotKeyRef)
+        klog("Carbon hotkey ⌃⌥R: status=\(rerecStatus)")
     }
 
     /// 録音中のみ有効な Space/ESC ホットキーを登録
@@ -942,8 +964,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if !segments.isEmpty {
                     let fullText = segments.map { $0.text }.joined()
                     klog("diarize result: \(segments.count) segments, \(Set(segments.map { $0.speaker }).count) speakers")
-                    HistoryStore.shared.add(fullText, audioFileID: self.lastArchiveID)
+                    HistoryStore.shared.add(fullText, audioFileID: self.lastArchiveID,
+                                           recognitionTime: WhisperContext.shared.lastTranscriptionTime,
+                                           modelName: ModelDownloader.shared.currentModel.name)
                     MeetingMode.shared.appendSpeakerSegments(segments, audioURL: self.lastAudioURL)
+                    self.meetingOverlay?.updateLastText(fullText)
                     // 議事録自動録音中はファイル保存のみ（テキスト入力しない）
                     if !self.isMeetingAutoRecording {
                         if AppSettings.shared.streamingPreviewEnabled {
@@ -1130,9 +1155,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                             self.typer.finalizeStreaming(final, bundleID: self.activeAppBundleID)
                         }
                     }
-                    HistoryStore.shared.add(final, audioFileID: self.lastArchiveID)
+                    HistoryStore.shared.add(final, audioFileID: self.lastArchiveID,
+                                           recognitionTime: WhisperContext.shared.lastTranscriptionTime,
+                                           modelName: ModelDownloader.shared.currentModel.name)
                     VoiceStats.shared.recordSession(charCount: final.count, durationSeconds: recordingDuration)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
+                    self.meetingOverlay?.updateLastText(final)
                     CorrectionStore.shared.trackDelivery(original: final, appBundleID: self.activeAppBundleID)
                     self.publishHandoffActivity(text: final)
                     if AppSettings.shared.autoCopyToClipboard {
@@ -1207,6 +1235,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else if AppSettings.shared.wakeWordEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+        }
+    }
+
+    /// ⌃⌥R: 直前の認識を現在のモデルで再認識してテキストを置換
+    func rerecognizeLast() {
+        guard !isRecording, !isRecognizing else { return }
+        guard let entry = HistoryStore.shared.entries.first,
+              let fid = entry.audioFileID,
+              let url = AudioArchive.shared.url(for: fid) else {
+            klog("Re-recognize: no audio available for last entry")
+            return
+        }
+        let lang = AppSettings.shared.language == "auto" ? "auto" : (AppSettings.shared.language.components(separatedBy: "-").first ?? "en")
+        let model = ModelDownloader.shared.currentModel
+        klog("Re-recognize last: '\(entry.text.prefix(30))' with \(model.name)")
+
+        if overlay == nil { overlay = OverlayWindow() }
+        overlay?.show(state: .recognizing)
+
+        WhisperContext.shared.transcribe(url: url, language: lang) { [weak self] text in
+            self?.overlay?.hide()
+            guard let text, !text.isEmpty else { return }
+            let time = WhisperContext.shared.lastTranscriptionTime
+            klog("Re-recognize done: '\(text.prefix(40))' in \(String(format: "%.2f", time))s")
+            // 入力済みテキストを置換
+            if entry.text != text {
+                self?.typer.deleteAndReplace(oldText: entry.text, newText: text, bundleID: self?.activeAppBundleID ?? "")
+            }
+            HistoryStore.shared.updateText(id: entry.id, newText: text, modelName: model.name, recognitionTime: time)
         }
     }
 
@@ -1631,6 +1688,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.terminate(nil)
     }
 
+    /// ドロップされた音声ファイルを文字起こし
+    func transcribeDroppedFile(_ url: URL) {
+        klog("Drop transcribe: \(url.lastPathComponent)")
+        if transcriptionWindow == nil { transcriptionWindow = TranscriptionWindow() }
+        transcriptionWindow?.show(fileURL: url)
+    }
+
     deinit {
         if let m = eventMonitor { NSEvent.removeMonitor(m) }
         levelTimer?.invalidate()
@@ -2031,5 +2095,34 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
         let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
         mouseDown?.post(tap: .cghidEventTap)
         mouseUp?.post(tap: .cghidEventTap)
+    }
+}
+
+// MARK: - Status Bar Drop Delegate
+
+class StatusBarDropDelegate: NSObject {
+    weak var appDelegate: AppDelegate?
+    init(appDelegate: AppDelegate) {
+        self.appDelegate = appDelegate
+        super.init()
+    }
+}
+
+/// NSButton extension for drag & drop on status bar
+extension NSButton {
+    open override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard sender.draggingPasteboard.canReadObject(forClasses: [NSURL.self],
+              options: [.urlReadingFileURLsOnly: true]) else { return [] }
+        return .copy
+    }
+
+    open override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+              options: [.urlReadingFileURLsOnly: true]) as? [URL],
+              let url = urls.first else { return false }
+        let audioExts = ["wav", "mp3", "m4a", "mp4", "mov", "aac", "flac", "ogg", "caf"]
+        guard audioExts.contains(url.pathExtension.lowercased()) else { return false }
+        AppDelegate.shared?.transcribeDroppedFile(url)
+        return true
     }
 }

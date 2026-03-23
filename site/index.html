@@ -335,30 +335,46 @@ footer a:hover{color:var(--text);opacity:1}
   </h1>
   <p class="subtitle" data-i18n="hero_sub">Koe is the first AI agent that sees your screen, understands context, and acts on your voice commands. Completely local. Zero cloud. Free.</p>
   <div class="hero-ctas">
-    <a class="btn-primary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg">
+    <a class="btn-primary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe.pkg" id="hero-dl-btn">
       <svg viewBox="0 0 24 24"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
       <span data-i18n="hero_cta_mac">Download for Mac</span>
     </a>
-    <a class="btn-secondary" href="https://testflight.apple.com/join/koe-voice">
+    <a class="btn-secondary" href="https://apps.apple.com/app/id6760352863">
       <svg viewBox="0 0 24 24" width="20" height="20"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z" fill="currentColor"/></svg>
       <span data-i18n="hero_cta_iphone">Get iPhone App</span>
     </a>
   </div>
   <p class="hero-meta" data-i18n="hero_meta">macOS 13+ / Apple Silicon & Intel / v2.9.0</p>
-  <div class="hero-badges">
+
+  <!-- Social proof -->
+  <div style="display:flex;gap:24px;justify-content:center;flex-wrap:wrap;margin-top:32px;align-items:center">
+    <div style="text-align:center">
+      <div style="font-size:28px;font-weight:800;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent" id="dl-count">2,500+</div>
+      <div style="font-size:12px;color:var(--dim)" data-i18n="social_downloads">Downloads</div>
+    </div>
+    <div style="width:1px;height:32px;background:var(--border)"></div>
+    <div style="text-align:center">
+      <div style="font-size:28px;font-weight:800;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent">&#11088; <span id="starCount2">0</span></div>
+      <div style="font-size:12px;color:var(--dim)">GitHub Stars</div>
+    </div>
+    <div style="width:1px;height:32px;background:var(--border)"></div>
+    <div style="text-align:center">
+      <div style="font-size:28px;font-weight:800;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent">&#165;0</div>
+      <div style="font-size:12px;color:var(--dim)" data-i18n="social_free">Forever Free</div>
+    </div>
+  </div>
+
+  <div class="hero-badges" style="margin-top:20px">
     <span class="badge">
-      <svg viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
-      Open Source
-    </span>
-    <span class="badge">
-      <svg viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
-      MIT License
-    </span>
-    <span class="badge">
-      <svg viewBox="0 0 24 24"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+      <svg viewBox="0 0 24 24" width="14" height="14"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" fill="currentColor"/></svg>
       <span data-i18n="badge_privacy">100% Local</span>
     </span>
-    <!-- Product Hunt placeholder -->
+    <span class="badge">&#127908; Zoom/Teams</span>
+    <span class="badge">&#128101; <span data-i18n="badge_speakers">Speaker ID</span></span>
+    <span class="badge">&#128221; <span data-i18n="badge_summary">AI Summary</span></span>
+    <span class="badge" style="border-color:rgba(255,149,0,.3);color:var(--accent2)">
+      <a href="/vs-notta" style="color:inherit" data-i18n="badge_notta">Notta alternative</a>
+    </span>
   </div>
 </section>
 
@@ -716,15 +732,17 @@ footer a:hover{color:var(--text);opacity:1}
       <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
       <span data-i18n="cta_download">Download for Mac (Free)</span>
     </a>
-    <a class="btn-secondary" href="https://github.com/yukihamada/Koe-swift/releases/latest/download/Koe-Installer.dmg">
-      <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
-      DMG
+    <a class="btn-secondary" href="https://apps.apple.com/app/id6760352863">
+      <svg viewBox="0 0 24 24" width="20" height="20"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z" fill="currentColor"/></svg>
+      iPhone
     </a>
   </div>
   <p class="hero-meta" style="margin-top:20px" data-i18n="cta_meta">macOS 13+ / Apple Silicon & Intel / v2.9.0 / MIT License</p>
-  <div class="hero-badges" style="margin-top:20px">
-    <a class="badge" href="https://x.com/intent/tweet?text=Koe%20%E2%80%94%20the%20first%20AI%20agent%20that%20sees%20your%20screen%20and%20acts%20on%20voice%20commands.%20100%25%20local%2C%20free%2C%20open%20source.&url=https%3A%2F%2Fkoe.elio.love" target="_blank" style="cursor:pointer">
-      <svg viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+  <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin-top:20px">
+    <a href="/pricing" style="font-size:14px;color:var(--accent2)">&#128176; <span data-i18n="cta_pricing">Need cloud AI? See Pro plans</span></a>
+    <a href="/vs-notta" style="font-size:14px;color:var(--muted)"><span data-i18n="cta_vs_notta">Switching from Notta?</span> &rarr;</a>
+    <a class="badge" href="https://x.com/intent/tweet?text=Koe%20%E2%80%94%20Free%20local%20AI%20meeting%20transcription%20for%20Mac.%20Zoom%2FTeams%20support%2C%20speaker%20ID%2C%20AI%20summaries.%20No%20cloud%20needed.&url=https%3A%2F%2Fkoe.elio.love" target="_blank" style="cursor:pointer">
+      <svg viewBox="0 0 24 24" width="14" height="14"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" fill="currentColor"/></svg>
       <span data-i18n="cta_share_x">Share on X</span>
     </a>
   </div>
@@ -881,7 +899,14 @@ footer a:hover{color:var(--text);opacity:1}
     meeting_f6_title: 'Slack / Notion / Calendar',
     meeting_f6_desc: 'Auto-post summaries to Slack. Create Notion pages. Auto-start recording when calendar meetings begin.',
     meeting_cta: 'See how Koe compares to Notta',
-    meeting_pricing: 'View pricing'
+    meeting_pricing: 'View pricing',
+    social_downloads: 'Downloads',
+    social_free: 'Forever Free',
+    badge_speakers: 'Speaker ID',
+    badge_summary: 'AI Summary',
+    badge_notta: 'Notta alternative',
+    cta_pricing: 'Need cloud AI? See Pro plans',
+    cta_vs_notta: 'Switching from Notta?'
   };
 
   var T = {
@@ -1000,7 +1025,14 @@ footer a:hover{color:var(--text);opacity:1}
       meeting_f6_title: 'Slack / Notion / カレンダー',
       meeting_f6_desc: '要約をSlackに自動投稿。Notionページ自動作成。カレンダーの会議開始時に自動録音。',
       meeting_cta: 'Nottaとの比較を見る',
-      meeting_pricing: '料金プランを見る'
+      meeting_pricing: '料金プランを見る',
+      social_downloads: 'ダウンロード',
+      social_free: '永久無料',
+      badge_speakers: '話者分離',
+      badge_summary: 'AI要約',
+      badge_notta: 'Nottaの代わりに',
+      cta_pricing: 'クラウドAIが必要？ Proプランを見る',
+      cta_vs_notta: 'Nottaから乗り換え？'
     },
     'zh-CN': {
       hero_title: '用声音，<span class="gradient">掌控Mac</span>。',

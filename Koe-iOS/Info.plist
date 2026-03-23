@@ -6,6 +6,8 @@
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -16,10 +18,40 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.yuki.koe</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>koe</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>CFBundleIconName</key>
-	<string>AppIcon</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_koe-bridge._tcp</string>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>同じWiFi上のMacに音声入力テキストを送信するために使用します</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>音声入力のためにマイクを使用します</string>
+	<key>NSMotionUsageDescription</key>
+	<string>デバイスの動きを検出して音声入力の精度を向上させます</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>音声をテキストに変換するために音声認識を使用します</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.yuki.koe.transcribe</string>
+		<string>com.yuki.koe.transcription</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
@@ -34,34 +66,6 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>com.yuki.koe</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>koe</string>
-			</array>
-		</dict>
-	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>音声入力のためにマイクを使用します</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>音声をテキストに変換するために音声認識を使用します</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>同じWiFi上のMacに音声入力テキストを送信するために使用します</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_koe-bridge._tcp</string>
-	</array>
-	<key>NSUserActivityTypes</key>
-	<array>
-		<string>com.yuki.koe.transcribe</string>
-		<string>com.yuki.koe.transcription</string>
 	</array>
 </dict>
 </plist>

@@ -1519,6 +1519,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 meetingOverlay = MeetingOverlayWindow()
             }
             meetingOverlay?.showMeeting()
+
+            // システム音声キャプチャ開始（Zoom/Teams等の音声を取得）
+            if #available(macOS 13.0, *) {
+                SystemAudioCapture.shared.startCapture { ok in
+                    klog("MeetingMode: system audio capture \(ok ? "started" : "unavailable")")
+                }
+            }
+
+            // 議事録モードでは話者分離を自動有効化
+            if !AppSettings.shared.diarizationEnabled {
+                AppSettings.shared.diarizationEnabled = true
+                klog("MeetingMode: auto-enabled diarization")
+            }
+
             // 議事録開始時に自動で最初の録音を開始
             if !isRecording {
                 klog("MeetingMode: auto-starting first recording")
@@ -1529,6 +1543,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         } else if wasActive {
+            // システム音声キャプチャ停止
+            if #available(macOS 13.0, *) {
+                if let sysURL = SystemAudioCapture.shared.stopCapture() {
+                    // システム音声を議事録フォルダに保存
+                    if let dir = MeetingMode.shared.outputURL {
+                        let dest = dir.appendingPathComponent("system_audio.wav")
+                        try? FileManager.default.copyItem(at: sysURL, to: dest)
+                        klog("MeetingMode: saved system audio to \(dest.lastPathComponent)")
+                    }
+                }
+            }
+
             // 議事録オーバーレイ非表示
             meetingOverlay?.hideMeeting()
             // 議事録停止時に録音中なら停止

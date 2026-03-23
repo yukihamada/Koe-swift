@@ -8,7 +8,7 @@ class MeetingMode: ObservableObject {
     @Published var entryCount = 0
     @Published var charCount = 0
     @Published var isFormatting = false
-    private var outputURL: URL?
+    private(set) var outputURL: URL?
     private var audioDir: URL?
     private var fileHandle: FileHandle?
     private var startDate: Date?

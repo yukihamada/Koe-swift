@@ -59,6 +59,15 @@ struct MainTabView: View {
                 }
                 .tag(1)
 
+            NavigationView {
+                CallTranscriberView()
+            }
+            .tabItem {
+                Image(systemName: "phone.fill")
+                Text("通話")
+            }
+            .tag(3)
+
             MoreView()
                 .tabItem {
                     Image(systemName: "ellipsis.circle")

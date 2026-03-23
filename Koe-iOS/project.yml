@@ -42,7 +42,7 @@ targets:
         SWIFT_INCLUDE_PATHS: "$(PROJECT_DIR)/Sources/CWhisper $(PROJECT_DIR)/Sources/CSolunaRing"
         HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Sources/include $(PROJECT_DIR)/Sources"
         LIBRARY_SEARCH_PATHS: "$(PROJECT_DIR)/lib"
-        OTHER_LDFLAGS: "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox"
+        OTHER_LDFLAGS: "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox -framework CallKit -framework EventKit"
         MTL_HEADER_SEARCH_PATHS: "$(PROJECT_DIR)/Sources"
         GENERATE_INFOPLIST_FILE: "NO"
         CLANG_CXX_LANGUAGE_STANDARD: "c++17"

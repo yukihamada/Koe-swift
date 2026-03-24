@@ -1372,8 +1372,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var streamingRecognitionTask: SFSpeechRecognitionTask?
 
     private func startStreamingPreview() {
-        // 議事録モード中は常にストリーミングを有効化（リアルタイム表示のため）
-        guard AppSettings.shared.streamingPreviewEnabled || MeetingMode.shared.isActive else { return }
+        // 常にApple Speechストリーミングを有効化
+        // → 話し終わった瞬間にApple Speech結果を先行入力
+        // → Whisperの高精度結果で後から静かに置換
 
         // Apple Speech APIでリアルタイムプレビュー（whisperとは独立）
         let lang = AppSettings.shared.language
@@ -1413,8 +1414,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !text.isEmpty {
                 self.lastStreamingResult = text
                 if self.isRecording {
-                    self.overlay?.updateStreamingText(text)
-                    // 議事録モード: リアルタイムウィンドウにストリーミングテキスト表示
+                    // 通常モード: オーバーレイにストリーミングテキストは表示しない
+                    // （入力中に文字が見えるとユーザーが気にしてしまうため）
+                    // 議事録モード: リアルタイムウィンドウにのみ表示
                     if MeetingMode.shared.isActive {
                         self.meetingLiveWindow?.updateStreamingText(text)
                         self.meetingOverlay?.updateLastText(text)

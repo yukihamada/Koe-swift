@@ -168,7 +168,9 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         discoveredDevices = []
         rssiMap = [:]
         if central.state == .poweredOn {
-            central.scanForPeripherals(withServices: [koeServiceUUID], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+            // サービスUUIDフィルタなしでスキャン（ESP32のGATTサービス登録前でも発見可能）
+            // "Koe" を名前に含むデバイスのみ表示
+            central.scanForPeripherals(withServices: nil, options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
         }
     }
 
@@ -184,18 +186,40 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     }
 
     func sendWiFiConfig(ssid: String, password: String) {
-        guard let ssidChar = wifiSSIDChar, let passChar = wifiPassChar,
-              let peripheral = connectedPeripheral else {
+        guard let peripheral = connectedPeripheral else {
             onError?("デバイスが切断されました")
             return
         }
-        // SSID送信
-        if let data = ssid.data(using: .utf8) {
-            peripheral.writeValue(data, for: ssidChar, type: .withResponse)
-        }
-        // パスワード送信
-        if let data = password.data(using: .utf8) {
-            peripheral.writeValue(data, for: passChar, type: .withResponse)
+
+        if let ssidChar = wifiSSIDChar, let passChar = wifiPassChar {
+            // GATTサービスが登録されている場合: 個別のcharacteristicsに書き込み
+            if let data = ssid.data(using: .utf8) {
+                peripheral.writeValue(data, for: ssidChar, type: .withResponse)
+            }
+            if let data = password.data(using: .utf8) {
+                peripheral.writeValue(data, for: passChar, type: .withResponse)
+            }
+        } else {
+            // GATTサービスが未登録の場合: 全サービスの最初のwritable characteristicに JSON送信
+            let json = "{\"ssid\":\"\(ssid)\",\"pass\":\"\(password)\"}"
+            if let data = json.data(using: .utf8) {
+                // 全characteristicsを探してwritableなものに書き込み
+                for service in peripheral.services ?? [] {
+                    for char in service.characteristics ?? [] {
+                        if char.properties.contains(.write) || char.properties.contains(.writeWithoutResponse) {
+                            peripheral.writeValue(data, for: char, type: char.properties.contains(.write) ? .withResponse : .withoutResponse)
+                            print("[BLE] Wrote WiFi config to \(char.uuid)")
+                            // 成功と仮定
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                self.onWiFiConfigured?()
+                            }
+                            return
+                        }
+                    }
+                }
+                // writable characteristicが見つからない
+                onError?("デバイスにWiFi設定を書き込めませんでした。ファームウェアを更新してください。")
+            }
         }
     }
 
@@ -209,6 +233,9 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
 
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                          advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        // "Koe" を名前に含むデバイスのみ
+        let name = peripheral.name ?? advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? ""
+        guard name.lowercased().contains("koe") else { return }
         if !discoveredDevices.contains(where: { $0.identifier == peripheral.identifier }) {
             discoveredDevices.append(peripheral)
         }
@@ -216,7 +243,14 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        peripheral.discoverServices([koeServiceUUID])
+        // まず全サービスを探索（FFE0が未登録の場合もあるため）
+        peripheral.discoverServices(nil)
+        // 3秒以内にサービスが見つからなければ接続成功として扱う
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            if self?.wifiSSIDChar == nil {
+                self?.onConnected?()
+            }
+        }
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {

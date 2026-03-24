@@ -168,6 +168,34 @@ struct DeviceSetupView: View {
             // Step 2: WiFi設定（接続後に表示）
             if scanner.isConnected {
                 Section {
+                    // iPhoneテザリングボタン
+                    Button {
+                        useHotspot()
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(.green.opacity(0.15)).frame(width: 36, height: 36)
+                                Image(systemName: "iphone.radiowaves.left.and.right").foregroundColor(.green)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("iPhoneのテザリングを使う")
+                                    .font(.subheadline).fontWeight(.medium)
+                                Text("このiPhoneのインターネット共有に自動接続")
+                                    .font(.caption2).foregroundColor(.secondary)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundColor(.secondary).font(.caption)
+                        }
+                    }
+
+                    // 区切り
+                    HStack {
+                        Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 0.5)
+                        Text("または").font(.caption2).foregroundColor(.secondary)
+                        Rectangle().fill(Color.secondary.opacity(0.3)).frame(height: 0.5)
+                    }
+
+                    // 手動WiFi入力
                     HStack(spacing: 12) {
                         Image(systemName: "wifi").foregroundColor(.blue).frame(width: 20)
                         TextField("WiFi SSID (ネットワーク名)", text: $ssid)
@@ -210,9 +238,9 @@ struct DeviceSetupView: View {
                     }
                     .disabled(ssid.isEmpty || scanner.isSending)
                 } header: {
-                    Label("Step 2: WiFi設定", systemImage: "2.circle.fill")
+                    Label("Step 2: インターネット接続", systemImage: "2.circle.fill")
                 } footer: {
-                    Text("iPhoneと同じWiFiネットワークを設定してください")
+                    Text("テザリングまたはWiFiでインターネットに接続します")
                 }
             }
 
@@ -250,6 +278,15 @@ struct DeviceSetupView: View {
             Text(title).font(.caption).foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func useHotspot() {
+        // iPhoneのテザリング: デバイス名がSSIDになる
+        let iphoneName = UIDevice.current.name
+        ssid = iphoneName
+        password = ""
+        // テザリングのパスワードは自動取得できないので入力を求める
+        // ただしSSIDは自動設定
     }
 
     private func fetchCurrentSSID() {

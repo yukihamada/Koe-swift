@@ -2,69 +2,186 @@ import SwiftUI
 import CoreBluetooth
 import NetworkExtension
 
-/// Koe DeviceのBLEセットアップ画面
 struct DeviceSetupView: View {
     @StateObject private var scanner = BLEDeviceScanner()
     @State private var ssid = ""
     @State private var password = ""
     @State private var showPassword = false
+    @State private var deviceName = "Koe Device"
 
     var body: some View {
+        Group {
+            if scanner.setupComplete {
+                setupCompleteView
+            } else {
+                setupFormView
+            }
+        }
+        .navigationTitle(scanner.setupComplete ? "" : "Koe Device")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { scanner.startScan() }
+        .onDisappear { scanner.stopScan() }
+    }
+
+    // MARK: - セットアップ完了画面
+
+    private var setupCompleteView: some View {
+        VStack(spacing: 0) {
+            Spacer()
+
+            // 🎉 アニメーション
+            VStack(spacing: 20) {
+                Text("🎉")
+                    .font(.system(size: 80))
+                    .scaleEffect(scanner.celebrationScale)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.4).delay(0.2), value: scanner.celebrationScale)
+
+                Text("セットアップ完了！")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)
+                    )
+
+                Text("\(deviceName) がWiFiに接続しました")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                // デバイス情報カード
+                VStack(spacing: 12) {
+                    infoRow(icon: "wifi", label: "WiFi", value: ssid)
+                    infoRow(icon: "wave.3.right", label: "デバイス", value: deviceName)
+                    infoRow(icon: "checkmark.shield", label: "ステータス", value: "オンライン")
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
+                .padding(.horizontal)
+            }
+
+            Spacer()
+
+            // 次のアクション
+            VStack(spacing: 12) {
+                Text("次にできること")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                HStack(spacing: 16) {
+                    actionCard(icon: "mic.fill", title: "音声入力", color: .red)
+                    actionCard(icon: "doc.text", title: "議事録", color: .blue)
+                    actionCard(icon: "music.note", title: "Soluna", color: .purple)
+                }
+                .padding(.horizontal)
+            }
+
+            Spacer().frame(height: 40)
+
+            Button {
+                // 設定画面に遷移（既存のMoreViewに戻る）
+            } label: {
+                HStack {
+                    Spacer()
+                    Text("使い始める →")
+                        .font(.headline)
+                    Spacer()
+                }
+                .padding()
+                .background(
+                    LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)
+                )
+                .foregroundColor(.white)
+                .cornerRadius(14)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 32)
+        }
+        .onAppear {
+            // セレブレーションアニメーション開始
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                scanner.celebrationScale = 1.0
+            }
+            // ハプティクスフィードバック
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
+        }
+    }
+
+    // MARK: - セットアップフォーム
+
+    private var setupFormView: some View {
         List {
-            // デバイス検出
+            // Step 1: デバイス接続
             Section {
                 if !scanner.isConnected {
                     if scanner.discoveredDevices.isEmpty {
-                        HStack {
-                            ProgressView().padding(.trailing, 8)
-                            Text("Koe Deviceを探しています...")
-                                .foregroundColor(.secondary)
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            VStack(alignment: .leading) {
+                                Text("Koe Deviceを探しています...")
+                                Text("LEDが点滅していることを確認")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
                         }
                     } else {
                         ForEach(scanner.discoveredDevices, id: \.identifier) { device in
                             Button {
+                                deviceName = device.name ?? "Koe Device"
                                 scanner.connect(device)
                             } label: {
                                 HStack {
-                                    Image(systemName: "wave.3.right")
-                                        .foregroundColor(.blue)
-                                    Text(device.name ?? "Koe Device")
-                                        .font(.headline)
+                                    ZStack {
+                                        Circle().fill(.blue.opacity(0.15)).frame(width: 40, height: 40)
+                                        Image(systemName: "wave.3.right").foregroundColor(.blue)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(device.name ?? "Koe Device").font(.headline)
+                                        Text("タップして接続").font(.caption).foregroundColor(.secondary)
+                                    }
                                     Spacer()
                                     if scanner.connectingDevice?.identifier == device.identifier {
                                         ProgressView().scaleEffect(0.7)
+                                    } else {
+                                        Image(systemName: "chevron.right").foregroundColor(.secondary)
                                     }
                                 }
                             }
                         }
                     }
                 } else {
-                    Label("接続済み: \(scanner.connectedPeripheral?.name ?? "Koe Device")", systemImage: "checkmark.circle.fill")
-                        .foregroundColor(.green)
+                    HStack {
+                        ZStack {
+                            Circle().fill(.green.opacity(0.15)).frame(width: 40, height: 40)
+                            Image(systemName: "checkmark").foregroundColor(.green).font(.headline)
+                        }
+                        VStack(alignment: .leading) {
+                            Text(deviceName).font(.headline)
+                            Text("接続済み").font(.caption).foregroundColor(.green)
+                        }
+                    }
                 }
             } header: {
-                Text("デバイス")
-            } footer: {
-                if !scanner.isConnected {
-                    Text("ESP32のLEDが点滅していることを確認してください")
-                }
+                Label("Step 1: デバイス接続", systemImage: scanner.isConnected ? "checkmark.circle.fill" : "1.circle.fill")
+                    .foregroundColor(scanner.isConnected ? .green : .primary)
             }
 
-            // WiFi設定（接続後に表示）
+            // Step 2: WiFi設定（接続後に表示）
             if scanner.isConnected {
                 Section {
-                    HStack {
-                        Image(systemName: "wifi").foregroundColor(.blue)
-                        TextField("WiFi SSID", text: $ssid)
+                    HStack(spacing: 12) {
+                        Image(systemName: "wifi").foregroundColor(.blue).frame(width: 20)
+                        TextField("WiFi SSID (ネットワーク名)", text: $ssid)
                             .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
                             .onAppear { fetchCurrentSSID() }
                     }
 
-                    HStack {
-                        Image(systemName: "lock").foregroundColor(.orange)
+                    HStack(spacing: 12) {
+                        Image(systemName: "lock").foregroundColor(.orange).frame(width: 20)
                         if showPassword {
                             TextField("パスワード", text: $password)
                                 .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
                         } else {
                             SecureField("パスワード", text: $password)
                         }
@@ -93,40 +210,46 @@ struct DeviceSetupView: View {
                     }
                     .disabled(ssid.isEmpty || scanner.isSending)
                 } header: {
-                    Text("WiFi設定")
+                    Label("Step 2: WiFi設定", systemImage: "2.circle.fill")
                 } footer: {
-                    Text("iPhoneが接続中のWiFiと同じネットワークを設定してください")
+                    Text("iPhoneと同じWiFiネットワークを設定してください")
                 }
             }
 
-            // ステータス
-            if let status = scanner.statusMessage {
-                Section {
-                    HStack {
-                        Image(systemName: scanner.isSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundColor(scanner.isSuccess ? .green : .red)
-                        Text(status)
-                    }
-                }
-            }
-
-            // エラー
+            // エラー表示
             if let error = scanner.errorMessage {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         Label(error, systemImage: "exclamationmark.triangle.fill")
                             .foregroundColor(.red)
-                            .font(.caption)
-                        Button("再スキャン") {
-                            scanner.reset()
-                        }
+                            .font(.callout)
+                        Button("再スキャン") { scanner.reset() }
                     }
                 }
             }
         }
-        .navigationTitle("Koe Device")
-        .onAppear { scanner.startScan() }
-        .onDisappear { scanner.stopScan() }
+    }
+
+    // MARK: - Helpers
+
+    private func infoRow(icon: String, label: String, value: String) -> some View {
+        HStack {
+            Image(systemName: icon).foregroundColor(.orange).frame(width: 24)
+            Text(label).foregroundColor(.secondary)
+            Spacer()
+            Text(value).fontWeight(.medium)
+        }
+    }
+
+    private func actionCard(icon: String, title: String, color: Color) -> some View {
+        VStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16).fill(color.opacity(0.1)).frame(height: 70)
+                Image(systemName: icon).font(.title).foregroundColor(color)
+            }
+            Text(title).font(.caption).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func fetchCurrentSSID() {
@@ -146,11 +269,10 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     @Published var discoveredDevices: [CBPeripheral] = []
     @Published var isConnected = false
     @Published var isSending = false
-    @Published var isSuccess = false
-    @Published var statusMessage: String?
+    @Published var setupComplete = false
+    @Published var celebrationScale: CGFloat = 0.3
     @Published var errorMessage: String?
     @Published var connectingDevice: CBPeripheral?
-    @Published var connectedDeviceInfo: [(key: String, value: String)] = []
 
     var connectedPeripheral: CBPeripheral?
     private var central: CBCentralManager!
@@ -177,11 +299,10 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         connectingDevice = peripheral
         peripheral.delegate = self
         central.connect(peripheral, options: nil)
-        // 5秒タイムアウト
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
             guard let self, !self.isConnected, self.connectingDevice != nil else { return }
             self.central.cancelPeripheralConnection(peripheral)
-            self.errorMessage = "接続タイムアウト"
+            self.errorMessage = "接続タイムアウト。デバイスが近くにあることを確認してください。"
             self.connectingDevice = nil
         }
     }
@@ -192,40 +313,34 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
             return
         }
         isSending = true
-        statusMessage = "WiFi設定を送信中..."
 
         if let ssidChar = wifiSSIDChar, let passChar = wifiPassChar {
             if let d = ssid.data(using: .utf8) { peripheral.writeValue(d, for: ssidChar, type: .withResponse) }
             if let d = password.data(using: .utf8) { peripheral.writeValue(d, for: passChar, type: .withResponse) }
         } else {
-            // GATTサービス未登録: JSONで全characteristicsに書き込み試行
             let json = "{\"ssid\":\"\(ssid)\",\"pass\":\"\(password)\"}"
             if let data = json.data(using: .utf8) {
-                var wrote = false
                 for service in peripheral.services ?? [] {
                     for char in service.characteristics ?? [] where char.properties.contains(.write) {
                         peripheral.writeValue(data, for: char, type: .withResponse)
-                        wrote = true
                         break
                     }
-                    if wrote { break }
                 }
             }
         }
 
-        // 3秒後に成功と仮定（ESP32が再起動するため応答がない場合）
+        // ESP32が再起動するため応答がない → 3秒後にセットアップ完了画面に遷移
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             self?.isSending = false
-            self?.isSuccess = true
-            self?.statusMessage = "WiFi設定を送信しました。デバイスが再起動します。"
+            self?.setupComplete = true
         }
     }
 
     func reset() {
         isConnected = false
         isSending = false
-        isSuccess = false
-        statusMessage = nil
+        setupComplete = false
+        celebrationScale = 0.3
         errorMessage = nil
         connectingDevice = nil
         connectedPeripheral = nil
@@ -254,18 +369,18 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         connectingDevice = nil
         isConnected = true
         peripheral.discoverServices(nil)
+        // ハプティクス
+        let gen = UIImpactFeedbackGenerator(style: .medium)
+        gen.impactOccurred()
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         connectingDevice = nil
-        errorMessage = "接続失敗: \(error?.localizedDescription ?? "不明")"
+        errorMessage = "接続失敗: \(error?.localizedDescription ?? "不明なエラー")"
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        if !isSuccess { // 成功時の切断は正常（ESP32再起動）
-            isConnected = false
-            connectedPeripheral = nil
-        }
+        if !setupComplete { isConnected = false; connectedPeripheral = nil }
     }
 
     // MARK: - CBPeripheralDelegate
@@ -277,17 +392,13 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
-        let ssidUUID = CBUUID(string: "FFE1")
-        let passUUID = CBUUID(string: "FFE2")
         for char in service.characteristics ?? [] {
-            if char.uuid == ssidUUID { wifiSSIDChar = char }
-            if char.uuid == passUUID { wifiPassChar = char }
+            if char.uuid == CBUUID(string: "FFE1") { wifiSSIDChar = char }
+            if char.uuid == CBUUID(string: "FFE2") { wifiPassChar = char }
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
-        if let error {
-            DispatchQueue.main.async { self.errorMessage = "書き込みエラー: \(error.localizedDescription)" }
-        }
+        if let error { DispatchQueue.main.async { self.errorMessage = "書き込みエラー: \(error.localizedDescription)" } }
     }
 }

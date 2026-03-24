@@ -57,6 +57,27 @@ struct MoreView: View {
                     Text(L10n.phraseFooter)
                 }
 
+                // MARK: - デバイス
+                Section {
+                    NavigationLink {
+                        DeviceSetupView()
+                    } label: {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Koe Device")
+                                Text("ESP32デバイスのセットアップ")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "wave.3.right.circle.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                } header: {
+                    Label("デバイス", systemImage: "cpu")
+                }
+
                 // MARK: - 機能
                 Section {
                     NavigationLink {

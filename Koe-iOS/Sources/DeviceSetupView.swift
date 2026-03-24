@@ -42,7 +42,7 @@ struct DeviceSetupView: View {
                         LinearGradient(colors: [.orange, .red], startPoint: .leading, endPoint: .trailing)
                     )
 
-                Text("\(deviceName) がWiFiに接続しました")
+                Text("\(deviceName) にWiFi設定を送信しました")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
@@ -50,7 +50,7 @@ struct DeviceSetupView: View {
                 VStack(spacing: 12) {
                     infoRow(icon: "wifi", label: "WiFi", value: ssid)
                     infoRow(icon: "wave.3.right", label: "デバイス", value: deviceName)
-                    infoRow(icon: "checkmark.shield", label: "ステータス", value: "オンライン")
+                    infoRow(icon: "arrow.clockwise", label: "ステータス", value: "WiFi接続中（再起動中）")
                 }
                 .padding()
                 .background(Color(.systemGray6))
@@ -151,18 +151,18 @@ struct DeviceSetupView: View {
                 } else {
                     HStack {
                         ZStack {
-                            Circle().fill(.green.opacity(0.15)).frame(width: 40, height: 40)
-                            Image(systemName: "checkmark").foregroundColor(.green).font(.headline)
+                            Circle().fill(.blue.opacity(0.15)).frame(width: 40, height: 40)
+                            Image(systemName: "antenna.radiowaves.left.and.right").foregroundColor(.blue)
                         }
                         VStack(alignment: .leading) {
                             Text(deviceName).font(.headline)
-                            Text("接続済み").font(.caption).foregroundColor(.green)
+                            Text("Bluetooth接続済み — 次にWiFiを設定してください").font(.caption).foregroundColor(.secondary)
                         }
                     }
                 }
             } header: {
-                Label("Step 1: デバイス接続", systemImage: scanner.isConnected ? "checkmark.circle.fill" : "1.circle.fill")
-                    .foregroundColor(scanner.isConnected ? .green : .primary)
+                Label("Step 1: Bluetooth接続", systemImage: scanner.isConnected ? "checkmark.circle.fill" : "1.circle.fill")
+                    .foregroundColor(scanner.isConnected ? .blue : .primary)
             }
 
             // Step 2: WiFi設定（接続後に表示）

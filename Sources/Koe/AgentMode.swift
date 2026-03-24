@@ -586,7 +586,12 @@ class AgentMode {
 
     /// Capture the frontmost app's screen as a CGImage
     private func captureScreen() -> CGImage? {
-        // screencaptureコマンド経由で確実にキャプチャ（権限問題を回避）
+        // 画面収録権限がなければスキップ（ダイアログを出さない）
+        guard CGPreflightScreenCaptureAccess() else {
+            klog("Agent: screen capture skipped (no permission)")
+            return nil
+        }
+        // screencaptureコマンド経由で確実にキャプチャ
         let tmpPath = "/tmp/koe_agent_capture.png"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")

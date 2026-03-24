@@ -2057,8 +2057,10 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
         try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
 
-    /// ウィンドウタイトルからコンテキスト収集（スクショ取れない場合のフォールバック）
+    /// ウィンドウタイトルからコンテキスト収集
     private func collectWindowContext(appName: String) -> String {
+        // 画面収録権限がない場合はスキップ（ダイアログが出るのを防止）
+        guard CGPreflightScreenCaptureAccess() else { return "" }
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return "" }
         var titles: [String] = []
         for win in windows.prefix(8) {
@@ -2077,9 +2079,9 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
         try? session.send(data, toPeers: session.connectedPeers, with: .reliable)
     }
 
-    /// 画面キャプチャ（CGWindowList、権限不要でウィンドウ情報は取得可能）
-    /// 画面録画権限がない場合はnilを返す（screencaptureは使わない — プロンプトが出るため）
+    /// 画面キャプチャ（権限チェック付き — ダイアログを出さない）
     private func captureScreenImage() -> CGImage? {
+        guard CGPreflightScreenCaptureAccess() else { return nil }
         guard let image = CGWindowListCreateImage(.null, .optionOnScreenOnly, kCGNullWindowID, [.boundsIgnoreFraming]) else {
             return nil
         }

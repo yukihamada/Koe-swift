@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const PAGE: &str = include_str!("../index.html");
 const VS_NOTTA: &str = include_str!("../vs-notta.html");
 const PRICING: &str = include_str!("../pricing.html");
+const SUPPORT: &str = include_str!("../support.html");
 const OG_SVG: &str = include_str!("../og.svg");
 const OG_PNG: &[u8] = include_bytes!("../og.png");
 const INSTALL_SH: &str = include_str!("../install.sh");
@@ -398,6 +399,7 @@ async fn main() {
         .route("/", get(|| async { Html(PAGE) }))
         .route("/vs-notta", get(|| async { Html(VS_NOTTA) }))
         .route("/pricing", get(|| async { Html(PRICING) }))
+        .route("/support", get(|| async { Html(SUPPORT) }))
         .route("/api/checkout", get(stripe_checkout))
         .route("/api/license", get(verify_license))
         .route("/og.svg", get(og_image_svg))

@@ -10,6 +10,7 @@ COPY install.sh .
 COPY elio-icon.png .
 COPY vs-notta.html .
 COPY pricing.html .
+COPY support.html .
 RUN cargo build --release
 
 FROM debian:bookworm-slim

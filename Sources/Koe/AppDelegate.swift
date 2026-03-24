@@ -288,20 +288,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if AppSettings.shared.wakeWordEnabled { WakeWordDetector.shared.start() }
         if AppSettings.shared.floatingButtonEnabled { FloatingButton.shared.show() }
 
-        // ログイン時自動起動を設定に従って登録
+        // ログイン時自動起動（ユーザーが設定でONにした場合のみ）
         if AppSettings.shared.launchAtLogin {
             LoginItemManager.setEnabled(true)
         }
 
-        // 起動後3秒でアップデート確認（サイレント）
+        // 自動アップデート: Mac App Store版では無効（MAS審査要件 2.4.5(iv)(vii)）
+        // GitHub版のみ有効
+        #if !MAC_APP_STORE
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
             AutoUpdater.shared.checkForUpdates(silent: true)
         }
-
-        // 4時間ごとに定期アップデート確認
         Timer.scheduledTimer(withTimeInterval: 4 * 3600, repeats: true) { _ in
             AutoUpdater.shared.checkForUpdates(silent: true)
         }
+        #endif
 
         // アクセシビリティ権限の確認・プロンプト（IME切替・自動入力に必要）
         checkAccessibility()
@@ -1701,7 +1702,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func checkUpdate() {
+        #if MAC_APP_STORE
+        // MAS版はApp Store経由で更新
+        NSWorkspace.shared.open(URL(string: "macappstore://apps.apple.com/app/id6760352863")!)
+        #else
         AutoUpdater.shared.checkForUpdates(silent: false)
+        #endif
     }
 
     @objc private func showAbout() {

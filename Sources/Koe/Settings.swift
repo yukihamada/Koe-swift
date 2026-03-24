@@ -484,7 +484,7 @@ class AppSettings: ObservableObject {
         whisperAPIKey        = ud.string(forKey: "whisperAPIKey") ?? ""
         whisperCppBinaryPath = ud.string(forKey: "whisperCppBinaryPath") ?? ""
         whisperCppModelPath  = ud.string(forKey: "whisperCppModelPath") ?? ""
-        launchAtLogin         = ud.object(forKey: "launchAtLogin") as? Bool ?? true  // デフォルトON
+        launchAtLogin         = ud.object(forKey: "launchAtLogin") as? Bool ?? false  // デフォルトOFF（MAS審査要件: ユーザー同意が必要）
         contextAwareEnabled   = ud.object(forKey: "contextAwareEnabled") as? Bool ?? true  // デフォルトON
         contextUseClipboard   = ud.object(forKey: "contextUseClipboard") as? Bool ?? false  // デフォルトOFF（精度低下の原因になりやすい）
         contextUseAppHint     = ud.object(forKey: "contextUseAppHint") as? Bool ?? true

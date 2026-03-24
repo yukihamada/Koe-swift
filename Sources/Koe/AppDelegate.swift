@@ -981,7 +981,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 議事録モード + 話者分離が有効な場合、speaker-aware transcription を使用
-        if MeetingMode.shared.isActive,
+        // （議事録モードではApple Speechが優先されるので、ここに来るのはストリーミング結果がない場合のみ）
+        if !isMeetingAutoRecording && MeetingMode.shared.isActive,
            AppSettings.shared.diarizationEnabled,
            WhisperContext.shared.isLoaded {
             let rawLang = (profile?.language.isEmpty == false ? profile!.language : AppSettings.shared.language)
@@ -1579,12 +1580,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 meetingLiveWindow?.show()
             }
 
-            // システム音声キャプチャ開始（Zoom/Teams等の音声を取得）
-            if #available(macOS 13.0, *) {
-                SystemAudioCapture.shared.startCapture { ok in
-                    klog("MeetingMode: system audio capture \(ok ? "started" : "unavailable")")
-                }
-            }
+            // システム音声キャプチャ（Zoom/Teams音声取得）
+            // スクリーン録画権限が必要なため、ユーザーが設定で有効にした場合のみ
+            // （毎回ダイアログが出るのを防止）
 
             // 議事録モードでは話者分離を自動有効化
             if !AppSettings.shared.diarizationEnabled {
@@ -1602,15 +1600,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         } else if wasActive {
-            // システム音声キャプチャ停止
+            // システム音声キャプチャ停止（有効な場合のみ）
             if #available(macOS 13.0, *) {
-                if let sysURL = SystemAudioCapture.shared.stopCapture() {
-                    // システム音声を議事録フォルダに保存
-                    if let dir = MeetingMode.shared.outputURL {
-                        let dest = dir.appendingPathComponent("system_audio.wav")
-                        try? FileManager.default.copyItem(at: sysURL, to: dest)
-                        klog("MeetingMode: saved system audio to \(dest.lastPathComponent)")
-                    }
+                if let sysURL = SystemAudioCapture.shared.stopCapture(),
+                   let dir = MeetingMode.shared.outputURL {
+                    let dest = dir.appendingPathComponent("system_audio.wav")
+                    try? FileManager.default.copyItem(at: sysURL, to: dest)
+                    klog("MeetingMode: saved system audio")
                 }
             }
 

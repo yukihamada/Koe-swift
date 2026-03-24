@@ -44,6 +44,7 @@
 		B0106297C77CDB451539032F /* MacBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2070A47D1A13E7273BCC061 /* MacBridge.swift */; };
 		B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2E4A00EF6AE47584C718C989 /* Assets.xcassets */; };
 		C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E264AF883E006A40D11232 /* ContentView.swift */; };
+		C0FF94CE637A67DCE63CC491 /* BLEAudioBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5432797E704450F805B66F45 /* BLEAudioBridge.swift */; };
 		C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C990C2009ADC27D8D638034F /* DeviceSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5FE6B87FBBBDB56F573885 /* DeviceSetupView.swift */; };
 		CC8504AB8D4C5597B0221A90 /* KoeWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A69F04C5457550E57FB55CD5 /* KoeWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -120,6 +121,7 @@
 		4B4DAB2B36C306843ED46D8B /* Koe.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Koe.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		50152F5092FA4390A3D59DC8 /* Koe-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Koe-Bridging-Header.h"; sourceTree = "<group>"; };
 		53E63620C74D2B0550DA79AB /* KeyboardViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardViewController.swift; sourceTree = "<group>"; };
+		5432797E704450F805B66F45 /* BLEAudioBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEAudioBridge.swift; sourceTree = "<group>"; };
 		5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C51A3984455E5BB24AD147E /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
 		5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeShareExt.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -164,6 +166,7 @@
 				286EEA2A3E06F232AEB574B1 /* AudioReceiverBridge.h */,
 				6D216B15D27DE4BD2245606F /* AudioReceiverBridge.mm */,
 				2A4369D20092F5F94274C8FC /* AudioToolsView.swift */,
+				5432797E704450F805B66F45 /* BLEAudioBridge.swift */,
 				B1D392A1252DF53DE14EC5C6 /* CallTranscriber.swift */,
 				43F5C4DA6E8201D7270B8918 /* CallTranscriberView.swift */,
 				21E264AF883E006A40D11232 /* ContentView.swift */,
@@ -427,6 +430,7 @@
 				AB734E1FD2422F3FB227A959 /* AudioInputManager.swift in Sources */,
 				84CBFF0FD85540E62A1DF5B1 /* AudioReceiverBridge.mm in Sources */,
 				494339B2D85E4EC36B6C42CB /* AudioToolsView.swift in Sources */,
+				C0FF94CE637A67DCE63CC491 /* BLEAudioBridge.swift in Sources */,
 				03154D932B8AEA50E759FD43 /* CallTranscriber.swift in Sources */,
 				CFF652B15799A2EF5315461F /* CallTranscriberView.swift in Sources */,
 				C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */,

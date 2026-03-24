@@ -4,6 +4,7 @@ import NetworkExtension
 
 struct DeviceSetupView: View {
     @StateObject private var scanner = BLEDeviceScanner()
+    @StateObject private var bridge = BLEAudioBridge()
     @State private var ssid = ""
     @State private var password = ""
     @State private var showPassword = false
@@ -84,18 +85,26 @@ struct DeviceSetupView: View {
             }
 
             if scanner.isConnected {
-                // 接続成功 → iPhone経由モード
+                // 接続成功 → iPhone経由ブリッジモード
                 VStack(spacing: 12) {
                     Label("Bluetooth接続完了", systemImage: "checkmark.circle.fill")
                         .foregroundColor(.green)
                         .font(.headline)
 
-                    Text("iPhoneがインターネットの橋渡しをします")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(bridge.isActive ? Color.green : Color.gray)
+                            .frame(width: 8, height: 8)
+                        Text(bridge.isActive ? bridge.statusText : "ブリッジ起動中...")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 .onAppear {
-                    // 自動で完了画面へ
+                    // ブリッジ起動してから完了画面へ
+                    if let p = scanner.connectedPeripheral {
+                        bridge.start(peripheral: p, chars: scanner.allDiscoveredCharacteristics, scanner: scanner)
+                    }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         scanner.setupComplete = true
                     }
@@ -413,6 +422,8 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     @Published var connectingDevice: CBPeripheral?
 
     var connectedPeripheral: CBPeripheral?
+    var allDiscoveredCharacteristics: [CBCharacteristic] = []
+    var onAudioChunkReceived: ((Data) -> Void)?  // ブリッジへの転送用
     private var central: CBCentralManager!
     private var wifiSSIDChar: CBCharacteristic?
     private var wifiPassChar: CBCharacteristic?
@@ -534,7 +545,14 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
         for char in service.characteristics ?? [] {
             if char.uuid == CBUUID(string: "FFE1") { wifiSSIDChar = char }
             if char.uuid == CBUUID(string: "FFE2") { wifiPassChar = char }
+            allDiscoveredCharacteristics.append(char)
         }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard characteristic.uuid == BLEAudioBridge.audioTXUUID,
+              let data = characteristic.value else { return }
+        onAudioChunkReceived?(data)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {

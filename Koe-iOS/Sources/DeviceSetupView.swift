@@ -8,6 +8,7 @@ struct DeviceSetupView: View {
     @State private var password = ""
     @State private var showPassword = false
     @State private var deviceName = "Koe Device"
+    @Environment(\.dismiss) private var dismiss
 
     @State private var showWifiSetup = false
 
@@ -176,7 +177,7 @@ struct DeviceSetupView: View {
             Spacer().frame(height: 40)
 
             Button {
-                // 設定画面に遷移（既存のMoreViewに戻る）
+                dismiss()
             } label: {
                 HStack {
                     Spacer()

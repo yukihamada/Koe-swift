@@ -45,6 +45,7 @@
 		B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2E4A00EF6AE47584C718C989 /* Assets.xcassets */; };
 		C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E264AF883E006A40D11232 /* ContentView.swift */; };
 		C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C990C2009ADC27D8D638034F /* DeviceSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5FE6B87FBBBDB56F573885 /* DeviceSetupView.swift */; };
 		CC8504AB8D4C5597B0221A90 /* KoeWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A69F04C5457550E57FB55CD5 /* KoeWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		CE8E0289A3160BB674E159BD /* WatchRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34F681797BC2F7A3415734A4 /* WatchRelay.swift */; };
 		CFF652B15799A2EF5315461F /* CallTranscriberView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43F5C4DA6E8201D7270B8918 /* CallTranscriberView.swift */; };
@@ -129,6 +130,7 @@
 		6D216B15D27DE4BD2245606F /* AudioReceiverBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioReceiverBridge.mm; sourceTree = "<group>"; };
 		8534C73DDAE014A2EAC680CE /* SolunaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolunaManager.swift; sourceTree = "<group>"; };
 		888FCE405888897014971A12 /* FeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackView.swift; sourceTree = "<group>"; };
+		8E5FE6B87FBBBDB56F573885 /* DeviceSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSetupView.swift; sourceTree = "<group>"; };
 		9A3D60AF110C816648C690D3 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
 		A69F04C5457550E57FB55CD5 /* KoeWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AC84C5A1752EC621A7C1A395 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
@@ -166,6 +168,7 @@
 				43F5C4DA6E8201D7270B8918 /* CallTranscriberView.swift */,
 				21E264AF883E006A40D11232 /* ContentView.swift */,
 				67A3C1B83D218C8E9EB7C740 /* ConversationView.swift */,
+				8E5FE6B87FBBBDB56F573885 /* DeviceSetupView.swift */,
 				6307CCCAA55DCAA9A57176B3 /* FeedbackManager.swift */,
 				888FCE405888897014971A12 /* FeedbackView.swift */,
 				E8D4209A6A834882CE32721D /* ggml-metal.metal */,
@@ -428,6 +431,7 @@
 				CFF652B15799A2EF5315461F /* CallTranscriberView.swift in Sources */,
 				C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */,
 				EEC8B08AAA0F35EDC1D24744 /* ConversationView.swift in Sources */,
+				C990C2009ADC27D8D638034F /* DeviceSetupView.swift in Sources */,
 				243C3C2EC6640051BCBA7684 /* FeedbackManager.swift in Sources */,
 				4B9065CE589277EE6FF1C616 /* FeedbackView.swift in Sources */,
 				2C39265DF9AFB6BDE16BD28A /* HistoryView.swift in Sources */,

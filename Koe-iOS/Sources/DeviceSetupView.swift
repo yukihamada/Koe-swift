@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreBluetooth
+import NetworkExtension
 
 /// Koe DeviceのBLEセットアップ画面
 struct DeviceSetupView: View {
@@ -113,11 +114,41 @@ struct DeviceSetupView: View {
 
     private var wifiInputView: some View {
         Group {
-            TextField("WiFi SSID", text: $ssid)
-                .textContentType(.username)
-                .autocorrectionDisabled()
-            SecureField("WiFiパスワード", text: $password)
-                .textContentType(.password)
+            // 現在のSSIDを自動入力ヒント
+            HStack {
+                Image(systemName: "wifi")
+                    .foregroundColor(.blue)
+                TextField("WiFi SSID", text: $ssid)
+                    .textContentType(.username)
+                    .autocorrectionDisabled()
+                    .onAppear { fetchCurrentSSID() }
+                if !ssid.isEmpty {
+                    Button { ssid = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            HStack {
+                Image(systemName: "lock")
+                    .foregroundColor(.orange)
+                if showPasswordField {
+                    TextField("WiFiパスワード", text: $password)
+                        .textContentType(.password)
+                        .autocorrectionDisabled()
+                } else {
+                    SecureField("WiFiパスワード", text: $password)
+                        .textContentType(.password)
+                }
+                Button { showPasswordField.toggle() } label: {
+                    Image(systemName: showPasswordField ? "eye.slash" : "eye")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
             Button {
                 guard !ssid.isEmpty else { return }
                 setupState = .sending
@@ -125,12 +156,26 @@ struct DeviceSetupView: View {
             } label: {
                 HStack {
                     Spacer()
-                    Text("接続")
+                    Image(systemName: "paperplane.fill")
+                    Text("WiFi設定を送信")
                         .fontWeight(.semibold)
                     Spacer()
                 }
+                .padding(.vertical, 4)
             }
             .disabled(ssid.isEmpty)
+            .tint(.blue)
+        }
+    }
+
+    private func fetchCurrentSSID() {
+        // iOS: NEHotspotNetwork で現在のSSIDを取得
+        if #available(iOS 14.0, *) {
+            NEHotspotNetwork.fetchCurrent { network in
+                if let ssidName = network?.ssid, self.ssid.isEmpty {
+                    DispatchQueue.main.async { self.ssid = ssidName }
+                }
+            }
         }
     }
 }

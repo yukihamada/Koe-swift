@@ -41,6 +41,8 @@
 	<string>同じWiFi上のMacに音声入力テキストを送信するために使用します</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>音声入力のためにマイクを使用します</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>現在接続中のWiFi名を取得するために使用します</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Koe Deviceとの接続にBluetoothを使用します</string>
 	<key>NSMotionUsageDescription</key>

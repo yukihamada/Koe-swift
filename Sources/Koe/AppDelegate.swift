@@ -1067,6 +1067,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 空や無意味な認識結果はスキップ（ノイズ誤認識防止）
         if cleaned.isEmpty || cleaned.count <= 1 || cleaned.allSatisfy({ $0.isPunctuation || $0.isWhitespace || $0 == "." || $0 == "。" }) {
             klog("handleRecognitionResult: skipping empty/noise result: '\(cleaned)'")
+            // Apple Speechの先行入力がある場合はそのまま確定（消さない）
+            if let preliminary = appleSpechPreliminary {
+                klog("Keeping Apple Speech result: '\(preliminary)'")
+                HistoryStore.shared.add(preliminary, audioFileID: lastArchiveID,
+                                       recognitionTime: 0, modelName: "Apple Speech")
+            }
+            appleSpechPreliminary = nil
             overlay?.hide()
             postRecognitionCleanup()
             return
@@ -1187,7 +1194,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.overlay?.hide()
                 klog("final: '\(final)'")
-                if !final.isEmpty {
+                if final.isEmpty {
+                    // Whisper結果が空 → Apple Speechの先行入力をそのまま確定
+                    if let preliminary = self.appleSpechPreliminary {
+                        klog("Whisper empty, keeping Apple Speech: '\(preliminary)'")
+                        HistoryStore.shared.add(preliminary, audioFileID: self.lastArchiveID,
+                                               recognitionTime: 0, modelName: "Apple Speech")
+                    }
+                    self.appleSpechPreliminary = nil
+                    self.overlay?.hide()
+                    self.postRecognitionCleanup()
+                    return
+                }
+                if true {
                     // 議事録自動録音中はファイル保存のみ（テキスト入力しない）
                     if self.isMeetingAutoRecording {
                         self.appleSpechPreliminary = nil

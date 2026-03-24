@@ -9,18 +9,117 @@ struct DeviceSetupView: View {
     @State private var showPassword = false
     @State private var deviceName = "Koe Device"
 
+    @State private var showWifiSetup = false
+
     var body: some View {
         Group {
             if scanner.setupComplete {
                 setupCompleteView
-            } else {
+            } else if showWifiSetup {
                 setupFormView
+            } else {
+                simpleConnectView
             }
         }
         .navigationTitle(scanner.setupComplete ? "" : "Koe Device")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { scanner.startScan() }
         .onDisappear { scanner.stopScan() }
+    }
+
+    // MARK: - シンプル接続画面（タップ1回）
+
+    private var simpleConnectView: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            // デバイスアニメーション
+            ZStack {
+                Circle()
+                    .stroke(Color.blue.opacity(0.2), lineWidth: 2)
+                    .frame(width: 160, height: 160)
+                Circle()
+                    .stroke(Color.blue.opacity(0.1), lineWidth: 1)
+                    .frame(width: 200, height: 200)
+                    .scaleEffect(scanner.isScanning ? 1.2 : 1.0)
+                    .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: scanner.isScanning)
+
+                if let device = scanner.discoveredDevices.first {
+                    // デバイス見つかった
+                    Button {
+                        deviceName = device.name ?? "Koe Device"
+                        scanner.connect(device)
+                    } label: {
+                        VStack(spacing: 8) {
+                            ZStack {
+                                Circle().fill(.blue).frame(width: 80, height: 80)
+                                Image(systemName: "wave.3.right")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(.white)
+                            }
+                            Text(device.name ?? "Koe Device")
+                                .font(.headline)
+                            if scanner.connectingDevice != nil {
+                                ProgressView().scaleEffect(0.7)
+                            } else {
+                                Text("タップして接続")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(scanner.connectingDevice != nil)
+                } else {
+                    // スキャン中
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(1.5)
+                            .frame(width: 80, height: 80)
+                        Text("デバイスを探しています...")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            if scanner.isConnected {
+                // 接続成功 → iPhone経由モード
+                VStack(spacing: 12) {
+                    Label("Bluetooth接続完了", systemImage: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.headline)
+
+                    Text("iPhoneがインターネットの橋渡しをします")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .onAppear {
+                    // 自動で完了画面へ
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        scanner.setupComplete = true
+                    }
+                }
+            }
+
+            Spacer()
+
+            // 下部: WiFi直接設定オプション
+            Button {
+                showWifiSetup = true
+            } label: {
+                Text("WiFiに直接接続する（上級者向け）")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.bottom, 20)
+
+            if let error = scanner.errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+                    .padding(.horizontal)
+            }
+        }
     }
 
     // MARK: - セットアップ完了画面
@@ -305,6 +404,7 @@ struct DeviceSetupView: View {
 class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     @Published var discoveredDevices: [CBPeripheral] = []
     @Published var isConnected = false
+    @Published var isScanning = false
     @Published var isSending = false
     @Published var setupComplete = false
     @Published var celebrationScale: CGFloat = 0.3
@@ -324,12 +424,13 @@ class BLEDeviceScanner: NSObject, ObservableObject, CBCentralManagerDelegate, CB
     func startScan() {
         discoveredDevices = []
         errorMessage = nil
+        isScanning = true
         if central.state == .poweredOn {
             central.scanForPeripherals(withServices: nil, options: nil)
         }
     }
 
-    func stopScan() { central.stopScan() }
+    func stopScan() { central.stopScan(); isScanning = false }
 
     func connect(_ peripheral: CBPeripheral) {
         stopScan()

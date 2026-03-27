@@ -165,7 +165,7 @@ for lib in "$FRAMEWORKS"/*.dylib; do
 done
 
 # Fix inter-dylib references (libwhisper → libggml etc.)
-ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib"
+ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib $BREW_PREFIX/opt/whisper-cpp/libexec/lib $BREW_PREFIX/opt/llama.cpp/libexec/lib"
 for lib in "$FRAMEWORKS"/*.dylib; do
     for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libwhisper.coreml.dylib libllama.dylib; do
         for dir in $ALL_LIB_DIRS; do
@@ -204,6 +204,20 @@ done
 install_name_tool -change "@rpath/libwhisper.1.dylib" "@rpath/libwhisper.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
 for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
     install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+done
+
+# Fix absolute homebrew paths in main binary (critical for distribution)
+for dir in $ALL_LIB_DIRS; do
+    for versioned in libwhisper.1.dylib libwhisper.dylib; do
+        install_name_tool -change "$dir/$versioned" "@rpath/libwhisper.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+    done
+    for versioned in libllama.0.dylib libllama.dylib; do
+        install_name_tool -change "$dir/$versioned" "@rpath/libllama.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+    done
+    for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+        install_name_tool -change "$dir/${glib}.0.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+        install_name_tool -change "$dir/${glib}.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+    done
 done
 
 # Create versioned symlinks for ggml (llama.cpp refs .0 names)

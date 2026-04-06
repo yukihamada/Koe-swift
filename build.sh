@@ -37,10 +37,36 @@ else
     if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
         WHISPER_LIB="$BREW_PREFIX/lib"
     fi
-    GGML_LIB="$WHISPER_LIB"
-    GGML_METAL_LIB="$WHISPER_LIB"
-    GGML_BLAS_LIB="$WHISPER_LIB"
-    GGML_CPU_LIB="$WHISPER_LIB"
+    # ggml dylibs may be in WHISPER_LIB, its libexec sibling, or BREW_PREFIX/lib — probe each
+    WHISPER_LIBEXEC_LIB="$BREW_PREFIX/opt/whisper-cpp/libexec/lib"
+    if [ -f "$WHISPER_LIB/libggml.dylib" ]; then
+        GGML_LIB="$WHISPER_LIB"
+    elif [ -f "$WHISPER_LIBEXEC_LIB/libggml.dylib" ]; then
+        GGML_LIB="$WHISPER_LIBEXEC_LIB"
+    else
+        GGML_LIB="$BREW_PREFIX/lib"
+    fi
+    if [ -f "$WHISPER_LIB/libggml-metal.dylib" ]; then
+        GGML_METAL_LIB="$WHISPER_LIB"
+    elif [ -f "$WHISPER_LIBEXEC_LIB/libggml-metal.dylib" ]; then
+        GGML_METAL_LIB="$WHISPER_LIBEXEC_LIB"
+    else
+        GGML_METAL_LIB="$BREW_PREFIX/lib"
+    fi
+    if [ -f "$WHISPER_LIB/libggml-blas.dylib" ]; then
+        GGML_BLAS_LIB="$WHISPER_LIB"
+    elif [ -f "$WHISPER_LIBEXEC_LIB/libggml-blas.dylib" ]; then
+        GGML_BLAS_LIB="$WHISPER_LIBEXEC_LIB"
+    else
+        GGML_BLAS_LIB="$BREW_PREFIX/lib"
+    fi
+    if [ -f "$WHISPER_LIB/libggml-cpu.dylib" ]; then
+        GGML_CPU_LIB="$WHISPER_LIB"
+    elif [ -f "$WHISPER_LIBEXEC_LIB/libggml-cpu.dylib" ]; then
+        GGML_CPU_LIB="$WHISPER_LIBEXEC_LIB"
+    else
+        GGML_CPU_LIB="$BREW_PREFIX/lib"
+    fi
     USE_COREML=0
 fi
 GGML_INCLUDE="$BREW_PREFIX/include"
@@ -111,6 +137,7 @@ swiftc Sources/Koe/*.swift \
     -framework UserNotifications \
     -framework ServiceManagement \
     -target "$SWIFT_TARGET" \
+    -D DIRECT_DISTRIBUTION \
     -O \
     -o "$APP/Contents/MacOS/Koe"
 
@@ -165,7 +192,7 @@ for lib in "$FRAMEWORKS"/*.dylib; do
 done
 
 # Fix inter-dylib references (libwhisper → libggml etc.)
-ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib $BREW_PREFIX/opt/whisper-cpp/libexec/lib $BREW_PREFIX/opt/llama.cpp/libexec/lib"
+ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib $BREW_PREFIX/opt/whisper-cpp/libexec/lib $BREW_PREFIX/opt/llama.cpp/libexec/lib ${WHISPER_LIBEXEC_LIB:-}"
 for lib in "$FRAMEWORKS"/*.dylib; do
     for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libwhisper.coreml.dylib libllama.dylib; do
         for dir in $ALL_LIB_DIRS; do

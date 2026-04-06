@@ -36,22 +36,59 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     func start() {
         if recorder == nil { prepare() }
-        let ok = recorder?.record() ?? false
-        klog("Recording started, ok=\(ok)")
+        guard let r = recorder else {
+            klog("AudioRecorder: recorder is nil after prepare, retrying")
+            prepare()
+            guard let r2 = recorder else {
+                klog("AudioRecorder: failed to create recorder")
+                return
+            }
+            let ok = r2.record()
+            klog("Recording started (retry), ok=\(ok)")
+            return
+        }
+        // recorderが前回のセッションから残っている場合、明示的にリセット
+        if r.isRecording {
+            klog("AudioRecorder: already recording, stopping first")
+            r.stop()
+        }
+        let ok = r.record()
+        if !ok {
+            klog("AudioRecorder: record() failed, re-preparing")
+            recorder = nil
+            prepare()
+            let retryOk = recorder?.record() ?? false
+            klog("Recording started (re-prepare), ok=\(retryOk)")
+        } else {
+            klog("Recording started, ok=true")
+        }
     }
 
     func stop() -> URL? {
-        recorder?.stop()
+        guard let r = recorder else {
+            klog("AudioRecorder: stop called but recorder is nil")
+            return nil
+        }
+        if r.isRecording {
+            r.stop()
+        }
         recorder = nil
         guard let src = tempURL else { return nil }
         // 一意なファイル名で保存（議事録モードで次の録音に上書きされないように）
         let id = UUID().uuidString.prefix(8)
         let dest = Self.audioDir.appendingPathComponent("recognize_\(id).wav")
-        try? FileManager.default.copyItem(at: src, to: dest)
+        do {
+            try FileManager.default.copyItem(at: src, to: dest)
+        } catch {
+            klog("AudioRecorder: copy failed: \(error.localizedDescription)")
+            return nil
+        }
         let size = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
         klog("Recording stopped, size=\(size) bytes -> \(dest.lastPathComponent)")
-        // 古い一時ファイルを掃除（最新5件以外を削除）
-        cleanOldFiles()
+        // 古い一時ファイルを掃除（議事録モード中は保持、通常時は最新5件以外を削除）
+        if !MeetingMode.shared.isActive {
+            cleanOldFiles()
+        }
         prepare()   // 次回のために即再準備
         return dest
     }

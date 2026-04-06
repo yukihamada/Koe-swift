@@ -202,7 +202,7 @@ class SetupWindow: NSObject {
         // Steps
         var steps = [L10n.stepVoiceModel]
         if showLLMStep { steps.append(L10n.stepAIModel) }
-        steps.append(contentsOf: [L10n.stepMicrophone, L10n.stepAccessibility, L10n.stepDone])
+        steps.append(contentsOf: [L10n.stepMicrophone, L10n.stepAccessibility, "ウェイクワード", L10n.stepDone])
         for (i, step) in steps.enumerated() {
             let y = 380 - i * 42
 
@@ -371,13 +371,57 @@ class SetupWindow: NSObject {
             return
         }
 
-        statusLabel.stringValue = L10n.downloadingModel
-        detailLabel.stringValue = "\(selectedModel.name) (\(selectedModel.sizeMB)MB)"
-        progressBar.isHidden = false
-        progressBar.doubleValue = 0
+        // モデルをダウンロードしてもよいか確認
+        statusLabel.stringValue = "音声認識モデル"
+        detailLabel.stringValue = "\(selectedModel.name) (\(selectedModel.sizeMB)MB) をダウンロードしますか？"
+        detailLabel.maximumNumberOfLines = 2
+        progressBar.isHidden = true
+
+        actionButton.title = L10n.download
+        actionButton.isHidden = false
+        actionButton.wantsLayer = true
+        actionButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        actionButton.contentTintColor = .white
+        actionButton.layer?.cornerRadius = 8
+        actionButton.action = #selector(onConfirmWhisperDownload)
+
+        // スキップボタン
+        let w = contentView.bounds.width
+        let skipBtn = NSButton(frame: NSRect(x: w - 280, y: 30, width: 120, height: 36))
+        skipBtn.bezelStyle = .rounded
+        skipBtn.title = L10n.skip
+        skipBtn.font = .systemFont(ofSize: 13)
+        skipBtn.tag = 998
+        skipBtn.target = self
+        skipBtn.action = #selector(onSkipWhisperDownload)
+        setupView.addSubview(skipBtn)
+    }
+
+    @objc private func onConfirmWhisperDownload() {
+        setupView.subviews.first { $0.tag == 998 }?.removeFromSuperview()
+        actionButton.isHidden = true
+        actionButton.action = #selector(onAction)
         modelPopup.isEnabled = false
 
+        statusLabel.stringValue = L10n.downloadingModel
+        detailLabel.stringValue = "\(selectedModel.name) (\(selectedModel.sizeMB)MB)"
+        detailLabel.maximumNumberOfLines = 1
+        progressBar.isHidden = false
+        progressBar.doubleValue = 0
+
         startModelDownload()
+    }
+
+    @objc private func onSkipWhisperDownload() {
+        setupView.subviews.first { $0.tag == 998 }?.removeFromSuperview()
+        actionButton.isHidden = true
+        actionButton.action = #selector(onAction)
+        statusLabel.stringValue = "スキップしました"
+        detailLabel.stringValue = "設定からいつでもダウンロードできます"
+        detailLabel.maximumNumberOfLines = 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            self.advanceAfterWhisperModel()
+        }
     }
 
     private func startModelDownload() {
@@ -573,7 +617,7 @@ class SetupWindow: NSObject {
             statusLabel.stringValue = L10n.accessibilityOK
             detailLabel.stringValue = ""
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                self.runStep4_Done()
+                self.runStep4_WakeWord()
             }
             return
         }
@@ -584,6 +628,11 @@ class SetupWindow: NSObject {
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
 
+        // システム設定のアクセシビリティ画面を直接開く
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+
         pollAccessibility()
     }
 
@@ -593,7 +642,7 @@ class SetupWindow: NSObject {
                 self?.statusLabel.stringValue = L10n.accessibilityOK
                 self?.detailLabel.stringValue = ""
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    self?.runStep4_Done()
+                    self?.runStep4_WakeWord()
                 }
             } else {
                 self?.pollAccessibility()
@@ -601,10 +650,99 @@ class SetupWindow: NSObject {
         }
     }
 
-    // MARK: - Step 4: Done → Tutorial
+    // MARK: - Step 4: Wake Word Setup
 
-    private func runStep4_Done() {
-        let doneStep = showLLMStep ? 4 : 3
+    private var wakeWordRound = 0
+    private let wakeWordNeeded = 3
+
+    private func runStep4_WakeWord() {
+        let step = showLLMStep ? 4 : 3
+        setStep(step)
+        progressBar.isHidden = true
+        actionButton.isHidden = false
+        actionButton.title = "声で起動を設定する"
+        actionButton.wantsLayer = true
+        actionButton.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        actionButton.contentTintColor = .white
+        actionButton.layer?.cornerRadius = 8
+        actionButton.action = #selector(onStartWakeWordRecord)
+
+        statusLabel.stringValue = "ウェイクワード設定"
+        detailLabel.stringValue = "「ヘイこえ」と3回話すだけで、声で起動できるようになります"
+        detailLabel.maximumNumberOfLines = 2
+
+        // スキップボタン
+        let w = contentView.bounds.width
+        let skipBtn = NSButton(frame: NSRect(x: w - 280, y: 30, width: 120, height: 36))
+        skipBtn.bezelStyle = .rounded
+        skipBtn.title = L10n.skip
+        skipBtn.font = .systemFont(ofSize: 13)
+        skipBtn.tag = 997
+        skipBtn.target = self
+        skipBtn.action = #selector(onSkipWakeWord)
+        setupView.addSubview(skipBtn)
+    }
+
+    @objc private func onSkipWakeWord() {
+        setupView.subviews.first { $0.tag == 997 }?.removeFromSuperview()
+        actionButton.isHidden = true
+        actionButton.action = #selector(onAction)
+        runStep5_Done()
+    }
+
+    @objc private func onStartWakeWordRecord() {
+        setupView.subviews.first { $0.tag == 997 }?.removeFromSuperview()
+        actionButton.isHidden = true
+        wakeWordRound = 0
+        recordNextWakeWord()
+    }
+
+    private func recordNextWakeWord() {
+        let round = wakeWordRound + 1
+        statusLabel.stringValue = "「ヘイこえ」と話してください (\(round)/\(wakeWordNeeded))"
+        detailLabel.stringValue = "録音中..."
+        detailLabel.maximumNumberOfLines = 1
+        progressBar.isHidden = false
+        progressBar.isIndeterminate = true
+        progressBar.startAnimation(nil)
+
+        WakeWordEngine.shared.recordTemplate(duration: 1.5) { [weak self] ok in
+            guard let self else { return }
+            self.progressBar.stopAnimation(nil)
+            self.progressBar.isIndeterminate = false
+
+            if ok {
+                self.wakeWordRound += 1
+                if self.wakeWordRound >= self.wakeWordNeeded {
+                    // 完了
+                    self.progressBar.isHidden = true
+                    self.statusLabel.stringValue = "ウェイクワード設定完了"
+                    self.detailLabel.stringValue = "「ヘイこえ」で声の入力を開始できます"
+                    AppSettings.shared.wakeWordEnabled = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.runStep5_Done()
+                    }
+                } else {
+                    // 次のラウンド
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        self.recordNextWakeWord()
+                    }
+                }
+            } else {
+                self.statusLabel.stringValue = "もう一度話してください (\(round)/\(self.wakeWordNeeded))"
+                self.detailLabel.stringValue = "はっきりと「ヘイこえ」と言ってください"
+                self.progressBar.isHidden = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    self.recordNextWakeWord()
+                }
+            }
+        }
+    }
+
+    // MARK: - Step 5: Done → Tutorial
+
+    private func runStep5_Done() {
+        let doneStep = showLLMStep ? 5 : 4
         setStep(doneStep)
 
         // セットアップ画面を消してチュートリアル画面を表示
@@ -636,7 +774,7 @@ class SetupWindow: NSObject {
         // 3 feature cards — clean and spacious
         let cards = L10n.tutorialCards
         for (i, card) in cards.enumerated() {
-            let y = CGFloat(310 - i * 90)
+            let y = CGFloat(330 - i * 80)
             let cardView = createTutorialCard(
                 icon: card.icon,
                 title: card.title,
@@ -646,6 +784,37 @@ class SetupWindow: NSObject {
             )
             tutorialView.addSubview(cardView)
         }
+
+        // Meeting minutes tutorial card
+        let meetingCard = NSView(frame: NSRect(x: 40, y: 174, width: w - 80, height: 76))
+        meetingCard.wantsLayer = true
+        meetingCard.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        meetingCard.layer?.cornerRadius = 14
+        meetingCard.layer?.borderWidth = 0.5
+        meetingCard.layer?.borderColor = Self.goldColor.withAlphaComponent(0.1).cgColor
+
+        let meetIcon = NSTextField(labelWithString: "📝")
+        meetIcon.font = .systemFont(ofSize: 28)
+        meetIcon.isBezeled = false; meetIcon.isEditable = false; meetIcon.drawsBackground = false
+        meetIcon.frame = NSRect(x: 16, y: 22, width: 36, height: 36)
+        meetingCard.addSubview(meetIcon)
+
+        let meetTitle = NSTextField(labelWithString: "議事録モード")
+        meetTitle.font = .systemFont(ofSize: 14, weight: .semibold)
+        meetTitle.textColor = .labelColor
+        meetTitle.isBezeled = false; meetTitle.isEditable = false; meetTitle.drawsBackground = false
+        meetTitle.frame = NSRect(x: 60, y: 44, width: 300, height: 20)
+        meetingCard.addSubview(meetTitle)
+
+        let meetDesc = NSTextField(labelWithString: "⌥⌘M で開始。音声を録音しながらリアルタイム文字起こし → AI整形")
+        meetDesc.font = .systemFont(ofSize: 11)
+        meetDesc.textColor = .secondaryLabelColor
+        meetDesc.isBezeled = false; meetDesc.isEditable = false; meetDesc.drawsBackground = false
+        meetDesc.frame = NSRect(x: 60, y: 10, width: 340, height: 32)
+        meetDesc.maximumNumberOfLines = 2
+        meetingCard.addSubview(meetDesc)
+
+        tutorialView.addSubview(meetingCard)
 
         // iPhone app promotion
         let iphoneCard = NSView(frame: NSRect(x: 40, y: 86, width: w - 80, height: 76))

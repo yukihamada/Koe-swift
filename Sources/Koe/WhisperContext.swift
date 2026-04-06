@@ -110,11 +110,11 @@ final class WhisperContext {
         params.print_realtime = false
         params.print_timestamps = false
         params.no_timestamps = !timestamps
-        params.single_segment = true   // 速度: セグメント分割をスキップ
+        params.single_segment = false  // ハルシネーション防止: セグメント分割を許可
         params.suppress_blank = true
-        params.suppress_nst = false
+        params.suppress_nst = true    // 非音声トークンを抑制（ハルシネーション防止）
         params.token_timestamps = timestamps
-        params.no_context = false
+        params.no_context = true      // 前回コンテキストによる繰り返しループを防止
         params.greedy.best_of = 1      // 速度: 1回の推論で結果を返す（5→1で3-5倍速い）
         params.entropy_thold = 2.4
         params.logprob_thold = -1.0

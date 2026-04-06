@@ -18,7 +18,7 @@ class WakeWordEngine {
     private let preEmph: Float = 0.97
 
     /// DTW正規化距離の閾値（大きいほど緩い）。ログのdistを見て調整
-    var distThreshold: Float = 2.0
+    var distThreshold: Float = 4.5
 
     // MARK: - Pre-computed tables
 
@@ -156,8 +156,7 @@ class WakeWordEngine {
     func dtwDist(_ a: [[Float]], _ b: [[Float]]) -> Float {
         let n = a.count, m = b.count
         guard n > 0, m > 0 else { return .infinity }
-        let band = max(Int(Float(max(n, m)) * 0.25), 5)
-        let maxCost = distThreshold * Float(n + m)  // 早期終了用上限
+        let band = max(Int(Float(max(n, m)) * 0.3), 10)
 
         // 1行ずつ計算（メモリ節約: 2行分だけ保持）
         var prev = [Float](repeating: .infinity, count: m + 1)
@@ -172,10 +171,6 @@ class WakeWordEngine {
                 vDSP_distancesq(a[i - 1], 1, b[j - 1], 1, &d, vDSP_Length(nMFCC))
                 curr[j] = sqrtf(d) + min(prev[j], min(curr[j - 1], prev[j - 1]))
             }
-            // 早期終了: この行の最小値がすでに上限超え
-            var rowMin: Float = .infinity
-            vDSP_minv(Array(curr[jMin...jMax]), 1, &rowMin, vDSP_Length(jMax - jMin + 1))
-            if rowMin > maxCost { return .infinity }
             swap(&prev, &curr)
         }
         guard prev[m] != .infinity else { return .infinity }
@@ -292,9 +287,13 @@ class WakeWordEngine {
     var isReady: Bool { templates.count >= Self.minTemplates }
 
     /// 無音チェック用の最低RMS閾値（テンプレート登録時）
-    private let templateMinRMS: Float = 0.01
+    private let templateMinRMS: Float = 0.002
 
     func recordTemplate(duration: Double = 1.5, completion: @escaping (Bool) -> Void) {
+        // 検出エンジンが動いていると競合するので一時停止
+        let wasRunning = audioEngine?.isRunning == true
+        if wasRunning { teardown() }
+
         let engine = AVAudioEngine()
         let node = engine.inputNode
         let natFmt = node.outputFormat(forBus: 0)
@@ -336,18 +335,28 @@ class WakeWordEngine {
             vDSP_rmsqv(samples, 1, &rms, vDSP_Length(samples.count))
             if rms < self.templateMinRMS {
                 klog("WakeWordEngine: rejected — too quiet (RMS=\(String(format:"%.4f", rms)))")
-                DispatchQueue.main.async { completion(false) }
+                DispatchQueue.main.async {
+                    if wasRunning { self.start() }
+                    completion(false)
+                }
                 return
             }
 
             let frames = self.extractMFCC(from: samples)
             guard frames.count >= 5 else {
-                DispatchQueue.main.async { completion(false) }; return
+                DispatchQueue.main.async {
+                    if wasRunning { self.start() }
+                    completion(false)
+                }
+                return
             }
             self.templates.append(frames)
             self.saveTemplates()
             klog("WakeWordEngine: template added (\(self.templates.count) total, \(frames.count) frames, RMS=\(String(format:"%.4f", rms)))")
-            DispatchQueue.main.async { completion(true) }
+            DispatchQueue.main.async {
+                if wasRunning { self.start() }
+                completion(true)
+            }
         }
     }
 

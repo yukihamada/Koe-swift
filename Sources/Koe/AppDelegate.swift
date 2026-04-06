@@ -33,8 +33,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeAppBundleID = ""
 
     // Silence-based auto-stop (VAD: 直近フレームの平滑化で誤検出を低減)
-    private let voiceThreshold: Float   = 0.06  // この音量以上で「発話中」（敏感に検出）
-    private let silenceThreshold: Float = 0.03  // この音量以下で「無音」
+    private let voiceThreshold: Float   = 0.20  // この音量以上で「発話中」（背景ノイズと区別）
+    private let silenceThreshold: Float = 0.03  // 絶対閾値（静かな環境用）
+    private let silenceRatio: Float     = 0.45  // ピーク比率閾値（ノイジー環境用）
+    private var peakLevel: Float        = 0     // 録音中の最大音量
     private var levelHistory: [Float] = []      // 直近フレームの音量履歴
     private let levelHistorySize = 4            // 4フレーム ≈ 133ms @ 30Hz
     private let maxRecordDuration: TimeInterval = 300  // 5分（whisper.cppは内部で30秒セグメントに分割処理）
@@ -49,6 +51,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Space key extension
     private var spaceHeld    = false
+    private var mainKeyHeld  = false  // ホールドモードでキー押下中は無音停止しない
     private var spacePressed = false
 
     // Speculative execution
@@ -83,6 +86,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Handoff
     private var currentActivity: NSUserActivity?
+
+    // 録音中の音量ダッキング
+    private var savedVolume: Int?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -305,7 +311,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #endif
 
         // アクセシビリティ権限の確認・プロンプト（IME切替・自動入力に必要）
+        // Mac App Store版ではアクセシビリティ権限を要求しない（ガイドライン 2.4.5）
+        #if !MAC_APP_STORE
         checkAccessibility()
+        #endif
     }
 
     /// 組み込み whisper.cpp モデルのロード。モデルがなければダウンロード。
@@ -392,27 +401,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(header)
         menu.addItem(.separator())
 
-        // 言語切替 (メニューバー用: よく使う言語のみ)
-        for lang in s.menuBarLanguages {
+        // 言語切替 (すべてサブメニューにまとめる)
+        let langSubMenu = NSMenu()
+        for lang in s.menuBarLanguages + s.otherLanguages {
             let item = NSMenuItem(title: "\(lang.flag) \(lang.name)", action: #selector(selectLanguage(_:)), keyEquivalent: "")
             item.representedObject = lang.code
             item.state = (s.language == lang.code) ? .on : .off
-            menu.addItem(item)
+            langSubMenu.addItem(item)
         }
-        // その他の言語 (サブメニュー)
-        let others = s.otherLanguages
-        if !others.isEmpty {
-            let otherMenu = NSMenu()
-            for lang in others {
-                let item = NSMenuItem(title: "\(lang.flag) \(lang.name)", action: #selector(selectLanguage(_:)), keyEquivalent: "")
-                item.representedObject = lang.code
-                item.state = (s.language == lang.code) ? .on : .off
-                otherMenu.addItem(item)
-            }
-            let otherItem = NSMenuItem(title: L10n.menuOtherLanguages, action: nil, keyEquivalent: "")
-            otherItem.submenu = otherMenu
-            menu.addItem(otherItem)
-        }
+        let currentLangName = AppSettings.quickLanguages.first { $0.code == s.language }?.name ?? s.language
+        let langItem = NSMenuItem(title: "\(s.languageFlag) \(currentLangName)", action: nil, keyEquivalent: "")
+        langItem.submenu = langSubMenu
+        menu.addItem(langItem)
+        menu.addItem(.separator())
+
+        // ウェイクワード ON/OFF
+        let wakeTitle = s.wakeWordEnabled ? "🎙 ウェイクワード: ON" : "🔇 ウェイクワード: OFF"
+        let wakeItem = NSMenuItem(title: wakeTitle, action: #selector(toggleWakeWordMenu), keyEquivalent: "")
+        wakeItem.state = s.wakeWordEnabled ? .on : .off
+        menu.addItem(wakeItem)
         menu.addItem(.separator())
 
         // LLMモード
@@ -441,7 +448,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: L10n.menuFileTranscription, action: #selector(openFileTranscription), keyEquivalent: "t")
         menu.addItem(.separator())
 
+        // 最近の認識結果（クリックでコピー）
+        let recentEntries = Array(HistoryStore.shared.entries.prefix(8))
+        if !recentEntries.isEmpty {
+            let historyMenu = NSMenu()
+            for entry in recentEntries {
+                let preview = entry.text.prefix(60) + (entry.text.count > 60 ? "…" : "")
+                let modelTag = entry.modelName.map { " [\($0)]" } ?? ""
+                let item = NSMenuItem(title: "\(preview)\(modelTag)", action: #selector(copyHistoryItem(_:)), keyEquivalent: "")
+                item.representedObject = entry.text
+                item.toolTip = entry.text
+                historyMenu.addItem(item)
+            }
+            historyMenu.addItem(.separator())
+            historyMenu.addItem(withTitle: L10n.menuSettings + " → 履歴", action: #selector(openSettings), keyEquivalent: "")
+            let historyItem = NSMenuItem(title: "📋 最近の認識結果", action: nil, keyEquivalent: "")
+            historyItem.submenu = historyMenu
+            menu.addItem(historyItem)
+            menu.addItem(.separator())
+        }
+
         menu.addItem(withTitle: "📱 iPhone版を入手 (TestFlight)", action: #selector(openTestFlight), keyEquivalent: "")
+        menu.addItem(withTitle: "❓ サポート", action: #selector(openSupport), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: L10n.menuSettings, action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: L10n.menuQuit, action: #selector(quit), keyEquivalent: "q")
@@ -449,9 +477,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func setIcon(recording: Bool) {
-        let name = recording ? "waveform.circle.fill" : "waveform"
-        statusItem.button?.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
-        statusItem.button?.contentTintColor = recording ? .systemRed : .labelColor
+        let name = recording ? "waveform.circle.fill" : "waveform.circle.fill"
+        if let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
+            img.isTemplate = !recording  // 非録音時はテンプレート（システムが白/黒自動切替）
+            statusItem.button?.image = img
+        }
+        statusItem.button?.contentTintColor = recording ? .systemRed : nil
         if AppSettings.shared.floatingButtonEnabled {
             FloatingButton.shared.setRecording(recording)
         }
@@ -464,26 +495,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         klog("Accessibility trusted: \(trusted)")
         if trusted { return }
 
-        // システムのアクセシビリティプロンプトを1回だけ表示（kAXTrustedCheckOptionPrompt）
+        // システムのアクセシビリティプロンプトを表示
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(opts)
 
-        // カスタムアラートは初回インストール時のみ（UserDefaultsで制御）
-        let key = "koe_accessibility_alert_shown"
-        if !UserDefaults.standard.bool(forKey: key) {
-            UserDefaults.standard.set(true, forKey: key)
-            DispatchQueue.main.async {
-                let alert = NSAlert()
-                alert.messageText = L10n.accessibilityAlertTitle
-                alert.informativeText = L10n.accessibilityRequiredAlert
-                alert.alertStyle = .informational
-                alert.addButton(withTitle: L10n.openSystemSettings)
-                alert.addButton(withTitle: L10n.later)
-                if alert.runModal() == .alertFirstButtonReturn {
-                    if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
+        // 権限未取得なら毎回アラートを表示（設定を開くリンク付き）
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = L10n.accessibilityAlertTitle
+            alert.informativeText = L10n.accessibilityRequiredAlert
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: L10n.openSystemSettings)
+            alert.addButton(withTitle: L10n.later)
+            if alert.runModal() == .alertFirstButtonReturn {
+                Self.openAccessibilitySettings()
             }
         }
 
@@ -499,6 +524,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             klog("Accessibility polling timed out (5min)")
         }
+    }
+
+    /// アクセシビリティ設定を開く（macOS 13+ / 旧macOS 両対応）
+    static func openAccessibilitySettings() {
+        // macOS 13 (Ventura) 以降
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            if NSWorkspace.shared.open(url) {
+                klog("Opened accessibility settings (x-apple.systempreferences)")
+                return
+            }
+        }
+        // macOS 14 (Sonoma) 以降の新URL
+        if let url = URL(string: "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Accessibility") {
+            if NSWorkspace.shared.open(url) {
+                klog("Opened accessibility settings (Sonoma URL)")
+                return
+            }
+        }
+        // フォールバック: システム設定アプリを直接開く
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]
+        try? process.run()
+        klog("Opened accessibility settings (fallback)")
     }
 
     // MARK: - Hotkey
@@ -571,6 +620,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         delegate.isRecording ? delegate.stopAndRecognize() : delegate.startRecording()
                     } else if !delegate.isRecording {
                         delegate.isMeetingAutoRecording = false
+                        if !isToggle { delegate.mainKeyHeld = true }
                         delegate.startRecording()
                     }
                 }
@@ -771,6 +821,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { self.isRecording ? self.stopAndRecognize() : self.startRecording() }
             } else {
                 guard !isRecording else { return }
+                mainKeyHeld = true
                 DispatchQueue.main.async { self.startRecording() }
             }
         case .keyUp:
@@ -793,11 +844,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             guard !isToggle, event.keyCode == targetCode, isRecording else { return }
+            mainKeyHeld = false
             DispatchQueue.main.async { self.stopAndRecognize() }
         case .flagsChanged:
             guard !isToggle, isRecording, !targetMods.isEmpty else { return }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            if !flags.contains(targetMods) { DispatchQueue.main.async { self.stopAndRecognize() } }
+            if !flags.contains(targetMods) { mainKeyHeld = false; DispatchQueue.main.async { self.stopAndRecognize() } }
         default: break
         }
     }
@@ -872,6 +924,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Stop wake word detector before AVAudioRecorder starts to avoid conflicts
         WakeWordDetector.shared.stop()
 
+        // 録音中はシステム音量を下げる（マイクへの音漏れ防止）
+        duckSystemVolume()
+
         // Capture frontmost app BEFORE recording starts
         activeAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         klog("startRecording from app: \(activeAppBundleID)")
@@ -879,11 +934,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastStreamingResult = nil
         lastStreamingSampleCount = 0
         recordingStart = Date()
-        speechDetected = false
+        speechDetected = true   // 録音開始時点で発話中とみなす（無音検知をすぐ有効化）
         silenceStart   = nil
+        peakLevel      = 0
         levelHistory   = []
         spaceHeld        = false
         spacePressed     = false
+        // mainKeyHeld はここでリセットしない（ホールド中に startRecording が呼ばれた場合、無音停止を防ぐため）
         speculativeResult = nil
         speculationID    += 1  // 前回の投機を無効化
         setIcon(recording: true)
@@ -908,24 +965,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         unregisterRecordingHotKeys()  // Space/ESC 解除
         levelTimer?.invalidate(); levelTimer = nil
         streamingTimer?.invalidate(); streamingTimer = nil
-        // Apple Speech ストリーミングを終了
-        streamingRecognitionRequest?.endAudio()
-        streamingRecognitionTask?.cancel()
-        streamingRecognitionRequest = nil
-        streamingRecognitionTask = nil
+        // Apple Speech ストリーミングを少し待ってから終了（最後の音声を拾うため）
+        let request = streamingRecognitionRequest
+        let task = streamingRecognitionTask
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            request?.endAudio()
+            task?.cancel()
+            if self?.streamingRecognitionRequest === request {
+                self?.streamingRecognitionRequest = nil
+            }
+            if self?.streamingRecognitionTask === task {
+                self?.streamingRecognitionTask = nil
+            }
+        }
         overlay?.updateLevel(0)
         overlay?.clearStreamingText()
         klog("stopAndRecognize")
         isRecording = false
         setIcon(recording: false)
+        restoreSystemVolume()
 
         guard let audioURL = recorder.stop() else {
-            overlay?.hide(); return
+            klog("stopAndRecognize: recorder.stop() returned nil")
+            overlay?.hide()
+            if AppSettings.shared.wakeWordEnabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+            }
+            return
         }
 
         // 音声がなければスキップ（無音録音を認識エンジンに渡さない）
         if let wavSamples = WhisperContext.loadWAVPublic(url: audioURL),
-           !AudioDSP.hasVoice(wavSamples, threshold: 0.003, minVoiceFrames: 3) {
+           !AudioDSP.hasVoice(wavSamples, threshold: 0.006, minVoiceFrames: 5) {
             klog("stopAndRecognize: no voice detected, skipping recognition")
             overlay?.hide()
             // 議事録モード中は無音でも自動録音ループを継続
@@ -1027,15 +1098,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Apple Speechの結果を先に入力（即時フィードバック）
+        // Apple Speechの結果を履歴に保存（コピー用）、テキスト入力はWhisper完了まで待つ
         if let streaming = lastStreamingResult {
             klog("Apple Speech result: '\(streaming)'")
+            let streamingExpanded = AppSettings.shared.expand(streaming)
+            // Apple Speech結果を履歴に保存（後でコピー可能）
+            HistoryStore.shared.add(streamingExpanded, audioFileID: lastArchiveID,
+                                   recognitionTime: 0, modelName: "Apple Speech")
             lastStreamingResult = nil
             speculativeResult = nil
-            // 先にApple Speechの結果を入力
-            let streamingExpanded = AppSettings.shared.expand(streaming)
-            self.typer.typeInto(streamingExpanded, bundleID: self.activeAppBundleID)
-            appleSpechPreliminary = streamingExpanded
+            appleSpechPreliminary = nil  // 先行入力しない → Whisper完了後に一発ペースト
         }
 
         // 投機実行の結果がすでに届いていればそれを使う（whisper呼び出しをスキップ）
@@ -1064,6 +1136,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let cleaned = raw.replacingOccurrences(of: "\n", with: " ")
                          .replacingOccurrences(of: "\r", with: "")
                          .trimmingCharacters(in: .whitespaces)
+
+        // ハルシネーション検出: 同じフレーズの繰り返しをフィルタリング
+        if Self.isHallucination(cleaned) {
+            klog("handleRecognitionResult: hallucination detected, skipping: '\(cleaned.prefix(60))'")
+            if let preliminary = appleSpechPreliminary {
+                klog("Keeping Apple Speech result: '\(preliminary)'")
+                HistoryStore.shared.add(preliminary, audioFileID: lastArchiveID,
+                                       recognitionTime: 0, modelName: "Apple Speech")
+            }
+            appleSpechPreliminary = nil
+            overlay?.hide()
+            postRecognitionCleanup()
+            return
+        }
 
         // 空や無意味な認識結果はスキップ（ノイズ誤認識防止）
         if cleaned.isEmpty || cleaned.count <= 1 || cleaned.allSatisfy({ $0.isPunctuation || $0.isWhitespace || $0 == "." || $0 == "。" }) {
@@ -1212,9 +1298,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     if self.isMeetingAutoRecording {
                         self.appleSpechPreliminary = nil
                     } else if let preliminary = self.appleSpechPreliminary {
-                        // Apple Speechで先行入力済みなら、BackSpaceで消してwhisper結果に置換
+                        // Apple Speechで先行入力済み → Whisper結果と同じなら何もしない
+                        // 違う場合はApple Speech分だけ置換（ユーザーが追加入力したテキストは保持）
                         klog("Replacing Apple Speech '\(preliminary)' → whisper '\(final)'")
-                        if preliminary != final {
+                        if preliminary == final {
+                            klog("Apple Speech and Whisper match, no replacement needed")
+                        } else {
                             self.typer.deleteAndReplace(oldText: preliminary, newText: final, bundleID: self.activeAppBundleID)
                         }
                         self.appleSpechPreliminary = nil
@@ -1249,6 +1338,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Command Mode: 選択テキストをLLMで書き換える
     private func handleCommandModeRewrite(prompt: String) {
+        #if MAC_APP_STORE
+        // Mac App Store版ではアクセシビリティ経由のテキスト取得は使用不可（ガイドライン 2.4.5）
+        overlay?.hide()
+        postRecognitionCleanup()
+        #else
         // アクセシビリティで選択テキストを取得
         guard AXIsProcessTrusted() else {
             klog("CommandMode: no accessibility permission")
@@ -1291,6 +1385,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.postRecognitionCleanup()
             }
         }
+        #endif
     }
 
     /// 認識完了後の共通処理: メニュー更新 + ウェイクワード再開 + 議事録自動録音
@@ -1336,6 +1431,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             HistoryStore.shared.updateText(id: entry.id, newText: text, modelName: model.name, recognitionTime: time)
         }
+    }
+
+    /// ハルシネーション検出: 同じフレーズが3回以上繰り返されているかチェック
+    private static func isHallucination(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 10 else { return false }
+
+        // 短いフレーズ(2〜30文字)の繰り返しを検出
+        for len in 2...min(30, trimmed.count / 3) {
+            let prefix = String(trimmed.prefix(len))
+            // 句読点やスペースだけのパターンはスキップ
+            if prefix.allSatisfy({ $0.isPunctuation || $0.isWhitespace }) { continue }
+            var count = 0
+            var searchRange = trimmed.startIndex..<trimmed.endIndex
+            while let range = trimmed.range(of: prefix, range: searchRange) {
+                count += 1
+                searchRange = range.upperBound..<trimmed.endIndex
+            }
+            // 同じフレーズが4回以上 && テキストの大半を占める場合
+            if count >= 4 && (prefix.count * count) >= trimmed.count / 2 {
+                klog("Hallucination: '\(prefix)' repeated \(count) times")
+                return true
+            }
+        }
+        return false
     }
 
     private func startSpeculation() {
@@ -1429,18 +1549,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         streamingRecognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
-            guard let self, let result else { return }
+            guard let self else { return }
+            if let error {
+                klog("Streaming preview error: \(error.localizedDescription)")
+                // 認識エラー時はタスクをクリーンアップ（次回録音で再生成）
+                self.streamingRecognitionTask = nil
+                self.streamingRecognitionRequest = nil
+                return
+            }
+            guard let result else { return }
             let text = result.bestTranscription.formattedString
             if !text.isEmpty {
                 self.lastStreamingResult = text
-                if self.isRecording {
-                    // 通常モード: オーバーレイにストリーミングテキストは表示しない
-                    // （入力中に文字が見えるとユーザーが気にしてしまうため）
-                    // 議事録モード: リアルタイムウィンドウにのみ表示
-                    if MeetingMode.shared.isActive {
-                        self.meetingLiveWindow?.updateStreamingText(text)
-                        self.meetingOverlay?.updateLastText(text)
-                    }
+                // オーバーレイにストリーミングテキストを表示（録音中 & 認識中の両方）
+                self.overlay?.updateStreamingText(text)
+                if MeetingMode.shared.isActive {
+                    self.meetingLiveWindow?.updateStreamingText(text)
+                    self.meetingOverlay?.updateLastText(text)
                 }
             }
         }
@@ -1453,6 +1578,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         levelHistory.append(level)
         if levelHistory.count > levelHistorySize { levelHistory.removeFirst() }
         let smoothed = levelHistory.reduce(0, +) / Float(levelHistory.count)
+        // デバッグ: 約1秒に1回レベルをログ出力
+        if levelHistory.count == levelHistorySize && Int(Date().timeIntervalSince(recordingStart ?? Date()) * 3) % 3 == 0 {
+            klog("VAD level=\(String(format:"%.3f", smoothed)) voice=\(speechDetected) silence=\(silenceStart != nil)")
+        }
 
         // 最大録音時間チェック
         if let start = recordingStart, Date().timeIntervalSince(start) > maxRecordDuration {
@@ -1466,7 +1595,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // スペース長押し中は無音検知を一時停止
-        if spaceHeld { silenceStart = nil; return }
+        if spaceHeld || mainKeyHeld { silenceStart = nil; return }
+
+        // ピーク更新
+        if smoothed > peakLevel { peakLevel = smoothed }
+        // 無音判定: 絶対閾値 OR ピーク比率（ノイジー環境でも動作）
+        let dynamicSilenceThreshold = max(silenceThreshold, peakLevel * silenceRatio)
 
         if smoothed >= voiceThreshold {
             speechDetected = true
@@ -1477,7 +1611,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 speculativeResult = nil
                 klog("Speculation: invalidated (speech resumed)")
             }
-        } else if speechDetected && smoothed < silenceThreshold {
+        } else if speechDetected && smoothed < dynamicSilenceThreshold {
             if silenceStart == nil {
                 silenceStart = Date()
             }
@@ -1516,12 +1650,53 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.setTranslateMode(false)
         speculationID += 1  // 進行中の認識を無効化
         setIcon(recording: false)
+        restoreSystemVolume()
         recorder.cancel()
         speech.cancel()
         overlay?.hide()
         if AppSettings.shared.wakeWordEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
         }
+    }
+
+    // MARK: - Volume Ducking (録音中の音量ダッキング)
+
+    /// 録音開始時にシステム音量を設定値まで下げる（0=OFF）
+    private func duckSystemVolume() {
+        let targetVol = AppSettings.shared.duckingVolume
+        guard targetVol > 0 else { return }  // 0 = ダッキングOFF
+
+        let getScript = "output volume of (get volume settings)"
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", getScript]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        try? task.run()
+        task.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        if let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let vol = Int(str), vol > targetVol {
+            savedVolume = vol
+            let setScript = "set volume output volume \(targetVol)"
+            let setTask = Process()
+            setTask.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            setTask.arguments = ["-e", setScript]
+            try? setTask.run()
+            klog("Volume ducked: \(vol) → \(targetVol)")
+        }
+    }
+
+    /// 録音終了時に音量を元に戻す
+    private func restoreSystemVolume() {
+        guard let vol = savedVolume else { return }
+        savedVolume = nil
+        let script = "set volume output volume \(vol)"
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        task.arguments = ["-e", script]
+        try? task.run()
+        klog("Volume restored: → \(vol)")
     }
 
     // MARK: - Notification
@@ -1585,6 +1760,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func toggleWakeWordMenu() {
+        AppSettings.shared.wakeWordEnabled.toggle()
+        rebuildMenu()
+    }
+
     @objc func toggleMeetingMode() {
         let wasActive = MeetingMode.shared.isActive
         MeetingMode.shared.toggle()
@@ -1613,12 +1793,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             // 議事録開始時に自動で最初の録音を開始
-            if !isRecording {
+            // 録音中の場合は停止してから再開（議事録モードとして）
+            if isRecording {
+                klog("MeetingMode: stopping current recording to restart as meeting recording")
+                isMeetingAutoRecording = true
+                stopAndRecognize()
+            } else {
                 klog("MeetingMode: auto-starting first recording")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                    guard let self, MeetingMode.shared.isActive, !self.isRecording else { return }
-                    self.isMeetingAutoRecording = true
-                    self.startRecording()
+                    guard let self, MeetingMode.shared.isActive else { return }
+                    if self.isRecording {
+                        // すでに録音中（並行して開始された場合）→ 議事録モードに昇格
+                        self.isMeetingAutoRecording = true
+                        klog("MeetingMode: promoted existing recording to meeting mode")
+                    } else {
+                        self.isMeetingAutoRecording = true
+                        self.startRecording()
+                        klog("MeetingMode: recording started")
+                    }
                 }
             }
         } else if wasActive {
@@ -1659,6 +1851,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func rebuildMenuPublic() { rebuildMenu() }
+
+    @objc private func copyHistoryItem(_ sender: NSMenuItem) {
+        guard let text = sender.representedObject as? String else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        klog("Copied from menu: '\(text.prefix(40))'")
+        // 通知でフィードバック
+        sendNotification(text: "コピーしました")
+    }
 
     @objc private func selectLanguage(_ sender: NSMenuItem) {
         guard let code = sender.representedObject as? String else { return }
@@ -1799,6 +2000,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         up.flags = modifiers
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
+    }
+
+    @objc private func openSupport() {
+        if let url = URL(string: "https://koe.elio.love/support") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func openTestFlight() {

@@ -7,7 +7,14 @@ class AutoTyper {
     private var streamingCharCount = 0
 
     /// アクセシビリティ権限があるか（CGEvent でキー送信可能か）
-    private var canUseCGEvent: Bool { AXIsProcessTrusted() }
+    /// Mac App Store版ではガイドライン 2.4.5 に従いアクセシビリティ機能を使わない
+    private var canUseCGEvent: Bool {
+        #if MAC_APP_STORE
+        return false
+        #else
+        return AXIsProcessTrusted()
+        #endif
+    }
 
     func type(_ text: String) {
         typeInto(text, bundleID: nil)
@@ -86,15 +93,15 @@ class AutoTyper {
         typeInto(text, bundleID: bundleID)
     }
 
-    /// Apple Speech先行入力をwhisper結果で置換
+    /// Apple Speech先行入力をwhisper結果で置換（Shift+←で選択→ペーストで一発置換）
     func deleteAndReplace(oldText: String, newText: String, bundleID: String?) {
         if canUseCGEvent {
-            // 先行入力分をBackSpaceで削除
-            deleteBackward(count: oldText.count)
-            Thread.sleep(forTimeInterval: 0.03)
+            // Shift+←でApple Speech分だけ選択（BackSpaceより高速・一瞬で置換）
+            selectBackward(count: oldText.count)
+            Thread.sleep(forTimeInterval: 0.02)
         }
-        // whisper結果をペースト
-        typeInto(newText, bundleID: bundleID)
+        // 選択状態のままペースト → 選択範囲だけ置換される
+        paste(newText)
     }
 
     /// ストリーミング入力をキャンセル（入力済みテキストを削除）
@@ -172,6 +179,26 @@ class AutoTyper {
 
     /// キー操作専用キュー（メインスレッドをブロックしない）
     private static let keyQueue = DispatchQueue(label: "com.yuki.koe.keyEvents", qos: .userInteractive)
+
+    /// Shift+←で指定文字数を後方選択（deleteBackwardより高速で、ペーストで一発置換可能）
+    private func selectBackward(count: Int) {
+        let clamped = min(count, 500)
+        Self.keyQueue.sync {
+            let src = CGEventSource(stateID: .hidSystemState)
+            for _ in 0..<clamped {
+                guard
+                    let down = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_LeftArrow), keyDown: true),
+                    let up   = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_LeftArrow), keyDown: false)
+                else { continue }
+                down.flags = .maskShift
+                up.flags   = .maskShift
+                down.post(tap: .cghidEventTap)
+                usleep(1500) // 1.5ms — 選択はBackSpaceより速く安定
+                up.post(tap: .cghidEventTap)
+                usleep(1500)
+            }
+        }
+    }
 
     private func deleteBackward(count: Int) {
         let clamped = min(count, 500)

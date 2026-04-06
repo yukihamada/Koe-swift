@@ -41,18 +41,20 @@ enum RecognitionEngine: String, CaseIterable {
     case appleOnDevice = "apple-ondevice"
     case appleCloud    = "apple-cloud"
     case whisper       = "whisper"
+    case nouWhisper    = "nou-whisper"   // NOU ローカルサーバー経由の mlx_whisper
     var displayName: String {
         switch self {
         case .whisperCpp:    return "whisper.cpp (Metal・最速)"
         case .appleOnDevice: return "Apple (オンデバイス)"
         case .appleCloud:    return "Apple (クラウド)"
         case .whisper:       return "OpenAI Whisper API"
+        case .nouWhisper:    return "NOU Whisper (Apple Silicon・高精度)"
         }
     }
     var isLocal: Bool {
         switch self {
-        case .whisperCpp, .appleOnDevice: return true
-        case .appleCloud, .whisper:       return false
+        case .whisperCpp, .appleOnDevice, .nouWhisper: return true
+        case .appleCloud, .whisper:                    return false
         }
     }
     var badgeText: String { isLocal ? "LOCAL" : "CLOUD" }
@@ -283,6 +285,8 @@ class AppSettings: ObservableObject {
     @Published var whisperAPIKey: String     { didSet { ud.set(whisperAPIKey,           forKey: "whisperAPIKey") } }
     @Published var whisperCppBinaryPath: String { didSet { ud.set(whisperCppBinaryPath, forKey: "whisperCppBinaryPath") } }
     @Published var whisperCppModelPath: String  { didSet { ud.set(whisperCppModelPath,  forKey: "whisperCppModelPath") } }
+    @Published var nouPort: Int             { didSet { ud.set(nouPort,                 forKey: "nouPort") } }
+    @Published var nouWhisperRoutingMode: String { didSet { ud.set(nouWhisperRoutingMode, forKey: "nouWhisperRoutingMode") } }
 
     // LLM
     @Published var llmEnabled: Bool   { didSet { ud.set(llmEnabled,  forKey: "llmEnabled") } }
@@ -389,6 +393,9 @@ class AppSettings: ObservableObject {
     // Noise level display (環境ノイズレベル表示)
     @Published var showNoiseLevel: Bool { didSet { ud.set(showNoiseLevel, forKey: "showNoiseLevel") } }
 
+    // 録音中の音量ダッキング (0=OFF, 1〜100=ダッキング後の音量%)
+    @Published var duckingVolume: Int { didSet { ud.set(duckingVolume, forKey: "duckingVolume") } }
+
     private let ud = UserDefaults.standard
 
     // MARK: Computed
@@ -484,6 +491,8 @@ class AppSettings: ObservableObject {
         whisperAPIKey        = ud.string(forKey: "whisperAPIKey") ?? ""
         whisperCppBinaryPath = ud.string(forKey: "whisperCppBinaryPath") ?? ""
         whisperCppModelPath  = ud.string(forKey: "whisperCppModelPath") ?? ""
+        nouPort              = ud.object(forKey: "nouPort") as? Int ?? 4001
+        nouWhisperRoutingMode = ud.string(forKey: "nouWhisperRoutingMode") ?? "fastest-wins"
         launchAtLogin         = ud.object(forKey: "launchAtLogin") as? Bool ?? false  // デフォルトOFF（MAS審査要件: ユーザー同意が必要）
         contextAwareEnabled   = ud.object(forKey: "contextAwareEnabled") as? Bool ?? true  // デフォルトON
         contextUseClipboard   = ud.object(forKey: "contextUseClipboard") as? Bool ?? false  // デフォルトOFF（精度低下の原因になりやすい）
@@ -533,6 +542,7 @@ class AppSettings: ObservableObject {
         punctuationStyle = ud.string(forKey: "punctuationStyle") ?? "japanese"
         commandModeEnabled = ud.object(forKey: "commandModeEnabled") as? Bool ?? true  // デフォルトON
         showNoiseLevel = ud.object(forKey: "showNoiseLevel") as? Bool ?? true  // デフォルトON
+        duckingVolume = ud.object(forKey: "duckingVolume") as? Int ?? 5  // デフォルト5%
         rebuildExpansionMap()
     }
 

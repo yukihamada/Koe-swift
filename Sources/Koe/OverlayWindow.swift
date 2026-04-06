@@ -291,27 +291,37 @@ struct OverlayView: View {
             .frame(height: 32)
 
             // Text area
-            ZStack {
-                Text(model.streamingText.isEmpty ? " " : model.streamingText)
-                    .font(.system(size: 12, weight: .regular, design: .rounded))
-                    .foregroundColor(warmWhite.opacity(0.7))
-                    .lineLimit(2)
-                    .truncationMode(.head)
-                    .multilineTextAlignment(.center)
-                    .opacity(!model.streamingText.isEmpty && model.state == .recording ? 1 : 0)
-
-                Text(model.tipText.isEmpty ? " " : model.tipText)
-                    .font(.system(size: 10, weight: .light, design: .rounded))
-                    .foregroundColor(champagne.opacity(0.3))
-                    .lineLimit(1)
-                    .multilineTextAlignment(.center)
-                    .opacity(!model.tipText.isEmpty && model.streamingText.isEmpty ? 1 : 0)
-
-                Text(model.state == .recording ? "話してください..." : "認識中...")
-                    .font(.system(size: 11, weight: .light, design: .rounded))
-                    .tracking(1.0)
-                    .foregroundColor(champagne.opacity(0.2))
-                    .opacity(model.streamingText.isEmpty && model.tipText.isEmpty ? 1 : 0)
+            VStack(spacing: 2) {
+                // ストリーミングテキスト（録音中 & 認識中の両方で表示）
+                if !model.streamingText.isEmpty {
+                    Text(model.streamingText)
+                        .font(.system(size: 12, weight: .regular, design: .rounded))
+                        .foregroundColor(warmWhite.opacity(0.7))
+                        .lineLimit(2)
+                        .truncationMode(.head)
+                        .multilineTextAlignment(.center)
+                } else if model.state == .recognizing {
+                    // 認識中テキスト
+                    Text("認識中...")
+                        .font(.system(size: 11, weight: .light, design: .rounded))
+                        .tracking(1.0)
+                        .foregroundColor(champagne.opacity(0.4))
+                } else if model.tipText.isEmpty {
+                    // 録音中のデフォルト
+                    Text("話してください...")
+                        .font(.system(size: 11, weight: .light, design: .rounded))
+                        .tracking(1.0)
+                        .foregroundColor(champagne.opacity(0.2))
+                }
+                // ティップス（認識中に常時表示）
+                if !model.tipText.isEmpty {
+                    Text(model.tipText)
+                        .font(.system(size: 9, weight: .light, design: .rounded))
+                        .foregroundColor(champagne.opacity(0.3))
+                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
             }
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity)

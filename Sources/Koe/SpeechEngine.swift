@@ -30,6 +30,22 @@ class SpeechEngine {
                              baseURL: "https://api.openai.com",
                              apiKey: AppSettings.shared.whisperAPIKey,
                              model: "whisper-1", onDone: onDone)
+        case .nouWhisper:
+            // NOU ローカルサーバーの mlx_whisper エンドポイントを使用。
+            // X-NOU-Whisper-Mode ヘッダーでルーティングモードを渡す。
+            // 利用不可なら Apple オンデバイスにフォールバック。
+            let nouPort = AppSettings.shared.nouPort > 0 ? AppSettings.shared.nouPort : 4001
+            let nouBase = "http://127.0.0.1:\(nouPort)"
+            let routingMode = AppSettings.shared.nouWhisperRoutingMode
+            recognizeNOU(url: url, prompt: prompt, languageOverride: languageOverride,
+                         baseURL: nouBase, routingMode: routingMode) { text in
+                if text.isEmpty {
+                    klog("NOU Whisper failed, falling back to Apple STT")
+                    self.recognizeApple(url: url, languageOverride: languageOverride, onDone: onDone)
+                } else {
+                    onDone(text)
+                }
+            }
         }
     }
 
@@ -169,6 +185,61 @@ class SpeechEngine {
                 self?.task = nil
             }
         }
+    }
+
+    // MARK: - NOU Whisper（ネットワーク分散対応）
+
+    private func recognizeNOU(url: URL, prompt: String, languageOverride: String,
+                               baseURL: String, routingMode: String,
+                               onDone: @escaping (String) -> Void) {
+        guard let audioData = try? Data(contentsOf: url) else {
+            klog("NOU Whisper: failed to read audio file"); onDone(""); return
+        }
+        let baseLang = languageOverride.isEmpty ? AppSettings.shared.language : languageOverride
+        let langCode = baseLang == "auto" ? nil : (baseLang.components(separatedBy: "-").first ?? "en")
+        klog("NOU Whisper: baseURL=\(baseURL) mode=\(routingMode) lang=\(langCode ?? "auto")")
+
+        let boundary = "KoeBoundary\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
+        var body = Data()
+        func append(_ s: String) { body.append(Data(s.utf8)) }
+
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-1\r\n")
+
+        if let langCode {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"language\"\r\n\r\n\(langCode)\r\n")
+        }
+        if !prompt.isEmpty {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"prompt\"\r\n\r\n\(prompt)\r\n")
+        }
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\n")
+        append("Content-Type: audio/wav\r\n\r\n")
+        body.append(audioData)
+        append("\r\n--\(boundary)--\r\n")
+
+        var request = URLRequest(url: URL(string: "\(baseURL)/v1/audio/transcriptions")!)
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        request.setValue("local", forHTTPHeaderField: "X-Api-Key")
+        request.setValue(routingMode, forHTTPHeaderField: "X-NOU-Whisper-Mode")
+        request.httpBody = body
+        request.timeoutInterval = 60
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            if let error { klog("NOU Whisper error: \(error.localizedDescription)"); onDone(""); return }
+            guard let data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let text = json["text"] as? String else {
+                klog("NOU Whisper: unexpected response: \(String(data: data ?? Data(), encoding: .utf8) ?? "")")
+                onDone(""); return
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            klog("NOU Whisper done: '\(trimmed)'")
+            onDone(trimmed)
+        }.resume()
     }
 
     // MARK: - OpenAI Whisper

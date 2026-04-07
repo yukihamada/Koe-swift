@@ -1552,7 +1552,7 @@ struct OWWSettingsView: View {
                 thresholdSection
                 customModelSection
                 Divider()
-                customTrainingGuide
+                customTrainSection
             }
         }
         .onAppear { setup.checkInstallation() }
@@ -1651,21 +1651,64 @@ struct OWWSettingsView: View {
 
     // MARK: カスタム学習ガイド
 
-    private var customTrainingGuide: some View {
-        DisclosureGroup("「ヘイこえ」などカスタムウェイクワードを作る方法") {
+    // MARK: カスタムウェイクワード自動学習
+
+    @State private var trainText: String  = "hey koe"
+    @State private var trainName: String  = "hey_koe"
+
+    private var customTrainSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("カスタムウェイクワードを自動学習")
+                .font(.caption).fontWeight(.medium)
+
             VStack(alignment: .leading, spacing: 4) {
-                Text("1. ターミナルで学習スクリプトを実行").font(.caption2)
-                Text("python3 -m openwakeword.train \\\n  --training_text \"hey koe\" \\\n  --model_name hey_koe \\\n  --output_dir ~/models")
-                    .font(.system(.caption2, design: .monospaced))
-                    .padding(4).background(Color(.textBackgroundColor)).cornerRadius(4)
-                    .textSelection(.enabled)
-                Text("2. 生成された hey_koe.onnx を「カスタムモデル」に設定")
-                    .font(.caption2).padding(.top, 4)
-                Text("※ training_text は発音をローマ字/英語で書きます")
+                Text("発音テキスト（ローマ字/英語）").font(.caption2).foregroundColor(.secondary)
+                TextField("例: hey koe", text: $trainText)
+                    .textFieldStyle(.roundedBorder).font(.system(size: 11))
+                Text("モデル名").font(.caption2).foregroundColor(.secondary)
+                TextField("例: hey_koe", text: $trainName)
+                    .textFieldStyle(.roundedBorder).font(.system(size: 11))
+            }
+
+            // 学習ボタン or 進捗
+            switch setup.trainState {
+            case .idle, .failed:
+                HStack(spacing: 8) {
+                    Button("学習開始") {
+                        setup.trainModel(wakeWordText: trainText, modelName: trainName)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .disabled(trainText.isEmpty || trainName.isEmpty)
+
+                    if case .failed(let msg) = setup.trainState {
+                        Text(msg).font(.caption2).foregroundColor(.red)
+                    }
+                }
+                Text("※ 初回は数分かかります（TTS音声生成 + ニューラルネット学習）")
                     .font(.caption2).foregroundColor(.secondary)
-            }.padding(.top, 4)
+
+            case .training:
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.7)
+                    Text(setup.trainProgress).font(.caption2).foregroundColor(.secondary)
+                }
+
+            case .done(let path):
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("学習完了 ✓ カスタムモデルに自動設定されました").font(.caption2)
+                        Text(path).font(.system(.caption2, design: .monospaced))
+                            .foregroundColor(.secondary).lineLimit(1)
+                    }
+                    Button("別のワードを学習") { setup.trainState = .idle }
+                        .buttonStyle(.link).controlSize(.mini)
+                }
+            }
         }
-        .font(.caption).foregroundColor(.secondary)
+        .padding(8)
+        .background(Color(.controlBackgroundColor))
+        .cornerRadius(6)
     }
 
     private func pickModel() {

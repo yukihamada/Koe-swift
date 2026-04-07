@@ -12,20 +12,23 @@ class WakeWordDetector {
 #if MAC_APP_STORE
     func start() {
         guard AppSettings.shared.wakeWordEnabled, !isRunning else { return }
-
-        // App Store版では MFCC+DTW のみサポート
         let engine = WakeWordEngine.shared
         guard engine.isReady else {
-            klog("WakeWordDetector: テンプレート不足 (have \(engine.templates.count), need \(WakeWordEngine.minTemplates)) — 設定 > AI で録音してください")
+            klog("WakeWordDetector: テンプレート不足 (have \(engine.templates.count), need \(WakeWordEngine.minTemplates))")
             return
         }
         engine.onDetected = { [weak self] in self?.onDetected?() }
         engine.start()
         isRunning = true
     }
+    func stop() { WakeWordEngine.shared.stop(); isRunning = false }
 #else
     func start() {
         guard AppSettings.shared.wakeWordEnabled, !isRunning else { return }
+
+        // 切り替え時に両エンジンを確実に停止してから起動
+        WakeWordEngine.shared.stop()
+        OWWEngine.shared.stop()
 
         switch AppSettings.shared.wakeWordEngineType {
         case .openWakeWord:
@@ -33,11 +36,14 @@ class WakeWordDetector {
             engine.onDetected = { [weak self] in self?.onDetected?() }
             engine.start()
             isRunning = engine.isRunning
+            if !engine.isRunning {
+                klog("WakeWordDetector: OWWEngine 起動失敗 — \(engine.lastError)")
+            }
 
         case .mfccDTW:
             let engine = WakeWordEngine.shared
             guard engine.isReady else {
-                klog("WakeWordDetector: テンプレート不足 (have \(engine.templates.count), need \(WakeWordEngine.minTemplates)) — 設定 > AI で録音してください")
+                klog("WakeWordDetector: テンプレート不足 (have \(engine.templates.count), need \(WakeWordEngine.minTemplates))")
                 return
             }
             engine.onDetected = { [weak self] in self?.onDetected?() }
@@ -45,14 +51,7 @@ class WakeWordDetector {
             isRunning = true
         }
     }
-#endif
 
-#if MAC_APP_STORE
-    func stop() {
-        WakeWordEngine.shared.stop()
-        isRunning = false
-    }
-#else
     func stop() {
         WakeWordEngine.shared.stop()
         OWWEngine.shared.stop()

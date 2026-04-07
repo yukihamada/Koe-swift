@@ -33,12 +33,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var activeAppBundleID = ""
 
     // Silence-based auto-stop (VAD: 直近フレームの平滑化で誤検出を低減)
-    private let voiceThreshold: Float   = 0.20  // この音量以上で「発話中」（背景ノイズと区別）
-    private let silenceThreshold: Float = 0.03  // 絶対閾値（静かな環境用）
-    private let silenceRatio: Float     = 0.45  // ピーク比率閾値（ノイジー環境用）
-    private var peakLevel: Float        = 0     // 録音中の最大音量
-    private var levelHistory: [Float] = []      // 直近フレームの音量履歴
-    private let levelHistorySize = 4            // 4フレーム ≈ 133ms @ 30Hz
+    private let voiceThresholdBase: Float = 0.08  // 基本閾値（環境ノイズで動的に上昇）
+    private let silenceThreshold: Float   = 0.02  // 絶対閾値（静かな環境用）
+    private let silenceRatio: Float       = 0.40  // ピーク比率閾値（ノイジー環境用）
+    private var peakLevel: Float          = 0     // 録音中の最大音量
+    private var ambientNoiseLevel: Float  = 0     // 環境ノイズ推定値（適応的閾値用）
+    private let noiseLearningRate: Float  = 0.08  // ノイズレベルの更新速度
+    private var levelHistory: [Float] = []        // 直近フレームの音量履歴
+    private let levelHistorySize = 4              // 4フレーム ≈ 133ms @ 30Hz
+    /// 動的発話閾値: 環境ノイズの3.5倍 or 基本値のいずれか大きい方
+    private var voiceThreshold: Float { max(voiceThresholdBase, ambientNoiseLevel * 3.5) }
     private let maxRecordDuration: TimeInterval = 300  // 5分（whisper.cppは内部で30秒セグメントに分割処理）
     /// 無音閾値: 最初から設定値をそのまま使用（後半の言葉を拾い損ねない）
     private var silenceAutoStop: TimeInterval {
@@ -934,10 +938,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         lastStreamingResult = nil
         lastStreamingSampleCount = 0
         recordingStart = Date()
-        speechDetected = true   // 録音開始時点で発話中とみなす（無音検知をすぐ有効化）
+        speechDetected = false  // 最初は未検知（動的閾値で判定）
         silenceStart   = nil
         peakLevel      = 0
         levelHistory   = []
+        // ambientNoiseLevel は引き継ぐ（起動直後の適応をスムーズに）
         spaceHeld        = false
         spacePressed     = false
         // mainKeyHeld はここでリセットしない（ホールド中に startRecording が呼ばれた場合、無音停止を防ぐため）
@@ -994,9 +999,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // 音声レベルが低すぎた場合は認識をスキップ（ハルシネーション防止）
+        if speechDetected == false || peakLevel < 0.04 {
+            klog("stopAndRecognize: peak level too low (\(String(format:"%.3f", peakLevel))), skipping")
+            overlay?.hide()
+            if AppSettings.shared.wakeWordEnabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+            }
+            postRecognitionCleanup()
+            return
+        }
+
         // 音声がなければスキップ（無音録音を認識エンジンに渡さない）
         if let wavSamples = WhisperContext.loadWAVPublic(url: audioURL),
-           !AudioDSP.hasVoice(wavSamples, threshold: 0.006, minVoiceFrames: 5) {
+           !AudioDSP.hasVoice(wavSamples, threshold: 0.005, minVoiceFrames: 4) {
             klog("stopAndRecognize: no voice detected, skipping recognition")
             overlay?.hide()
             // 議事録モード中は無音でも自動録音ループを継続
@@ -1436,12 +1452,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// ハルシネーション検出: 同じフレーズが3回以上繰り返されているかチェック
     private static func isHallucination(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 10 else { return false }
+        guard trimmed.count >= 4 else { return false }
+
+        // 既知のハルシネーションフレーズ（Whisperが無音/ノイズで出しやすいもの）
+        let knownPhrases = [
+            "ご視聴ありがとうございました", "字幕は自動生成", "翻訳協力", "チャンネル登録",
+            "ご清聴ありがとう", "お聞きください", "視聴ありがとう",
+            "Thank you for watching", "Thanks for watching", "Please subscribe",
+            "Like and subscribe", "字幕制作", "概要欄", "高評価",
+            "MBC뉴스", "자막 제공", "KBS뉴스",
+        ]
+        for phrase in knownPhrases where trimmed.contains(phrase) {
+            klog("Hallucination: known phrase '\(phrase)'")
+            return true
+        }
 
         // 短いフレーズ(2〜30文字)の繰り返しを検出
         for len in 2...min(30, trimmed.count / 3) {
             let prefix = String(trimmed.prefix(len))
-            // 句読点やスペースだけのパターンはスキップ
             if prefix.allSatisfy({ $0.isPunctuation || $0.isWhitespace }) { continue }
             var count = 0
             var searchRange = trimmed.startIndex..<trimmed.endIndex
@@ -1449,7 +1477,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 count += 1
                 searchRange = range.upperBound..<trimmed.endIndex
             }
-            // 同じフレーズが4回以上 && テキストの大半を占める場合
             if count >= 4 && (prefix.count * count) >= trimmed.count / 2 {
                 klog("Hallucination: '\(prefix)' repeated \(count) times")
                 return true
@@ -1599,6 +1626,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // ピーク更新
         if smoothed > peakLevel { peakLevel = smoothed }
+
+        // 環境ノイズ推定: 発話検出前のフレームでノイズフロアを適応的に学習
+        if !speechDetected {
+            ambientNoiseLevel = ambientNoiseLevel * (1.0 - noiseLearningRate) + smoothed * noiseLearningRate
+        }
+
         // 無音判定: 絶対閾値 OR ピーク比率（ノイジー環境でも動作）
         let dynamicSilenceThreshold = max(silenceThreshold, peakLevel * silenceRatio)
 

@@ -145,4 +145,69 @@ class OWWSetupManager: ObservableObject {
         klog("OWWSetup: \(msg)")
         DispatchQueue.main.async { self.progressMessage = msg }
     }
+
+    // MARK: - カスタムモデル学習
+
+    enum TrainState: Equatable {
+        case idle
+        case training
+        case done(String)   // モデルパス
+        case failed(String)
+    }
+
+    @Published var trainState: TrainState = .idle
+    @Published var trainProgress: String = ""
+
+    static var modelsDir: URL { supportDir.appendingPathComponent("models") }
+
+    /// カスタムウェイクワードを学習して .onnx を生成する
+    func trainModel(wakeWordText: String, modelName: String) {
+        guard trainState != .training else { return }
+        guard state.isReady else {
+            trainState = .failed("先に openWakeWord をインストールしてください")
+            return
+        }
+        trainState   = .training
+        trainProgress = "学習データを準備中…"
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+
+            let outputDir = Self.modelsDir.path
+            try? FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+
+            // openwakeword.train モジュールで学習
+            self.setTrainProgress("音声サンプルを生成中… (TTS)")
+            let out = self.run(Self.venvPython, args: [
+                "-m", "openwakeword.train",
+                "--training_text", wakeWordText,
+                "--model_name", modelName,
+                "--output_dir", outputDir,
+            ])
+            klog("OWWTrain: \(out.suffix(500))")
+
+            let modelPath = "\(outputDir)/\(modelName).onnx"
+            if FileManager.default.fileExists(atPath: modelPath) {
+                klog("OWWTrain: success → \(modelPath)")
+                DispatchQueue.main.async {
+                    self.trainState   = .done(modelPath)
+                    self.trainProgress = "学習完了 ✓"
+                    // 自動的にカスタムモデルパスを設定
+                    AppSettings.shared.owwCustomModelPath = modelPath
+                }
+            } else {
+                let errMsg = out.suffix(300)
+                klog("OWWTrain: failed — \(errMsg)")
+                DispatchQueue.main.async {
+                    self.trainState   = .failed("学習失敗: \(errMsg)")
+                    self.trainProgress = ""
+                }
+            }
+        }
+    }
+
+    private func setTrainProgress(_ msg: String) {
+        klog("OWWTrain: \(msg)")
+        DispatchQueue.main.async { self.trainProgress = msg }
+    }
 }

@@ -15,6 +15,11 @@ if [ -f "AppIcon.icns" ]; then
     cp AppIcon.icns "$APP/Contents/Resources/"
 fi
 
+# Copy openWakeWord detector script
+if [ -f "Resources/oww_detector.py" ]; then
+    cp Resources/oww_detector.py "$APP/Contents/Resources/"
+fi
+
 # Homebrew prefix (Apple Silicon: /opt/homebrew, Intel: /usr/local)
 BREW_PREFIX=$(brew --prefix 2>/dev/null || echo "/opt/homebrew")
 

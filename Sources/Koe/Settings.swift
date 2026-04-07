@@ -199,6 +199,17 @@ enum RecordingMode: String, CaseIterable {
     }
 }
 
+enum WakeWordEngineType: String, CaseIterable {
+    case mfccDTW     = "mfcc_dtw"
+    case openWakeWord = "open_wake_word"
+    var displayName: String {
+        switch self {
+        case .mfccDTW:      return "MFCC+DTW（内蔵・テンプレート学習）"
+        case .openWakeWord: return "openWakeWord（Python・高精度）"
+        }
+    }
+}
+
 // MARK: - Architecture Detection
 
 enum ArchUtil {
@@ -376,6 +387,10 @@ class AppSettings: ObservableObject {
         if wakeWordEnabled { WakeWordDetector.shared.start() } else { WakeWordDetector.shared.stop() }
     }}
     @Published var wakeWords: [String] { didSet { saveWakeWords() } }
+    @Published var wakeWordEngineType: WakeWordEngineType { didSet { ud.set(wakeWordEngineType.rawValue, forKey: "wakeWordEngineType") } }
+    @Published var owwModelName: String     { didSet { ud.set(owwModelName,       forKey: "owwModelName") } }
+    @Published var owwCustomModelPath: String { didSet { ud.set(owwCustomModelPath, forKey: "owwCustomModelPath") } }
+    @Published var owwThreshold: Float      { didSet { ud.set(owwThreshold,       forKey: "owwThreshold") } }
 
     // App profiles & text expansions
     @Published var appProfiles: [AppProfile]    { didSet { saveJSON(appProfiles,    key: "appProfiles") } }
@@ -536,6 +551,10 @@ class AppSettings: ObservableObject {
         cmdIMESwitchEnabled = ud.object(forKey: "cmdIMESwitchEnabled") as? Bool ?? true  // デフォルトON
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
+        wakeWordEngineType = WakeWordEngineType(rawValue: ud.string(forKey: "wakeWordEngineType") ?? "") ?? .mfccDTW
+        owwModelName       = ud.string(forKey: "owwModelName") ?? "hey_jarvis"
+        owwCustomModelPath = ud.string(forKey: "owwCustomModelPath") ?? ""
+        owwThreshold       = ud.object(forKey: "owwThreshold") as? Float ?? 0.5
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []
         appProfiles = (ud.data(forKey: "appProfiles").flatMap { try? JSONDecoder().decode([AppProfile].self, from: $0) }) ?? AppSettings.defaultProfiles()
         fillerRemovalEnabled = ud.object(forKey: "fillerRemovalEnabled") as? Bool ?? true  // デフォルトON

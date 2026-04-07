@@ -534,6 +534,19 @@ struct GeneralTab: View {
 
                 Toggle(L10n.toggleCmdIMESwitch, isOn: $settings.cmdIMESwitchEnabled)
                 Toggle(L10n.toggleShowNoiseLevel, isOn: $settings.showNoiseLevel)
+
+                // 録音中の音量ダッキング
+                HStack {
+                    Text("録音中の音量")
+                    Slider(value: Binding(
+                        get: { Double(settings.duckingVolume) },
+                        set: { settings.duckingVolume = Int($0) }
+                    ), in: 0...50, step: 5)
+                    Text(settings.duckingVolume == 0 ? "OFF" : "\(settings.duckingVolume)%")
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 36, alignment: .trailing)
+                }
+                .help("録音中にシステム音量を自動で下げます（0=OFF）")
             } header: {
                 Label(L10n.sectionBehavior, systemImage: "slider.horizontal.3")
                     .foregroundColor(Lux.gold)
@@ -1201,7 +1214,24 @@ struct AutomationTab: View {
             Section {
                 Toggle(L10n.toggleWakeWord, isOn: $s.wakeWordEnabled)
                 if s.wakeWordEnabled {
+                    // エンジン選択
+                    #if MAC_APP_STORE
+                    Text("MFCC+DTW（内蔵・テンプレート学習）").font(.caption).foregroundColor(.secondary)
                     WakeWordTemplateView()
+                    #else
+                    Picker("エンジン", selection: $s.wakeWordEngineType) {
+                        ForEach(WakeWordEngineType.allCases, id: \.self) { t in
+                            Text(t.displayName).tag(t)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    if s.wakeWordEngineType == .mfccDTW {
+                        WakeWordTemplateView()
+                    } else {
+                        OWWSettingsView()
+                    }
+                    #endif
                 }
             } header: {
                 Label(L10n.sectionWakeWord, systemImage: "ear")
@@ -1505,6 +1535,146 @@ struct WakeWordTemplateView: View {
         }
     }
 }
+
+// MARK: - OWW Settings View
+
+#if !MAC_APP_STORE
+struct OWWSettingsView: View {
+    @ObservedObject private var s     = AppSettings.shared
+    @ObservedObject private var setup = OWWSetupManager.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            setupStatusSection
+            if setup.state.isReady {
+                Divider()
+                modelSection
+                thresholdSection
+                customModelSection
+                Divider()
+                customTrainingGuide
+            }
+        }
+        .onAppear { setup.checkInstallation() }
+    }
+
+    // MARK: セットアップ状態
+
+    @ViewBuilder
+    private var setupStatusSection: some View {
+        switch setup.state {
+        case .unknown:
+            HStack { ProgressView().scaleEffect(0.7); Text("確認中…").font(.caption).foregroundColor(.secondary) }
+
+        case .notInstalled:
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle.fill").foregroundColor(.accentColor)
+                    Text("openWakeWord は未インストールです").font(.caption)
+                }
+                Text("「自動インストール」をタップするとバックグラウンドでセットアップします（初回のみ数分）。")
+                    .font(.caption2).foregroundColor(.secondary)
+                Button("自動インストール") { setup.install() }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+            }
+
+        case .installing:
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) { ProgressView().scaleEffect(0.7); Text("インストール中…").font(.caption) }
+                Text(setup.progressMessage).font(.caption2).foregroundColor(.secondary)
+            }
+
+        case .ready:
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                Text("openWakeWord 準備完了 ✓").font(.caption).foregroundColor(.secondary)
+            }
+
+        case .failed(let msg):
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                    Text("インストール失敗").font(.caption)
+                }
+                Text(msg).font(.caption2).foregroundColor(.red)
+                Button("再試行") { setup.install() }.buttonStyle(.bordered).controlSize(.small)
+            }
+        }
+    }
+
+    // MARK: モデル選択
+
+    private var modelSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("ウェイクワード（プリセット）").font(.caption).foregroundColor(.secondary)
+            Picker("", selection: $s.owwModelName) {
+                ForEach(OWWEngine.pretrainedModels, id: \.id) { m in
+                    Text("\(m.label)  (\(m.id))").tag(m.id)
+                }
+            }
+            .labelsHidden().frame(maxWidth: .infinity)
+            Text("日本語ウェイクワードはカスタムモデル学習が必要です")
+                .font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    // MARK: 感度
+
+    private var thresholdSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("感度（threshold）").font(.caption).foregroundColor(.secondary)
+                Spacer()
+                Text(String(format: "%.2f", s.owwThreshold)).font(.caption.monospacedDigit())
+            }
+            HStack {
+                Text("低").font(.caption2).foregroundColor(.secondary)
+                Slider(value: $s.owwThreshold, in: 0.1...0.9, step: 0.05)
+                Text("高").font(.caption2).foregroundColor(.secondary)
+            }
+            Text("低いほど反応しやすい（誤検知も増える）").font(.caption2).foregroundColor(.secondary)
+        }
+    }
+
+    // MARK: カスタムモデルパス
+
+    private var customModelSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("カスタムモデル（.onnx、省略可）").font(.caption).foregroundColor(.secondary)
+            HStack {
+                TextField("/Users/you/models/hey_koe.onnx", text: $s.owwCustomModelPath)
+                    .textFieldStyle(.roundedBorder).font(.system(size: 11))
+                Button("…") { pickModel() }.controlSize(.small)
+            }
+        }
+    }
+
+    // MARK: カスタム学習ガイド
+
+    private var customTrainingGuide: some View {
+        DisclosureGroup("「ヘイこえ」などカスタムウェイクワードを作る方法") {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("1. ターミナルで学習スクリプトを実行").font(.caption2)
+                Text("python3 -m openwakeword.train \\\n  --training_text \"hey koe\" \\\n  --model_name hey_koe \\\n  --output_dir ~/models")
+                    .font(.system(.caption2, design: .monospaced))
+                    .padding(4).background(Color(.textBackgroundColor)).cornerRadius(4)
+                    .textSelection(.enabled)
+                Text("2. 生成された hey_koe.onnx を「カスタムモデル」に設定")
+                    .font(.caption2).padding(.top, 4)
+                Text("※ training_text は発音をローマ字/英語で書きます")
+                    .font(.caption2).foregroundColor(.secondary)
+            }.padding(.top, 4)
+        }
+        .font(.caption).foregroundColor(.secondary)
+    }
+
+    private func pickModel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true; panel.canChooseDirectories = false
+        if panel.runModal() == .OK { s.owwCustomModelPath = panel.url?.path ?? "" }
+    }
+}
+#endif
 
 // MARK: - Text Expansions Tab
 
@@ -2125,6 +2295,7 @@ struct HistoryTab: View {
     @State private var batchTotal = 0
     @State private var selectedWaveformID: UUID?
     @State private var waveformSamples: [Float] = []
+    @State private var copiedID: UUID?
     @StateObject private var audioPlayer = HistoryAudioPlayer()
 
     private let dateFormatter: DateFormatter = {
@@ -2194,7 +2365,8 @@ struct HistoryTab: View {
                             .buttonStyle(.plain)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(entry.text)
-                                    .lineLimit(2)
+                                    .lineLimit(4)
+                                    .textSelection(.enabled)
                                 HStack(spacing: 6) {
                                     if let time = entry.recognitionTime {
                                         Text(String(format: "%.1fs", time))
@@ -2243,16 +2415,59 @@ struct HistoryTab: View {
                                 .buttonStyle(.plain)
                                 .help("音声を再生")
                             }
-                            Text(dateFormatter.string(from: entry.date))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .frame(width: 80, alignment: .trailing)
+                            VStack(alignment: .trailing, spacing: 4) {
+                                Text(dateFormatter.string(from: entry.date))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 80, alignment: .trailing)
+                                HStack(spacing: 6) {
+                                    // 再認識ボタン（音声ファイルがある場合のみ）
+                                    if entry.audioFileID != nil {
+                                        if rerecognizingID == entry.id {
+                                            ProgressView()
+                                                .scaleEffect(0.6)
+                                                .frame(width: 14, height: 14)
+                                        } else {
+                                            Button {
+                                                if let model = downloadedModels().first {
+                                                    rerecognizeEntry(entry, model: model)
+                                                }
+                                            } label: {
+                                                Image(systemName: "arrow.clockwise")
+                                                    .font(.caption)
+                                                    .foregroundColor(.orange)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .help("再認識")
+                                        }
+                                    }
+                                    // コピーボタン
+                                    Button {
+                                        NSPasteboard.general.clearContents()
+                                        NSPasteboard.general.setString(entry.text, forType: .string)
+                                        copiedID = entry.id
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                            if copiedID == entry.id { copiedID = nil }
+                                        }
+                                    } label: {
+                                        Image(systemName: copiedID == entry.id ? "checkmark" : "doc.on.doc")
+                                            .font(.caption)
+                                            .foregroundColor(copiedID == entry.id ? .green : .accentColor)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(L10n.labelCopy)
+                                }
+                            }
                         }
                         .padding(.vertical, 2)
                         .contextMenu {
                             Button {
                                 NSPasteboard.general.clearContents()
                                 NSPasteboard.general.setString(entry.text, forType: .string)
+                                copiedID = entry.id
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    if copiedID == entry.id { copiedID = nil }
+                                }
                             } label: {
                                 Label(L10n.labelCopy, systemImage: "doc.on.doc")
                             }

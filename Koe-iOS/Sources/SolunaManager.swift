@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import Accelerate
 #if os(iOS)
 import UIKit
 #endif
@@ -37,6 +38,8 @@ final class SolunaManager: ObservableObject {
     private var receiver: SolunaAudioReceiver?
     private var statusTimer: Timer?
     private var listenTimer: Timer?
+    private var micEngine: AVAudioEngine?
+    @Published var micLevel: Float = 0
 
     private var deviceName: String
 
@@ -146,11 +149,36 @@ final class SolunaManager: ObservableObject {
     // MARK: - Mic Monitoring (Karaoke Mode)
 
     func toggleMicMonitoring() {
-        // TODO: implement via C++ bridge mic input
-        isMicMonitoring.toggle()
+        isMicMonitoring ? stopMicMonitoring() : startMicMonitoring()
+    }
+
+    private func startMicMonitoring() {
+        let engine = AVAudioEngine()
+        let input  = engine.inputNode
+        let fmt    = input.outputFormat(forBus: 0)
+        input.installTap(onBus: 0, bufferSize: 1024, format: fmt) { [weak self] buf, _ in
+            guard let ch = buf.floatChannelData?[0] else { return }
+            var rms: Float = 0
+            vDSP_rmsqv(ch, 1, &rms, vDSP_Length(buf.frameLength))
+            Task { @MainActor [weak self] in self?.micLevel = min(rms * 5, 1.0) }
+        }
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetooth])
+            try AVAudioSession.sharedInstance().setActive(true)
+            engine.prepare()
+            try engine.start()
+            micEngine = engine
+            isMicMonitoring = true
+        } catch {
+            print("SolunaManager: mic start error \(error)")
+        }
     }
 
     private func stopMicMonitoring() {
+        micEngine?.inputNode.removeTap(onBus: 0)
+        micEngine?.stop()
+        micEngine = nil
+        micLevel = 0
         isMicMonitoring = false
     }
 

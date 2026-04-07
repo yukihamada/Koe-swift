@@ -41,14 +41,21 @@ final class RecordingManager: ObservableObject {
     private var pcmSamples: [Float] = []
     private var useWhisper: Bool { WhisperContext.shared.isLoaded }
 
-    // 無音検出
+    // 無音検出（適応型ノイズフロア）
     private var silenceStart: Date?
-    private let silenceThreshold: Float = 0.01
+    private let silenceThresholdBase: Float = 0.006   // 基本閾値
+    private var ambientNoiseLevel: Float    = 0        // 環境ノイズ推定値
+    private var peakLevel: Float            = 0        // セッション中の最大音量
+    private let noiseLearningRate: Float    = 0.08     // ノイズ学習速度
+    private var speechDetected              = false
+    /// 動的閾値: 環境ノイズの3.5倍 or 基本値の大きい方
+    private var silenceThreshold: Float { max(silenceThresholdBase, ambientNoiseLevel * 3.5) }
     private var silenceDuration: TimeInterval {
         // 0 = 無音自動停止OFF（手動停止のみ）
         UserDefaults.standard.object(forKey: "koe_silence_duration") as? Double ?? 0
     }
     private var silenceTimer: Timer?
+    private var isRecognizing = false
 
     // Apple Speech 継続認識（60秒制限対策）
     private var accumulatedText = ""
@@ -133,12 +140,20 @@ final class RecordingManager: ObservableObject {
                 DispatchQueue.main.async { self.audioLevel = min(rms * 5, 1.0) }
             }
 
-            // 無音検出: rmsが閾値以下なら無音開始を記録
+            // 適応型ノイズフロア + 無音検出
             DispatchQueue.main.async {
-                if rms < self.silenceThreshold {
-                    if self.silenceStart == nil { self.silenceStart = Date() }
-                } else {
+                // ピーク更新
+                if rms > self.peakLevel { self.peakLevel = rms }
+                // 発話前: 環境ノイズを学習
+                if !self.speechDetected {
+                    self.ambientNoiseLevel = self.ambientNoiseLevel * (1 - self.noiseLearningRate) + rms * self.noiseLearningRate
+                }
+                let threshold = self.silenceThreshold
+                if rms >= threshold {
+                    self.speechDetected = true
                     self.silenceStart = nil
+                } else if self.speechDetected {
+                    if self.silenceStart == nil { self.silenceStart = Date() }
                 }
             }
 
@@ -173,6 +188,9 @@ final class RecordingManager: ObservableObject {
         statusText = "録音中…"
         recognizedText = ""
         silenceStart = nil
+        speechDetected = false
+        peakLevel = 0
+        isRecognizing = false
         startLiveActivity()
 
         // 無音検出タイマー (silenceDuration > 0 の場合のみ自動停止)
@@ -211,6 +229,9 @@ final class RecordingManager: ObservableObject {
         statusText = "録音中…"
         recognizedText = ""
         silenceStart = nil
+        speechDetected = false
+        peakLevel = 0
+        isRecognizing = false
         startLiveActivity()
 
         // Apple Speechでも無音検出タイマー起動 (silenceDuration > 0 の場合のみ)
@@ -377,12 +398,14 @@ final class RecordingManager: ObservableObject {
         isRecording = false
         audioLevel = 0
 
-        // 安全策: 30秒後にステータスが「認識中」のままならリセット
-        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
-            guard let self else { return }
-            if self.statusText.contains("認識中") || self.statusText.contains("処理中") {
-                self.statusText = "タップして録音"
-            }
+        // 安全策: 録音長の2倍 or 最低60秒 待ってからステータスをリセット
+        let recordedSecs = Double(pcmSamples.count) / 16000.0
+        let safetyTimeout = max(60.0, recordedSecs * 2.5)
+        isRecognizing = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + safetyTimeout) { [weak self] in
+            guard let self, self.isRecognizing else { return }
+            self.isRecognizing = false
+            self.statusText = "タップして録音"
         }
         endLiveActivity()
 
@@ -408,6 +431,7 @@ final class RecordingManager: ObservableObject {
 
             WhisperContext.shared.transcribeBuffer(samples: samples, language: whisperLang) { [weak self] text in
                 guard let self else { return }
+                self.isRecognizing = false
                 if let text, !text.isEmpty {
                     self.handleRecognitionResultWithLLM(text)
                 } else {
@@ -596,6 +620,11 @@ final class RecordingManager: ObservableObject {
            let items = try? JSONDecoder().decode([HistoryItem].self, from: data) {
             history = items
         }
+    }
+
+    func deleteHistoryItem(id: UUID) {
+        history.removeAll { $0.id == id }
+        saveHistory()
     }
 
     func clearHistory() {

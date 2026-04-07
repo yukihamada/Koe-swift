@@ -53,6 +53,8 @@ final class SoundMemory: ObservableObject {
     // PCM buffer for Whisper (accumulated per segment)
     private var pcmSamples: [Float] = []
     private let samplesLock = NSLock()
+    // ファイルI/O 排他制御（segments.json の読み書き競合防止）
+    private let fileQueue = DispatchQueue(label: "com.yuki.koe.soundmemory.file", qos: .utility)
 
     // MARK: - Init
 
@@ -321,19 +323,27 @@ final class SoundMemory: ObservableObject {
 
     private func saveData() {
         let data = StorageData(segments: segments, bookmarks: bookmarks)
-        do {
-            let json = try JSONEncoder().encode(data)
-            try json.write(to: segmentsFile, options: .atomic)
-        } catch {
-            print("[SoundMemory] Save error: \(error)")
+        let url  = segmentsFile
+        fileQueue.async {
+            do {
+                let json = try JSONEncoder().encode(data)
+                try json.write(to: url, options: .atomic)
+            } catch {
+                print("[SoundMemory] Save error: \(error)")
+            }
         }
     }
 
     private func loadData() {
-        guard let json = try? Data(contentsOf: segmentsFile),
-              let data = try? JSONDecoder().decode(StorageData.self, from: json) else { return }
-        segments = data.segments
-        bookmarks = data.bookmarks
+        let url = segmentsFile
+        fileQueue.sync {
+            guard let json = try? Data(contentsOf: url),
+                  let data = try? JSONDecoder().decode(StorageData.self, from: json) else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.segments  = data.segments
+                self?.bookmarks = data.bookmarks
+            }
+        }
     }
 
     private func updateTodayDuration() {

@@ -564,7 +564,7 @@ class AppSettings: ObservableObject {
         owwModelName       = ud.string(forKey: "owwModelName") ?? "hey_jarvis"
         owwCustomModelPath = ud.string(forKey: "owwCustomModelPath") ?? ""
         owwThreshold       = ud.object(forKey: "owwThreshold") as? Float ?? 0.5
-        wakeTrainEndpoint  = ud.string(forKey: "wakeTrainEndpoint") ?? ""
+        wakeTrainEndpoint  = ud.string(forKey: "wakeTrainEndpoint") ?? "https://koe-wake-train.fly.dev"
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []
         appProfiles = (ud.data(forKey: "appProfiles").flatMap { try? JSONDecoder().decode([AppProfile].self, from: $0) }) ?? AppSettings.defaultProfiles()
         fillerRemovalEnabled = ud.object(forKey: "fillerRemovalEnabled") as? Bool ?? true  // デフォルトON

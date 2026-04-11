@@ -219,10 +219,9 @@ class OWWSetupManager: ObservableObject {
     /// 採用していない。サーバー側 (koe-wake-train) がその重い処理を肩代わりする。
     func trainModel(wakeWordText: String, modelName: String) {
         guard trainState != .training else { return }
-        guard state.isReady else {
-            trainState = .failed("先に openWakeWord をインストールしてください")
-            return
-        }
+        // クラウド学習なのでローカル OWW が未インストールでも実行可能。
+        // 学習済み .onnx は ~/Library/Application Support/Koe/models/ に保存され、
+        // 後で OWW をインストールすれば自動的に読み込まれる。
 
         let endpoint = AppSettings.shared.wakeTrainEndpoint
         guard !endpoint.isEmpty, let base = URL(string: endpoint) else {

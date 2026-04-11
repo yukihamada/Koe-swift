@@ -534,6 +534,7 @@ struct GeneralTab: View {
 
                 Toggle(L10n.toggleCmdIMESwitch, isOn: $settings.cmdIMESwitchEnabled)
                 Toggle(L10n.toggleShowNoiseLevel, isOn: $settings.showNoiseLevel)
+                Toggle("メニューバーにマイクアイコンを表示", isOn: $settings.menuBarIconVisible)
 
                 // 録音中の音量ダッキング
                 HStack {
@@ -1299,6 +1300,15 @@ struct AutomationTab: View {
                 Label(L10n.sectionTextExpansion, systemImage: "text.word.spacing")
                     .foregroundColor(Lux.gold)
             }
+
+            #if !MAC_APP_STORE
+            Section {
+                OWWCloudTrainView()
+            } header: {
+                Label("カスタムウェイクワード学習（クラウド）", systemImage: "waveform.badge.plus")
+                    .foregroundColor(Lux.gold)
+            }
+            #endif
         }
         .formStyle(.grouped)
     }
@@ -1551,8 +1561,6 @@ struct OWWSettingsView: View {
                 modelSection
                 thresholdSection
                 customModelSection
-                Divider()
-                customTrainSection
             }
         }
         .onAppear { setup.checkInstallation() }
@@ -1649,28 +1657,38 @@ struct OWWSettingsView: View {
         }
     }
 
-    // MARK: カスタム学習ガイド
+    private func pickModel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true; panel.canChooseDirectories = false
+        if panel.runModal() == .OK { s.owwCustomModelPath = panel.url?.path ?? "" }
+    }
+}
 
-    // MARK: カスタムウェイクワード自動学習
+// MARK: - OWW Cloud Train View (standalone, always visible regardless of wake word toggle)
 
-    @State private var trainText: String  = "hey koe"
-    @State private var trainName: String  = "hey_koe"
+struct OWWCloudTrainView: View {
+    @ObservedObject private var s     = AppSettings.shared
+    @ObservedObject private var setup = OWWSetupManager.shared
+    @State private var trainText: String = "hey koe"
+    @State private var trainName: String = "hey_koe"
 
-    private var customTrainSection: some View {
+    var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("カスタムウェイクワードを自動学習")
-                .font(.caption).fontWeight(.medium)
-
             VStack(alignment: .leading, spacing: 4) {
-                Text("発音テキスト（ローマ字/英語）").font(.caption2).foregroundColor(.secondary)
-                TextField("例: hey koe", text: $trainText)
+                Text("学習サーバー URL").font(.caption2).foregroundColor(.secondary)
+                TextField("https://koe-wake-train.fly.dev", text: $s.wakeTrainEndpoint)
                     .textFieldStyle(.roundedBorder).font(.system(size: 11))
-                Text("モデル名").font(.caption2).foregroundColor(.secondary)
+                Text("空欄だとカスタム学習は無効。自前サーバーを立てる場合は URL を差し替え")
+                    .font(.caption2).foregroundColor(.secondary)
+
+                Text("発音テキスト").font(.caption2).foregroundColor(.secondary).padding(.top, 4)
+                TextField("例: hey koe / ヘイこえ", text: $trainText)
+                    .textFieldStyle(.roundedBorder).font(.system(size: 11))
+                Text("モデル名（半角英数とアンダースコア）").font(.caption2).foregroundColor(.secondary)
                 TextField("例: hey_koe", text: $trainName)
                     .textFieldStyle(.roundedBorder).font(.system(size: 11))
             }
 
-            // 学習ボタン or 進捗
             switch setup.trainState {
             case .idle, .failed:
                 HStack(spacing: 8) {
@@ -1684,7 +1702,7 @@ struct OWWSettingsView: View {
                         Text(msg).font(.caption2).foregroundColor(.red)
                     }
                 }
-                Text("※ 初回は数分かかります（TTS音声生成 + ニューラルネット学習）")
+                Text("※ クラウド学習には5〜15分かかります")
                     .font(.caption2).foregroundColor(.secondary)
 
             case .training:
@@ -1706,15 +1724,6 @@ struct OWWSettingsView: View {
                 }
             }
         }
-        .padding(8)
-        .background(Color(.controlBackgroundColor))
-        .cornerRadius(6)
-    }
-
-    private func pickModel() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true; panel.canChooseDirectories = false
-        if panel.runModal() == .OK { s.owwCustomModelPath = panel.url?.path ?? "" }
     }
 }
 #endif

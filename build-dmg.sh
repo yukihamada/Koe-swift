@@ -21,7 +21,7 @@ swift "$BG_SCRIPT" "$BG_IMG"
 DMG_DIR=$(mktemp -d)
 trap 'rm -rf "$DMG_DIR"' EXIT
 
-cp -R "${APP_NAME}.app" "${DMG_DIR}/"
+cp -R "build-macos/${APP_NAME}.app" "${DMG_DIR}/"
 ln -s /Applications "${DMG_DIR}/Applications"
 
 # Hidden background folder

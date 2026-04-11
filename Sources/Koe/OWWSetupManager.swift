@@ -30,7 +30,7 @@ class OWWSetupManager: ObservableObject {
 
     // MARK: - Check
 
-    /// venv + openWakeWord がインストール済みか確認（非同期）
+    /// venv + openWakeWord + モデルファイルがインストール済みか確認（非同期）
     func checkInstallation() {
         DispatchQueue.global().async { [weak self] in
             guard let self else { return }
@@ -39,10 +39,40 @@ class OWWSetupManager: ObservableObject {
                 DispatchQueue.main.async { self.state = .notInstalled }
                 return
             }
-            // openWakeWord がインポートできるか確認
-            let result = self.run(python, args: ["-c", "import openwakeword; print('ok')"])
+            // openWakeWord の import + 必須モデルファイル（melspectrogram.onnx）の存在を1発で確認
+            let check = self.run(python, args: [
+                "-c",
+                """
+                import openwakeword, os
+                mdir = os.path.join(os.path.dirname(openwakeword.__file__), 'resources', 'models')
+                ok_import = True
+                ok_model  = os.path.exists(os.path.join(mdir, 'melspectrogram.onnx'))
+                print('import_ok' if ok_import else 'import_missing')
+                print('model_ok' if ok_model else 'model_missing')
+                """
+            ])
+            let importOK = check.contains("import_ok")
+            let modelOK  = check.contains("model_ok")
+
+            // import は通るがモデルだけ無い → 自己修復（download_models のみ実行）
+            if importOK && !modelOK {
+                klog("OWWSetup: models missing, self-healing via download_models()")
+                DispatchQueue.main.async { self.progressMessage = "モデルファイルをダウンロード中…" }
+                let dl = self.run(python, args: [
+                    "-c",
+                    "from openwakeword.utils import download_models; download_models(); print('ok')"
+                ])
+                let healed = dl.contains("ok")
+                klog("OWWSetup: self-heal \(healed ? "ok" : "failed: \(dl.suffix(200))")")
+                DispatchQueue.main.async {
+                    self.state = healed ? .ready : .notInstalled
+                    if healed { self.progressMessage = "" }
+                }
+                return
+            }
+
             DispatchQueue.main.async {
-                self.state = result.contains("ok") ? .ready : .notInstalled
+                self.state = (importOK && modelOK) ? .ready : .notInstalled
             }
         }
     }
@@ -93,19 +123,36 @@ class OWWSetupManager: ObservableObject {
                 "-m", "pip", "install", "openwakeword", "--quiet"
             ])
 
-            // 6. 確認
+            // 6. import できるか
             let check = self.run(Self.venvPython, args: ["-c", "import openwakeword; print('ok')"])
-            if check.contains("ok") {
-                klog("OWWSetup: openWakeWord installed successfully")
-                DispatchQueue.main.async {
-                    self.state = .ready
-                    self.progressMessage = "インストール完了 ✓"
-                }
-            } else {
+            guard check.contains("ok") else {
                 klog("OWWSetup: install failed: \(installOut)")
                 DispatchQueue.main.async {
                     self.state = .failed("インストール失敗: \(installOut.suffix(300))")
                 }
+                return
+            }
+            klog("OWWSetup: openWakeWord package installed")
+
+            // 7. プリセットモデル本体をダウンロード（これが無いと Model() がロード失敗する）
+            //    既存ファイルは上書きされないので毎回呼んでOK
+            self.setProgress("ウェイクワードモデルをダウンロード中… (約13MB)")
+            let dlOut = self.run(Self.venvPython, args: [
+                "-c",
+                "from openwakeword.utils import download_models; download_models(); print('ok')"
+            ])
+            guard dlOut.contains("ok") else {
+                klog("OWWSetup: download_models failed: \(dlOut)")
+                DispatchQueue.main.async {
+                    self.state = .failed("モデルDL失敗: \(dlOut.suffix(300))")
+                }
+                return
+            }
+            klog("OWWSetup: model files downloaded")
+
+            DispatchQueue.main.async {
+                self.state = .ready
+                self.progressMessage = "インストール完了 ✓"
             }
         }
     }
@@ -160,49 +207,63 @@ class OWWSetupManager: ObservableObject {
 
     static var modelsDir: URL { supportDir.appendingPathComponent("models") }
 
-    /// カスタムウェイクワードを学習して .onnx を生成する
+    /// カスタムウェイクワードをクラウドで学習して .onnx をダウンロードする。
+    ///
+    /// フロー:
+    ///   1. POST {endpoint}/v1/wake/train {text, model_name, lang}  → 202 {job_id}
+    ///   2. GET  {endpoint}/v1/wake/train/{job_id}                   → {status, progress, onnx_url}
+    ///      15秒間隔でポーリング、done/failed になるまで
+    ///   3. GET  {onnx_url} → ローカルに保存して AppSettings.owwCustomModelPath に設定
+    ///
+    /// オンデバイス学習は piper-sample-generator + torch + 数GB の依存を必要とするため
+    /// 採用していない。サーバー側 (koe-wake-train) がその重い処理を肩代わりする。
     func trainModel(wakeWordText: String, modelName: String) {
         guard trainState != .training else { return }
         guard state.isReady else {
             trainState = .failed("先に openWakeWord をインストールしてください")
             return
         }
+
+        let endpoint = AppSettings.shared.wakeTrainEndpoint
+        guard !endpoint.isEmpty, let base = URL(string: endpoint) else {
+            trainState = .failed("カスタム学習サーバーが設定されていません。設定からエンドポイントを指定するか、プリセットのウェイクワードをご利用ください。")
+            return
+        }
+
         trainState   = .training
-        trainProgress = "学習データを準備中…"
+        trainProgress = "学習リクエストを送信中…"
+
+        let outputDir = Self.modelsDir.path
+        try? FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
+        let savePath = "\(outputDir)/\(modelName).onnx"
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-
-            let outputDir = Self.modelsDir.path
-            try? FileManager.default.createDirectory(atPath: outputDir, withIntermediateDirectories: true)
-
-            // openwakeword.train モジュールで学習
-            self.setTrainProgress("音声サンプルを生成中… (TTS)")
-            let out = self.run(Self.venvPython, args: [
-                "-m", "openwakeword.train",
-                "--training_text", wakeWordText,
-                "--model_name", modelName,
-                "--output_dir", outputDir,
-            ])
-            klog("OWWTrain: \(out.suffix(500))")
-
-            let modelPath = "\(outputDir)/\(modelName).onnx"
-            if FileManager.default.fileExists(atPath: modelPath) {
-                klog("OWWTrain: success → \(modelPath)")
-                DispatchQueue.main.async {
-                    self.trainState   = .done(modelPath)
-                    self.trainProgress = "学習完了 ✓"
-                    // 自動的にカスタムモデルパスを設定
-                    AppSettings.shared.owwCustomModelPath = modelPath
+            CloudWakeTrainer(base: base).train(
+                text: wakeWordText,
+                modelName: modelName,
+                savePath: savePath,
+                progress: { [weak self] msg in
+                    klog("OWWTrain(cloud): \(msg)")
+                    DispatchQueue.main.async { self?.trainProgress = msg }
+                },
+                completion: { [weak self] result in
+                    DispatchQueue.main.async {
+                        guard let self else { return }
+                        switch result {
+                        case .success(let path):
+                            klog("OWWTrain(cloud): success → \(path)")
+                            self.trainState   = .done(path)
+                            self.trainProgress = "学習完了 ✓"
+                            AppSettings.shared.owwCustomModelPath = path
+                        case .failure(let err):
+                            klog("OWWTrain(cloud): failed — \(err.localizedDescription)")
+                            self.trainState   = .failed("学習失敗: \(err.localizedDescription)")
+                            self.trainProgress = ""
+                        }
+                    }
                 }
-            } else {
-                let errMsg = out.suffix(300)
-                klog("OWWTrain: failed — \(errMsg)")
-                DispatchQueue.main.async {
-                    self.trainState   = .failed("学習失敗: \(errMsg)")
-                    self.trainProgress = ""
-                }
-            }
+            )
         }
     }
 

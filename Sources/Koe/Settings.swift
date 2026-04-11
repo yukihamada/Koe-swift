@@ -381,6 +381,12 @@ class AppSettings: ObservableObject {
     // IME switch (左⌘→英語, 右⌘→日本語)
     @Published var cmdIMESwitchEnabled: Bool { didSet { ud.set(cmdIMESwitchEnabled, forKey: "cmdIMESwitchEnabled") } }
 
+    // Menu bar icon visibility
+    @Published var menuBarIconVisible: Bool { didSet {
+        ud.set(menuBarIconVisible, forKey: "menuBarIconVisible")
+        AppDelegate.shared?.updateStatusItemVisibility()
+    }}
+
     // Wake word
     @Published var wakeWordEnabled: Bool { didSet {
         ud.set(wakeWordEnabled, forKey: "wakeWordEnabled")
@@ -391,6 +397,8 @@ class AppSettings: ObservableObject {
     @Published var owwModelName: String     { didSet { ud.set(owwModelName,       forKey: "owwModelName") } }
     @Published var owwCustomModelPath: String { didSet { ud.set(owwCustomModelPath, forKey: "owwCustomModelPath") } }
     @Published var owwThreshold: Float      { didSet { ud.set(owwThreshold,       forKey: "owwThreshold") } }
+    /// カスタムウェイクワード学習サーバー URL（koe-wake-train）。空文字なら学習機能は無効。
+    @Published var wakeTrainEndpoint: String { didSet { ud.set(wakeTrainEndpoint,  forKey: "wakeTrainEndpoint") } }
 
     // App profiles & text expansions
     @Published var appProfiles: [AppProfile]    { didSet { saveJSON(appProfiles,    key: "appProfiles") } }
@@ -549,12 +557,14 @@ class AppSettings: ObservableObject {
         calendarAutoStart = ud.bool(forKey: "calendarAutoStart")
         meetingLiveWindow = ud.object(forKey: "meetingLiveWindow") as? Bool ?? true  // デフォルトON
         cmdIMESwitchEnabled = ud.object(forKey: "cmdIMESwitchEnabled") as? Bool ?? true  // デフォルトON
+        menuBarIconVisible = ud.object(forKey: "menuBarIconVisible") as? Bool ?? true  // デフォルトON
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
         wakeWordEngineType = WakeWordEngineType(rawValue: ud.string(forKey: "wakeWordEngineType") ?? "") ?? .mfccDTW
         owwModelName       = ud.string(forKey: "owwModelName") ?? "hey_jarvis"
         owwCustomModelPath = ud.string(forKey: "owwCustomModelPath") ?? ""
         owwThreshold       = ud.object(forKey: "owwThreshold") as? Float ?? 0.5
+        wakeTrainEndpoint  = ud.string(forKey: "wakeTrainEndpoint") ?? ""
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []
         appProfiles = (ud.data(forKey: "appProfiles").flatMap { try? JSONDecoder().decode([AppProfile].self, from: $0) }) ?? AppSettings.defaultProfiles()
         fillerRemovalEnabled = ud.object(forKey: "fillerRemovalEnabled") as? Bool ?? true  // デフォルトON

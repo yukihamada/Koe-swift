@@ -10,6 +10,13 @@ mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/"
 
+# Required for Gatekeeper: PkgInfo + CFBundlePackageType + CFBundleExecutable
+printf 'APPL????' > "$APP/Contents/PkgInfo"
+/usr/libexec/PlistBuddy -c "Delete :CFBundlePackageType" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Delete :CFBundleExecutable" "$APP/Contents/Info.plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string Koe" "$APP/Contents/Info.plist"
+
 # Copy app icon
 if [ -f "AppIcon.icns" ]; then
     cp AppIcon.icns "$APP/Contents/Resources/"
@@ -26,15 +33,24 @@ BREW_PREFIX=$(brew --prefix 2>/dev/null || echo "/opt/homebrew")
 # whisper.cpp library paths
 # Prefer custom CoreML-enabled build, fallback to Homebrew
 WHISPER_COREML_BUILD="/tmp/whisper.cpp/build"
-if [ -f "$WHISPER_COREML_BUILD/src/libwhisper.dylib" ] && [ -f "$WHISPER_COREML_BUILD/src/libwhisper.coreml.dylib" ]; then
-    echo "Using CoreML-enabled whisper.cpp build"
+# Use source-built whisper if available — it uses its own ggml (compatible version)
+# Homebrew ggml (0.9.11) broke compatibility with whisper-cpp 1.8.4 (compiled against 0.9.8)
+if [ -f "$WHISPER_COREML_BUILD/src/libwhisper.dylib" ] && [ -f "$WHISPER_COREML_BUILD/ggml/src/libggml.dylib" ]; then
+    if [ -f "$WHISPER_COREML_BUILD/src/libwhisper.coreml.dylib" ]; then
+        echo "Using CoreML-enabled whisper.cpp build"
+        USE_COREML=1
+    else
+        echo "Using source-built whisper.cpp (with compatible ggml)"
+        USE_COREML=0
+    fi
     WHISPER_LIB="$WHISPER_COREML_BUILD/src"
     GGML_LIB="$WHISPER_COREML_BUILD/ggml/src"
     GGML_METAL_LIB="$WHISPER_COREML_BUILD/ggml/src/ggml-metal"
     GGML_BLAS_LIB="$WHISPER_COREML_BUILD/ggml/src/ggml-blas"
     GGML_CPU_LIB="$WHISPER_COREML_BUILD/ggml/src"
-    USE_COREML=1
+    USE_SOURCE_GGML=1
 else
+    USE_SOURCE_GGML=0
     WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/libinternal"
     if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
         WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/lib"
@@ -114,7 +130,7 @@ echo "Compiling whisper bridge..."
 cc -c Sources/CWhisper/whisper_bridge.c \
     -I Sources/CWhisper \
     -o /tmp/whisper_bridge.o \
-    -O2
+    -O3
 
 swiftc Sources/Koe/*.swift \
     /tmp/whisper_bridge.o \
@@ -144,24 +160,24 @@ swiftc Sources/Koe/*.swift \
     -target "$SWIFT_TARGET" \
     -D DIRECT_DISTRIBUTION \
     -O \
+    -whole-module-optimization \
     -o "$APP/Contents/MacOS/Koe"
 
 # Embed whisper + llama dylibs in app bundle for self-contained distribution
 FRAMEWORKS="$APP/Contents/Frameworks"
 mkdir -p "$FRAMEWORKS"
 
-# When using CoreML build, ggml dylibs come from whisper's custom build (0.9.5)
-# but llama.cpp from Homebrew needs ggml 0.9.7. Use Homebrew ggml for compatibility.
-if [ "$USE_COREML" = "1" ]; then
-    # whisper dylibs from CoreML build
+if [ "$USE_SOURCE_GGML" = "1" ]; then
+    # Use source-built whisper + its own ggml (API-compatible, avoids Homebrew ggml version skew)
     for lib in libwhisper.dylib libwhisper.coreml.dylib; do
         src="$WHISPER_LIB/$lib"
         if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
         if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
     done
-    # ggml dylibs from Homebrew (compatible with both whisper and llama)
-    for lib in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib; do
-        src="$BREW_PREFIX/lib/$lib"
+    for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB"; do
+        lib="${pair%%:*}"
+        dir="${pair##*:}"
+        src="$dir/$lib"
         if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
         if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
     done
@@ -197,7 +213,7 @@ for lib in "$FRAMEWORKS"/*.dylib; do
 done
 
 # Fix inter-dylib references (libwhisper → libggml etc.)
-ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib $BREW_PREFIX/opt/whisper-cpp/libexec/lib $BREW_PREFIX/opt/llama.cpp/libexec/lib ${WHISPER_LIBEXEC_LIB:-}"
+ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/ggml/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib $BREW_PREFIX/opt/whisper-cpp/libexec/lib $BREW_PREFIX/opt/llama.cpp/libexec/lib ${WHISPER_LIBEXEC_LIB:-}"
 for lib in "$FRAMEWORKS"/*.dylib; do
     for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libwhisper.coreml.dylib libllama.dylib; do
         for dir in $ALL_LIB_DIRS; do
@@ -252,12 +268,26 @@ for dir in $ALL_LIB_DIRS; do
     done
 done
 
-# Create versioned symlinks for ggml (llama.cpp refs .0 names)
+# Create versioned copies for ggml (must be real files, not symlinks — symlinks break codesign --deep)
 for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
     if [ -f "$FRAMEWORKS/${glib}.dylib" ] && [ ! -f "$FRAMEWORKS/${glib}.0.dylib" ]; then
         cp "$FRAMEWORKS/${glib}.dylib" "$FRAMEWORKS/${glib}.0.dylib"
     fi
 done
+
+# Strip debug symbols (only real files, skip .0.dylib duplicates to avoid double-work)
+echo "  Stripping debug symbols..."
+for lib in "$FRAMEWORKS"/*.dylib; do
+    [[ "$lib" == *".0.dylib" ]] && continue
+    strip -x "$lib" 2>/dev/null || true
+done
+# Sync stripped content to .0.dylib copies (use cp -f to overwrite without error on identical)
+for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+    if [ -f "$FRAMEWORKS/${glib}.dylib" ] && [ -f "$FRAMEWORKS/${glib}.0.dylib" ]; then
+        cp -f "$FRAMEWORKS/${glib}.dylib" "$FRAMEWORKS/${glib}.0.dylib" 2>/dev/null || true
+    fi
+done
+strip -x "$APP/Contents/MacOS/Koe" 2>/dev/null || true
 
 # Copy Metal shader if exists
 METAL_SHADER="$WHISPER_LIB/ggml-metal.metal"
@@ -325,9 +355,20 @@ fi
 echo "→ Installing to /Applications and launching..."
 pkill -9 Koe 2>/dev/null
 sleep 0.5
-# TCC reset は release.sh / build-pkg.sh でのみ実行（開発中は権限を保持）
-# tccutil reset Accessibility com.yuki.koe 2>/dev/null || true
-# Copy to /Applications
-rsync -a --delete "$APP/" /Applications/Koe.app/
+
+# Notarize only if staple ticket not already present (skip for fast dev iteration)
+if ! xcrun stapler validate "$APP" 2>/dev/null | grep -q "worked"; then
+    ditto -c -k --sequesterRsrc --keepParent "$APP" /tmp/Koe-install.zip 2>/dev/null
+    xcrun notarytool submit /tmp/Koe-install.zip --keychain-profile "notary" --wait 2>&1 | grep -E "status:|Accepted|Error" || true
+    xcrun stapler staple "$APP" 2>/dev/null || true
+    rm -f /tmp/Koe-install.zip
+fi
+
+# Copy to /Applications (use sudo if needed for root-owned existing install)
+if [ -w /Applications/Koe.app ] || [ ! -e /Applications/Koe.app ]; then
+    rsync -a --delete "$APP/" /Applications/Koe.app/
+else
+    sudo rsync -a --delete "$APP/" /Applications/Koe.app/
+fi
 open /Applications/Koe.app
 echo "✓ Installed and launched /Applications/Koe.app"

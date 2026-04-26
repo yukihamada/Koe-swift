@@ -495,7 +495,7 @@ class AppSettings: ObservableObject {
         let savedMods     = ud.object(forKey: "shortcutModifiers") as? Int
         shortcutModifiers = savedMods.map { UInt(bitPattern: $0) }
             ?? (NSEvent.ModifierFlags.command.rawValue | NSEvent.ModifierFlags.option.rawValue)
-        recordingMode     = RecordingMode(rawValue: ud.string(forKey: "recordingMode") ?? "") ?? .hold
+        recordingMode     = RecordingMode(rawValue: ud.string(forKey: "recordingMode") ?? "") ?? .toggle
 
         // Translation hotkey defaults: Cmd+Option+T (keyCode 17 = T)
         translateHotkeyCode = ud.object(forKey: "translateHotkeyCode") as? Int ?? 17

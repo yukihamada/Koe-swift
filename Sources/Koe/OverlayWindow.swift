@@ -21,7 +21,7 @@ class OverlayWindow: NSPanel {
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isFloatingPanel = true
-        level = .floating
+        level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
@@ -39,35 +39,58 @@ class OverlayWindow: NSPanel {
     }
 
     func show(state: OverlayState) {
+        klog("OverlayWindow.show state=\(state) frame=\(frame) visible=\(stateModel.visible)")
         stateModel.state = state
+        stateModel.hint = ""  // always clear hint on show
 
         let mode = AppSettings.shared.llmMode
         let showMode = state == .recording && !stateModel.isTranslateMode && mode != .none
         stateModel.modeName = showMode ? mode.displayName : ""
 
+        stateModel.visible = true
+        alphaValue = 1.0
+        klog("OverlayWindow orderFrontRegardless frame=\(frame)")
         orderFrontRegardless()
-        DispatchQueue.main.async {
-            withAnimation(.spring(response: 0.28, dampingFraction: 0.70)) {
-                self.stateModel.visible = true
-            }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            self.animator().alphaValue = 1.0
         }
     }
 
     func hide() {
-        guard !stateModel.isSeamless else { return }  // seamless: stay visible
-        withAnimation(.easeIn(duration: 0.15)) { stateModel.visible = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { self.orderOut(nil) }
+        guard !stateModel.isSeamless else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            self.animator().alphaValue = 0
+        }, completionHandler: {
+            self.stateModel.visible = false
+            self.stateModel.hint = ""
+            self.orderOut(nil)
+        })
     }
 
     func forceHide() {
+        klog("OverlayWindow.forceHide visible=\(stateModel.visible)")
         stateModel.isSeamless = false
-        withAnimation(.easeIn(duration: 0.15)) { stateModel.visible = false }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { self.orderOut(nil) }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            self.animator().alphaValue = 0
+        }, completionHandler: {
+            guard !self.stateModel.visible else {
+                klog("OverlayWindow.forceHide completion: skipped (re-shown)")
+                return
+            }
+            self.stateModel.hint = ""
+            self.orderOut(nil)
+        })
     }
 
     func setSeamless(_ on: Bool) {
+        klog("OverlayWindow.setSeamless \(on) visible=\(stateModel.visible)")
         stateModel.isSeamless = on
-        if !on { forceHide() }
+        if !on && stateModel.visible { forceHide() }  // 表示中のみ非表示化（hidden時はスキップ）
     }
 
     func updateLevel(_ level: Float) {
@@ -186,7 +209,6 @@ struct OverlayView: View {
             }
         )
         .shadow(color: .black.opacity(0.45), radius: 24, x: 0, y: 6)
-        .opacity(model.visible ? 1 : 0)
         .scaleEffect(model.visible ? 1 : 0.94)
         .animation(.spring(response: 0.28, dampingFraction: 0.72), value: model.visible)
     }

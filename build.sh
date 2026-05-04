@@ -205,9 +205,24 @@ else
     done
 fi
 
-# llama.cpp dylib
+# llama.cpp dylib — copy with homebrew ggml under distinct names to avoid conflict with whisper's ggml
 if [ -f "$LLAMA_LIB/libllama.dylib" ]; then
     cp "$LLAMA_LIB/libllama.dylib" "$FRAMEWORKS/"
+fi
+# Bundle homebrew ggml 0.9.11 (for llama) under -hb names to coexist with source-built ggml 0.9.8 (for whisper)
+# libllama depends on ggml 0.9.11 which has different symbols than our bundled ggml 0.9.8
+HB_GGML="$BREW_PREFIX/opt/ggml/lib"
+if [ "$USE_SOURCE_GGML" = "1" ] && [ -f "$HB_GGML/libggml.dylib" ] && [ -f "$LLAMA_LIB/libllama.dylib" ]; then
+    cp "$HB_GGML/libggml.dylib" "$FRAMEWORKS/libggml-hb.dylib"
+    cp "$HB_GGML/libggml-base.dylib" "$FRAMEWORKS/libggml-base-hb.dylib"
+    install_name_tool -id "@rpath/libggml-hb.dylib" "$FRAMEWORKS/libggml-hb.dylib" 2>/dev/null || true
+    install_name_tool -id "@rpath/libggml-base-hb.dylib" "$FRAMEWORKS/libggml-base-hb.dylib" 2>/dev/null || true
+    # Fix internal refs in libggml-hb
+    install_name_tool -change "$HB_GGML/libggml.0.dylib" "@rpath/libggml-hb.dylib" "$FRAMEWORKS/libggml-hb.dylib" 2>/dev/null || true
+    install_name_tool -change "@rpath/libggml-base.0.dylib" "@rpath/libggml-base-hb.dylib" "$FRAMEWORKS/libggml-hb.dylib" 2>/dev/null || true
+    install_name_tool -change "$HB_GGML/libggml-base.0.dylib" "@rpath/libggml-base-hb.dylib" "$FRAMEWORKS/libggml-hb.dylib" 2>/dev/null || true
+    install_name_tool -change "$HB_GGML/libggml-base.dylib" "@rpath/libggml-base-hb.dylib" "$FRAMEWORKS/libggml-hb.dylib" 2>/dev/null || true
+    install_name_tool -change "$HB_GGML/libggml-base.0.dylib" "@rpath/libggml-base-hb.dylib" "$FRAMEWORKS/libggml-base-hb.dylib" 2>/dev/null || true
 fi
 
 # Fix dylib rpaths so the app finds embedded libraries
@@ -222,6 +237,7 @@ done
 # Fix inter-dylib references (libwhisper → libggml etc.)
 ALL_LIB_DIRS="$WHISPER_LIB $LLAMA_LIB $GGML_LIB $GGML_METAL_LIB $GGML_BLAS_LIB $GGML_CPU_LIB $BREW_PREFIX/lib $BREW_PREFIX/opt/ggml/lib $BREW_PREFIX/opt/llama.cpp/lib $BREW_PREFIX/opt/whisper-cpp/lib $BREW_PREFIX/opt/whisper-cpp/libexec/lib $BREW_PREFIX/opt/llama.cpp/libexec/lib ${WHISPER_LIBEXEC_LIB:-}"
 for lib in "$FRAMEWORKS"/*.dylib; do
+    libbase=$(basename "$lib")
     for dep in libggml.dylib libggml-base.dylib libggml-cpu.dylib libggml-blas.dylib libggml-metal.dylib libwhisper.dylib libwhisper.coreml.dylib libllama.dylib; do
         for dir in $ALL_LIB_DIRS; do
             install_name_tool -change "$dir/$dep" "@rpath/$dep" "$lib" 2>/dev/null || true
@@ -254,6 +270,14 @@ for lib in "$FRAMEWORKS"/*.dylib; do
     # Ensure @loader_path rpath for inter-framework resolution
     install_name_tool -add_rpath "@loader_path" "$lib" 2>/dev/null || true
 done
+
+# Redirect libllama's ggml refs to the -hb versions (homebrew ggml 0.9.11 bundled separately)
+if [ "$USE_SOURCE_GGML" = "1" ] && [ -f "$FRAMEWORKS/libggml-hb.dylib" ]; then
+    for glib in libggml libggml-base; do
+        install_name_tool -change "@rpath/${glib}.dylib" "@rpath/${glib}-hb.dylib" "$FRAMEWORKS/libllama.dylib" 2>/dev/null || true
+        install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}-hb.dylib" "$FRAMEWORKS/libllama.dylib" 2>/dev/null || true
+    done
+fi
 
 # Also fix versioned refs in the main binary
 install_name_tool -change "@rpath/libwhisper.1.dylib" "@rpath/libwhisper.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true

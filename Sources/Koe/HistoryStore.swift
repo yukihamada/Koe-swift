@@ -172,4 +172,11 @@ class HistoryStore: ObservableObject {
             try? data.write(to: self.fileURL)
         }
     }
+
+    func flushSync() {
+        saveTimer?.invalidate()
+        saveTimer = nil
+        guard let data = try? JSONEncoder().encode(entries) else { return }
+        try? data.write(to: fileURL)
+    }
 }

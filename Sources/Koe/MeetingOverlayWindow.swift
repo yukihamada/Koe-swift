@@ -8,8 +8,9 @@ class MeetingOverlayWindow: NSPanel {
     private var cancellables: [AnyCancellable] = []
 
     init() {
-        let w: CGFloat = 280, h: CGFloat = 100
+        let w: CGFloat = 280
         let screen = NSScreen.main ?? NSScreen.screens[0]
+        let h: CGFloat = 100
         let rect = CGRect(
             x: screen.visibleFrame.maxX - w - 16,
             y: screen.visibleFrame.maxY - h - 8,
@@ -44,11 +45,18 @@ class MeetingOverlayWindow: NSPanel {
             .receive(on: RunLoop.main)
             .sink { [weak self] on in self?.model.isFormatting = on }
             .store(in: &cancellables)
+
+        // isExpanded の変化に応じてウィンドウサイズを更新
+        model.$isExpanded
+            .receive(on: RunLoop.main)
+            .sink { [weak self] expanded in
+                self?.updateWindowSize(expanded: expanded)
+            }
+            .store(in: &cancellables)
     }
 
     override func mouseUp(with event: NSEvent) {
-        // クリックで議事録停止
-        AppDelegate.shared?.toggleMeetingMode()
+        // ボタンは SwiftUI 側で処理するため、パネル自体のクリックは何もしない
     }
 
     func showMeeting() {
@@ -56,6 +64,8 @@ class MeetingOverlayWindow: NSPanel {
         model.entryCount = MeetingMode.shared.entryCount
         model.startDate = Date()
         model.lastText = ""
+        model.transcriptLines = []
+        updateWindowSize(expanded: model.isExpanded)
         orderFrontRegardless()
     }
 
@@ -63,8 +73,18 @@ class MeetingOverlayWindow: NSPanel {
         model.lastText = text
     }
 
+    /// 確定したテキストをトランスクリプトリストに追加する
+    func appendTranscriptLine(_ text: String, speaker: Int? = nil, isImportant: Bool = false) {
+        let line = TranscriptLine(text: text, speaker: speaker, timestamp: Date(), isImportant: isImportant)
+        model.transcriptLines.append(line)
+        model.lastText = text
+        if model.transcriptLines.count > 100 {
+            model.transcriptLines.removeFirst(model.transcriptLines.count - 100)
+        }
+        model.scrollToBottom += 1
+    }
+
     func hideMeeting() {
-        // 整形中は非表示にしない
         if MeetingMode.shared.isFormatting {
             MeetingMode.shared.$isFormatting
                 .receive(on: RunLoop.main)
@@ -80,6 +100,25 @@ class MeetingOverlayWindow: NSPanel {
             orderOut(nil)
         }
     }
+
+    private func updateWindowSize(expanded: Bool) {
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        let w: CGFloat = 280
+        let h: CGFloat = expanded ? 320 : 100
+        let x = screen.visibleFrame.maxX - w - 16
+        let y = screen.visibleFrame.maxY - h - 8
+        setFrame(CGRect(x: x, y: y, width: w, height: h), display: true, animate: true)
+    }
+}
+
+// MARK: - TranscriptLine
+
+struct TranscriptLine: Identifiable {
+    let id = UUID()
+    let text: String
+    let speaker: Int?
+    let timestamp: Date
+    var isImportant: Bool
 }
 
 // MARK: - Model
@@ -89,6 +128,9 @@ class MeetingOverlayModel: ObservableObject {
     @Published var entryCount = 0
     @Published var isFormatting = false
     @Published var lastText = ""
+    @Published var isExpanded = false
+    @Published var transcriptLines: [TranscriptLine] = []
+    @Published var scrollToBottom = 0
     var startDate: Date?
 }
 
@@ -104,9 +146,15 @@ struct MeetingOverlayView: View {
     private let warmAmber  = Color(red: 0.85, green: 0.55, blue: 0.40)
     private let champagne  = Color(red: 0.90, green: 0.84, blue: 0.72)
 
+    private let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // ヘッダー: 録音インジケーター + タイマー
+            // ヘッダー: 録音インジケーター + タイマー + 展開/停止ボタン
             HStack(spacing: 6) {
                 if model.isFormatting {
                     ProgressView()
@@ -134,13 +182,32 @@ struct MeetingOverlayView: View {
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundColor(goldAccent.opacity(0.6))
 
-                    Image(systemName: "stop.circle.fill")
-                        .font(.system(size: 11))
-                        .foregroundColor(goldAccent.opacity(0.3))
+                    // コンパクト/展開トグル
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            model.isExpanded.toggle()
+                        }
+                    } label: {
+                        Image(systemName: model.isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(goldAccent.opacity(0.5))
+                            .frame(width: 16, height: 16)
+                    }
+                    .buttonStyle(.plain)
+
+                    // 停止ボタン
+                    Button {
+                        AppDelegate.shared?.toggleMeetingMode()
+                    } label: {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(goldAccent.opacity(0.3))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
-            // 統計
+            // 統計行
             if !model.isFormatting {
                 HStack(spacing: 8) {
                     Label("\(model.entryCount)", systemImage: "waveform")
@@ -151,13 +218,19 @@ struct MeetingOverlayView: View {
                         .foregroundColor(goldAccent.opacity(0.4))
                 }
 
-                // 直近の認識テキスト
-                if !model.lastText.isEmpty {
-                    Text(model.lastText)
-                        .font(.system(size: 10))
-                        .foregroundColor(champagne.opacity(0.5))
-                        .lineLimit(2)
-                        .truncationMode(.tail)
+                if model.isExpanded {
+                    // 展開モード: スクロール可能なトランスクリプトリスト
+                    transcriptListView
+                        .frame(height: 220)
+                } else {
+                    // コンパクトモード: 直近テキスト2行
+                    if !model.lastText.isEmpty {
+                        Text(model.lastText)
+                            .font(.system(size: 10))
+                            .foregroundColor(champagne.opacity(0.5))
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                    }
                 }
             }
         }
@@ -187,9 +260,87 @@ struct MeetingOverlayView: View {
         }
     }
 
+    // MARK: - トランスクリプトリスト（展開モード）
+
+    private var transcriptListView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    if model.transcriptLines.isEmpty {
+                        Text("認識待ち...")
+                            .font(.system(size: 10))
+                            .foregroundColor(champagne.opacity(0.25))
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.top, 8)
+                    } else {
+                        ForEach(model.transcriptLines) { line in
+                            transcriptRow(line)
+                                .id(line.id)
+                        }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.black.opacity(0.3))
+            )
+            .onChange(of: model.scrollToBottom) { _ in
+                if let last = model.transcriptLines.last {
+                    withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
+            }
+        }
+    }
+
+    private func transcriptRow(_ line: TranscriptLine) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Text(timeFormatter.string(from: line.timestamp))
+                .font(.system(size: 8, design: .monospaced))
+                .foregroundColor(goldAccent.opacity(0.35))
+                .frame(width: 30, alignment: .leading)
+
+            if let sp = line.speaker {
+                Text("S\(sp + 1)")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(speakerColor(sp).opacity(0.7))
+                    .frame(width: 16)
+            }
+
+            Text(line.text)
+                .font(.system(size: 10))
+                .foregroundColor(
+                    line.isImportant
+                        ? Color(red: 0.95, green: 0.80, blue: 0.30)
+                        : champagne.opacity(0.65)
+                )
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if line.isImportant {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 8))
+                    .foregroundColor(Color(red: 0.95, green: 0.80, blue: 0.30))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 1)
+        .background(
+            line.isImportant
+                ? Color(red: 0.95, green: 0.80, blue: 0.10).opacity(0.07)
+                : Color.clear
+        )
+    }
+
     private func formatDuration(_ seconds: TimeInterval) -> String {
         let m = Int(seconds) / 60
         let s = Int(seconds) % 60
         return String(format: "%02d:%02d", m, s)
+    }
+
+    private func speakerColor(_ index: Int) -> Color {
+        let colors: [Color] = [.blue, .green, .orange, .purple, .pink, .cyan]
+        return colors[index % colors.count]
     }
 }

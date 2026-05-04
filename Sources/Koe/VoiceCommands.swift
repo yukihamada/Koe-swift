@@ -241,4 +241,76 @@ enum VoiceCommands {
         }
         return nil
     }
+
+    // MARK: - System Commands
+
+    enum SystemCommand {
+        case checkForUpdates
+    }
+
+    static func detectSystemCommand(_ text: String) -> SystemCommand? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        let updateTriggers = ["アップデートして", "更新して", "アップデート確認", "check for updates", "update koe"]
+        if updateTriggers.contains(where: { t.contains($0) }) { return .checkForUpdates }
+        return nil
+    }
+
+    // MARK: - Settings Commands
+
+    enum SettingsCommand {
+        case setLLMEnabled(Bool)
+        case setLLMMode(LLMMode)
+        case setLanguage(String)
+        case setAgentModeEnabled(Bool)
+        case setVoiceControlEnabled(Bool)
+        case setCommandModeEnabled(Bool)
+        case setFillerRemovalEnabled(Bool)
+        case setWakeWordEnabled(Bool)
+        case setAutoCopyToClipboard(Bool)
+        case setSuperModeEnabled(Bool)
+        case setFloatingButtonEnabled(Bool)
+        case setStreamingPreviewEnabled(Bool)
+        case setSeamlessMode(Bool)
+
+        var displayName: String {
+            switch self {
+            case .setLLMEnabled(let on):            return on ? "LLMオン" : "LLMオフ"
+            case .setLLMMode(let mode):             return "LLMモード: \(mode.rawValue)"
+            case .setLanguage(let code):            return "言語: \(code)"
+            case .setAgentModeEnabled(let on):      return on ? "エージェントモードオン" : "エージェントモードオフ"
+            case .setVoiceControlEnabled(let on):   return on ? "音声コントロールオン" : "音声コントロールオフ"
+            case .setCommandModeEnabled(let on):    return on ? "コマンドモードオン" : "コマンドモードオフ"
+            case .setFillerRemovalEnabled(let on):  return on ? "フィラー除去オン" : "フィラー除去オフ"
+            case .setWakeWordEnabled(let on):       return on ? "ウェイクワードオン" : "ウェイクワードオフ"
+            case .setAutoCopyToClipboard(let on):   return on ? "自動コピーオン" : "自動コピーオフ"
+            case .setSuperModeEnabled(let on):      return on ? "スーパーモードオン" : "スーパーモードオフ"
+            case .setFloatingButtonEnabled(let on): return on ? "フローティングボタンオン" : "フローティングボタンオフ"
+            case .setStreamingPreviewEnabled(let on): return on ? "ストリーミングプレビューオン" : "ストリーミングプレビューオフ"
+            case .setSeamlessMode(let on):          return on ? "シームレスモードオン" : "シームレスモードオフ"
+            }
+        }
+    }
+
+    static func detectSettingsCommand(_ text: String) -> SettingsCommand? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if t.contains("LLMオフ") || t.contains("LLM off") { return .setLLMEnabled(false) }
+        if t.contains("LLMオン") || t.contains("LLM on") { return .setLLMEnabled(true) }
+        if t.contains("日本語で") || t.contains("日本語に") { return .setLanguage("ja-JP") }
+        if t.contains("英語で") || t.contains("英語に") { return .setLanguage("en-US") }
+        if t.contains("エージェントモードオン") { return .setAgentModeEnabled(true) }
+        if t.contains("エージェントモードオフ") { return .setAgentModeEnabled(false) }
+        if t.contains("コマンドモードオン") { return .setCommandModeEnabled(true) }
+        if t.contains("コマンドモードオフ") { return .setCommandModeEnabled(false) }
+        if t.contains("フィラー除去オン") { return .setFillerRemovalEnabled(true) }
+        if t.contains("フィラー除去オフ") { return .setFillerRemovalEnabled(false) }
+        if t.contains("ウェイクワードオン") { return .setWakeWordEnabled(true) }
+        if t.contains("ウェイクワードオフ") { return .setWakeWordEnabled(false) }
+        if t.contains("自動コピーオン") { return .setAutoCopyToClipboard(true) }
+        if t.contains("自動コピーオフ") { return .setAutoCopyToClipboard(false) }
+        if t.contains("シームレスモードオン") { return .setSeamlessMode(true) }
+        if t.contains("シームレスモードオフ") { return .setSeamlessMode(false) }
+        if t.contains("ストリーミングプレビューオン") { return .setStreamingPreviewEnabled(true) }
+        if t.contains("ストリーミングプレビューオフ") { return .setStreamingPreviewEnabled(false) }
+        return nil
+    }
 }

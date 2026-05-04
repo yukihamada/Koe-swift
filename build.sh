@@ -125,17 +125,21 @@ if [ "$USE_COREML" = "1" ]; then
     COREML_FLAGS="-L $WHISPER_LIB -lwhisper.coreml -framework CoreML"
 fi
 
-# Compile C bridge (uses shim.h matching installed whisper v1.8.3)
+# Compile C bridge into a static library to avoid WMO overwriting the .o file
 echo "Compiling whisper bridge..."
+BRIDGE_OBJ="$APP/Contents/MacOS/whisper_bridge.o"
+BRIDGE_LIB="$APP/Contents/MacOS/libwhisper_bridge.a"
 cc -c Sources/CWhisper/whisper_bridge.c \
     -I Sources/CWhisper \
-    -o /tmp/whisper_bridge.o \
+    -o "$BRIDGE_OBJ" \
     -O3
+ar rcs "$BRIDGE_LIB" "$BRIDGE_OBJ"
 
 swiftc Sources/Koe/*.swift \
-    /tmp/whisper_bridge.o \
     -I Sources/CWhisper \
     -I Sources/CLlama \
+    -L "$APP/Contents/MacOS" \
+    -lwhisper_bridge \
     -L "$WHISPER_LIB" \
     -L "$GGML_LIB" \
     -L "$GGML_METAL_LIB" \
@@ -162,6 +166,9 @@ swiftc Sources/Koe/*.swift \
     -O \
     -whole-module-optimization \
     -o "$APP/Contents/MacOS/Koe"
+
+# Remove temporary build artifacts
+rm -f "$BRIDGE_OBJ" "$BRIDGE_LIB"
 
 # Embed whisper + llama dylibs in app bundle for self-contained distribution
 FRAMEWORKS="$APP/Contents/Frameworks"

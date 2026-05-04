@@ -1140,6 +1140,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                    recognitionTime: 0, modelName: "Apple Speech")
             MeetingMode.shared.append(text: streamingText, audioURL: lastAudioURL)
             meetingOverlay?.updateLastText(streamingText)
+            meetingOverlay?.appendTranscriptLine(streamingText)
             meetingLiveWindow?.appendText(streamingText)
             postRecognitionCleanup()
             return
@@ -1164,8 +1165,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                            modelName: ModelDownloader.shared.currentModel.name)
                     MeetingMode.shared.appendSpeakerSegments(segments, audioURL: self.lastAudioURL)
                     self.meetingOverlay?.updateLastText(fullText)
-                    // リアルタイムウィンドウに話者別で追加
+                    // リアルタイムウィンドウとオーバーレイに話者別で追加
                     for seg in segments {
+                        self.meetingOverlay?.appendTranscriptLine(seg.text, speaker: seg.speaker)
                         self.meetingLiveWindow?.appendText(seg.text, speaker: seg.speaker)
                     }
                     // 議事録自動録音中はファイル保存のみ（テキスト入力しない）
@@ -1288,6 +1290,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 meetingLiveWindow?.markImportant()
                 MeetingMode.shared.append(text: "★ \(formatted)", audioURL: lastAudioURL)
                 meetingOverlay?.updateLastText("★ \(formatted)")
+                meetingOverlay?.appendTranscriptLine("★ \(formatted)", isImportant: true)
                 meetingLiveWindow?.appendText("★ \(formatted)")
                 HistoryStore.shared.add("★ \(formatted)", audioFileID: lastArchiveID)
             }
@@ -1438,6 +1441,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     VoiceStats.shared.recordSession(charCount: final.count, durationSeconds: recordingDuration)
                     MeetingMode.shared.append(text: final, audioURL: self.lastAudioURL)
                     self.meetingOverlay?.updateLastText(final)
+                    self.meetingOverlay?.appendTranscriptLine(final)
                     self.meetingLiveWindow?.appendText(final)
                     CorrectionStore.shared.trackDelivery(original: final, appBundleID: bid)
                     self.publishHandoffActivity(text: final)

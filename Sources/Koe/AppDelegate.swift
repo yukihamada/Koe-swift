@@ -1289,7 +1289,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 MeetingMode.shared.append(text: "★ \(formatted)", audioURL: lastAudioURL)
                 meetingOverlay?.updateLastText("★ \(formatted)")
                 meetingLiveWindow?.appendText("★ \(formatted)")
-                HistoryStore.shared.add("★ \(formatted)", audioFileID: lastArchiveID, entryType: .favorite)
+                HistoryStore.shared.add("★ \(formatted)", audioFileID: lastArchiveID)
             }
             overlay?.hide()
             postRecognitionCleanup()
@@ -1298,7 +1298,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // システムコマンド: 「アップデートして」等
         if let sysCmd = VoiceCommands.detectSystemCommand(formatted) {
-            HistoryStore.shared.add("[コマンド] \(formatted)", audioFileID: lastArchiveID, entryType: .systemCommand)
+            HistoryStore.shared.add("[コマンド] \(formatted)", audioFileID: lastArchiveID)
             switch sysCmd {
             case .checkForUpdates:
                 klog("VoiceCommand: checkForUpdates")
@@ -1312,7 +1312,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 設定コマンド: 「日本語で」「LLMオフ」「エージェントモードオン」等
         if let settingsCmd = VoiceCommands.detectSettingsCommand(formatted) {
             klog("VoiceCommand: settings → \(settingsCmd.displayName)")
-            HistoryStore.shared.add("[設定] \(formatted)", audioFileID: lastArchiveID, entryType: .settingsChange)
+            HistoryStore.shared.add("[設定] \(formatted)", audioFileID: lastArchiveID)
             applySettingsCommand(settingsCmd)
             overlay?.hide()
             postRecognitionCleanup()
@@ -1321,7 +1321,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 音声編集コマンド: 「削除」「取り消し」等
         if let editCmd = VoiceCommands.detectEditCommand(formatted) {
-            HistoryStore.shared.add("[編集] \(formatted)", audioFileID: lastArchiveID, entryType: .editCommand)
+            HistoryStore.shared.add("[編集] \(formatted)", audioFileID: lastArchiveID)
             switch editCmd {
             case .undo:
                 klog("VoiceCommand: undo")
@@ -1338,7 +1338,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Command Mode: 選択テキストの書き換え指示を検出
         if AppSettings.shared.commandModeEnabled,
            let cmdAction = VoiceCommands.detectCommandMode(formatted) {
-            HistoryStore.shared.add("[書換指示] \(formatted)", audioFileID: lastArchiveID, entryType: .editCommand)
+            HistoryStore.shared.add("[書換指示] \(formatted)", audioFileID: lastArchiveID)
             switch cmdAction {
             case .rewrite(let prompt):
                 klog("CommandMode: rewrite with prompt")
@@ -1358,7 +1358,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         guard let self else { return }
                         self.overlay?.hide()
                         klog("Agent result: '\(result)'")
-                        HistoryStore.shared.add("[\(command.description)] \(result)", entryType: .voiceCommand)
+                        HistoryStore.shared.add("[\(command.description)] \(result)")
                         self.sendNotification(text: result)
                         self.postRecognitionCleanup()
                     }
@@ -1508,7 +1508,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     // 選択テキストをペーストで置換
                     self.typer.paste(result)
                     klog("CommandMode: replaced with '\(result.prefix(40))'")
-                    HistoryStore.shared.add("[書換] \(result)", entryType: .rewritten)
+                    HistoryStore.shared.add("[書換] \(result)")
                 }
                 self.postRecognitionCleanup()
             }
@@ -1546,7 +1546,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         klog("Seamless mode: \(on)")
         if on {
             speak("シームレスモード開始")
-            HistoryStore.shared.add("[シームレス開始]", entryType: .settingsChange)
+            HistoryStore.shared.add("[シームレス開始]")
             rebuildMenu()
             // 録音中でなければすぐ開始
             if !isRecording && !isRecognizing {
@@ -1557,7 +1557,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } else {
             speak("シームレスモード終了")
-            HistoryStore.shared.add("[シームレス終了]", entryType: .settingsChange)
+            HistoryStore.shared.add("[シームレス終了]")
             rebuildMenu()
         }
     }

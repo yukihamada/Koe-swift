@@ -5,8 +5,15 @@ on:
     tags:
       - 'v*'
 
+# Build artefacts are now uploaded as workflow artifacts only — release.sh
+# (run locally by the maintainer) is the canonical path for uploading
+# Gatekeeper-clean .dmg / .pkg to GitHub Releases. CI cannot notarize
+# because the maintainer's Apple ID password and Developer ID p12 are not
+# stored in repo secrets, and `codesign` without notarization still trips
+# Gatekeeper on macOS 10.15+. Letting CI `gh release upload` here would
+# overwrite the maintainer's notarized assets with adhoc-signed ones.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -18,7 +25,7 @@ jobs:
         run: |
           brew install whisper-cpp llama.cpp
 
-      - name: Build DMG
+      - name: Build DMG (adhoc, sanity check only)
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
@@ -27,12 +34,7 @@ jobs:
           chmod +x build-dmg.sh
           bash build-dmg.sh
 
-      # Also produce Koe.pkg so users who prefer the system installer
-      # have parity with the v2.9.x cadence (yukihamada used to upload .pkg
-      # alongside .dmg via local `release.sh`). build-pkg.sh handles missing
-      # Developer ID Installer cert gracefully (falls back to unsigned pkg
-      # with a warning) so this works in CI without provisioning data.
-      - name: Build PKG
+      - name: Build PKG (adhoc, sanity check only)
         continue-on-error: true
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -42,11 +44,15 @@ jobs:
           chmod +x build-pkg.sh
           bash build-pkg.sh
 
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+      # Upload to workflow artifacts (NOT the release page) so the build is
+      # still useful as a CI sanity check / for inspection via the Actions UI,
+      # without clobbering the maintainer's notarized release.sh upload.
+      - name: Upload adhoc artefacts (workflow only, not Release)
+        uses: actions/upload-artifact@v4
         with:
-          files: |
+          name: koe-macos-adhoc-${{ github.ref_name }}
+          path: |
             Koe-Installer.dmg
             Koe.pkg
-          fail_on_unmatched_files: false
-          generate_release_notes: true
+          if-no-files-found: warn
+          retention-days: 14

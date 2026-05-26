@@ -6,6 +6,13 @@ on:
       - 'win-v*'
   workflow_dispatch:
 
+# softprops/action-gh-release needs write access to repo contents to attach
+# build artefacts to the tagged release. The default GITHUB_TOKEN is read-only
+# unless we opt in here, which is why the first run on win-v2.10.0 failed with
+# "Resource not accessible by integration".
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 

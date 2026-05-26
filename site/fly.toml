@@ -10,6 +10,14 @@ primary_region = "nrt"
   auto_start_machines = true
   min_machines_running = 0
 
+# The koe-live machine has an existing `koe_data` volume attached. The current
+# Rust binary keeps analytics in-memory so nothing is written there yet, but we
+# declare it in fly.toml so non-interactive deploys don't prompt for confirmation
+# about a "misconfigured" volume on every release.
+[[mounts]]
+  source = "koe_data"
+  destination = "/data"
+
 [[vm]]
   size = "shared-cpu-1x"
   memory = "256mb"

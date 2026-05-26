@@ -9,7 +9,7 @@
 ![Windows](https://img.shields.io/badge/Windows_10%2B-x64-blue?style=flat-square&logo=windows)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 
-**[koe.elio.love](https://koe.elio.love)** — 公式サイト
+**[koe.live](https://koe.live)** — 公式サイト
 
 [![Download macOS](https://img.shields.io/github/v/release/yukihamada/Koe-swift?label=macOS&style=for-the-badge&color=ff3b30)](https://github.com/yukihamada/Koe-swift/releases/latest)
 [![Download Windows](https://img.shields.io/badge/Windows-Download-0078D6?style=for-the-badge&logo=windows)](https://github.com/yukihamada/Koe-swift/releases/latest)
@@ -112,7 +112,7 @@ Ctrl+V / ⌘V → テキスト入力
 
 <div align="center">
 
-**[koe.elio.love](https://koe.elio.love)**
+**[koe.live](https://koe.live)**
 
 <sub>Built with ♥ in Tokyo · Fully local · No subscription</sub>
 </div>

@@ -14,7 +14,7 @@ struct WhisperModel {
     /// 対応言語コード（空=多言語対応）。"ja", "zh", "ko" などの2文字コード。
     let targetLanguages: [String]
     /// 期待される SHA256 (16進小文字)。nil なら検証スキップ。
-    /// TODO: HuggingFace の各 ggml リリースから公式ハッシュを取得して埋める。
+    /// HuggingFace の LFS oid (`/api/models/<repo>/tree/main` の `.lfs.oid`) を貼る。
     let expectedSHA256: String?
 
     init(id: String, name: String, description: String, fileName: String, url: String, sizeMB: Int, isDefault: Bool, targetLanguages: [String] = [], expectedSHA256: String? = nil) {
@@ -54,7 +54,8 @@ class ModelDownloader {
             url: "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0-q5_0.bin",
             sizeMB: 538,
             isDefault: false,
-            targetLanguages: ["ja"]
+            targetLanguages: ["ja"],
+            expectedSHA256: "4a3b92192b5d3578ff854a5876213e2e27af0c2d357492c2d14271e82c303658"
         ),
         WhisperModel(
             id: "kotoba-v2-full",
@@ -64,7 +65,8 @@ class ModelDownloader {
             url: "https://huggingface.co/kotoba-tech/kotoba-whisper-v2.0-ggml/resolve/main/ggml-kotoba-whisper-v2.0.bin",
             sizeMB: 1520,
             isDefault: false,
-            targetLanguages: ["ja"]
+            targetLanguages: ["ja"],
+            expectedSHA256: "eff70a8a236e731abba774ba71e1f6d0fce53302137208c32207e694e0bf4546"
         ),
         // ── 中国語特化 (Belle) ──
         WhisperModel(
@@ -75,18 +77,22 @@ class ModelDownloader {
             url: "https://huggingface.co/BELLE-2/Belle-whisper-large-v3-turbo-zh-ggml/resolve/main/ggml-model.bin",
             sizeMB: 1620,
             isDefault: false,
-            targetLanguages: ["zh"]
+            targetLanguages: ["zh"],
+            expectedSHA256: "2a3bba5bfdb4d4da3d9949a83b405711727ca1941d4d5810895e077eb3cb4d99"
         ),
         // ── 韓国語特化 ──
+        // 旧 URL `ggml-model.bin` は upstream リポジトリに存在せず 404 を返していたため、
+        // 同リポジトリの実ファイル名 `whisper-medium-korean.bin` に差し替え。
         WhisperModel(
             id: "korean-medium",
             name: "Korean Medium",
             description: "한국어특화・WER 16%",
             fileName: "ggml-whisper-medium-korean.bin",
-            url: "https://huggingface.co/royshilkrot/whisper-medium-korean-ggml/resolve/main/ggml-model.bin",
+            url: "https://huggingface.co/royshilkrot/whisper-medium-korean-ggml/resolve/main/whisper-medium-korean.bin",
             sizeMB: 1500,
             isDefault: false,
-            targetLanguages: ["ko"]
+            targetLanguages: ["ko"],
+            expectedSHA256: "7e7c0e7b758d175874e80819838bad724c786869835cd0008725b7fc7978768e"
         ),
         // ── フランス語特化 (Q5量子化あり) ──
         WhisperModel(
@@ -97,7 +103,8 @@ class ModelDownloader {
             url: "https://huggingface.co/bofenghuang/whisper-large-v3-french/resolve/main/ggml-model-q5_0.bin",
             sizeMB: 1080,
             isDefault: false,
-            targetLanguages: ["fr"]
+            targetLanguages: ["fr"],
+            expectedSHA256: "d8da7cb6cdadfac47829abf46fe8cd36fcfef06db5601bfd8acbcd40579010a5"
         ),
         // ── イタリア語特化 (蒸留+Q5、超軽量) ──
         WhisperModel(
@@ -108,7 +115,8 @@ class ModelDownloader {
             url: "https://huggingface.co/bofenghuang/whisper-large-v3-distil-it-v0.2/resolve/main/ggml-model-q5_0.bin",
             sizeMB: 400,
             isDefault: false,
-            targetLanguages: ["it"]
+            targetLanguages: ["it"],
+            expectedSHA256: "78859adfcac034b046ee4a7851e6765ee8830207e3b92e1ea02102678376e9cf"
         ),
         // ── 多言語汎用 ──
         WhisperModel(
@@ -118,7 +126,8 @@ class ModelDownloader {
             fileName: "ggml-large-v3-turbo.bin",
             url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
             sizeMB: 1500,
-            isDefault: false
+            isDefault: false,
+            expectedSHA256: "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69"
         ),
         WhisperModel(
             id: "large-v3-turbo-q5",
@@ -127,7 +136,8 @@ class ModelDownloader {
             fileName: "ggml-large-v3-turbo-q5_0.bin",
             url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
             sizeMB: 547,
-            isDefault: true
+            isDefault: true,
+            expectedSHA256: "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2"
         ),
         WhisperModel(
             id: "medium",
@@ -136,7 +146,8 @@ class ModelDownloader {
             fileName: "ggml-medium.bin",
             url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
             sizeMB: 1500,
-            isDefault: false
+            isDefault: false,
+            expectedSHA256: "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208"
         ),
     ]
 

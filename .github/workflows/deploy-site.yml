@@ -24,6 +24,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy
-        run: flyctl deploy --remote-only --app koe-voice --wait-timeout=120
+        run: flyctl deploy --remote-only --app koe-live --wait-timeout=120
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

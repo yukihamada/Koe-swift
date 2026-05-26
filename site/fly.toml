@@ -1,4 +1,4 @@
-app = "koe-voice"
+app = "koe-live"
 primary_region = "nrt"
 
 [build]

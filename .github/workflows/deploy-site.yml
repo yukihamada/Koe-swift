@@ -1,0 +1,29 @@
+name: Deploy site to Fly.io
+
+# Previously this workflow lived at site/.github/workflows/deploy.yml, but
+# GitHub Actions only picks up workflow files at the repository-root
+# .github/workflows/ directory. It also keyed on `main` while the default
+# branch on this repo is `master`. Both are fixed here.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'site/**'
+      - '.github/workflows/deploy-site.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency: deploy-koe-voice
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy
+        run: flyctl deploy --remote-only --app koe-voice --wait-timeout=120
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

@@ -24,6 +24,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var carbonCmdKHotKeyRef: EventHotKeyRef?
     private var carbonMeetingHotKeyRef: EventHotKeyRef?
     private var carbonRerecognizeHotKeyRef: EventHotKeyRef?
+    private var carbonEventHandlerRef: EventHandlerRef?
+    private var carbonEventHandlerUpRef: EventHandlerRef?
+    private var carbonHandlersInstalled = false
     private var meetingOverlay: MeetingOverlayWindow?
     private var meetingLiveWindow: MeetingLiveWindow?
     private var meetingChatWindow: MeetingChatWindow?
@@ -382,6 +385,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         HistoryStore.shared.flushSync()
         WhisperServer.shared.stop()
         WakeWordDetector.shared.stop()
+        // Carbon の global hotkey / event handler を確実に解放
+        // (deinit はアプリ終了時に確実には呼ばれない)
+        unregisterAllCarbonHotKeys()
+        if let m = eventMonitor { NSEvent.removeMonitor(m); eventMonitor = nil }
     }
 
     // MARK: - Status Bar
@@ -503,16 +510,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: L10n.menuSettings, action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: L10n.menuQuit, action: #selector(quit), keyEquivalent: "q")
-        statusItem.menu = menu
+        statusItem?.menu = menu
     }
 
     func setIcon(recording: Bool) {
-        let name = recording ? "mic.circle.fill" : "waveform.circle.fill"
-        if let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
-            img.isTemplate = !recording  // 非録音時はテンプレート（システムが白/黒自動切替）
-            statusItem.button?.image = img
+        // setupMenu() より前に通知ハンドラ等から呼ばれても crash しないよう ?. でアクセス
+        if let item = statusItem {
+            let name = recording ? "mic.circle.fill" : "waveform.circle.fill"
+            if let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
+                img.isTemplate = !recording  // 非録音時はテンプレート（システムが白/黒自動切替）
+                item.button?.image = img
+            }
+            item.button?.contentTintColor = recording ? .systemRed : nil
         }
-        statusItem.button?.contentTintColor = recording ? .systemRed : nil
         if AppSettings.shared.floatingButtonEnabled {
             FloatingButton.shared.setRecording(recording)
         }
@@ -610,27 +620,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Carbon Hot Key (アクセシビリティ不要)
 
     private func registerCarbonHotKey(settings: AppSettings) {
-        // 既存のCarbon Hot Keyを解除
-        if let ref = carbonHotKeyRef {
-            UnregisterEventHotKey(ref)
-            carbonHotKeyRef = nil
+        // イベントハンドラをインストール（初回のみ — 多重インストール防止 / 解除可能化）
+        guard !carbonHandlersInstalled else {
+            registerCarbonHotKeyRefs(settings: settings)
+            return
         }
-        if let ref = carbonTranslateHotKeyRef {
-            UnregisterEventHotKey(ref)
-            carbonTranslateHotKeyRef = nil
-        }
+        carbonHandlersInstalled = true
 
-        // Carbon modifier変換
-        func carbonMods(_ nsMods: NSEvent.ModifierFlags) -> UInt32 {
-            var m: UInt32 = 0
-            if nsMods.contains(.command) { m |= UInt32(cmdKey) }
-            if nsMods.contains(.option)  { m |= UInt32(optionKey) }
-            if nsMods.contains(.control) { m |= UInt32(controlKey) }
-            if nsMods.contains(.shift)   { m |= UInt32(shiftKey) }
-            return m
-        }
-
-        // イベントハンドラをインストール（初回のみ）
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, event, _ -> OSStatus in
             var hotKeyID = EventHotKeyID()
@@ -699,7 +695,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return noErr
-        }, 1, &eventType, nil, nil)
+        }, 1, &eventType, nil, &carbonEventHandlerRef)
 
         // keyUp用ハンドラも追加（hold mode用）
         var eventTypeUp = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased))
@@ -726,16 +722,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             return noErr
-        }, 1, &eventTypeUp, nil, nil)
+        }, 1, &eventTypeUp, nil, &carbonEventHandlerUpRef)
 
-        // メインホットキー登録
+        registerCarbonHotKeyRefs(settings: settings)
+    }
+
+    /// 全 Carbon EventHotKey を解除（メイン・翻訳・⌃K・⌥⌘M・⌃⌥R・Space・ESC）。
+    /// teardown 用: deinit / applicationWillTerminate から呼ぶ。
+    private func unregisterAllCarbonHotKeys() {
+        if let ref = carbonHotKeyRef { UnregisterEventHotKey(ref); carbonHotKeyRef = nil }
+        if let ref = carbonTranslateHotKeyRef { UnregisterEventHotKey(ref); carbonTranslateHotKeyRef = nil }
+        if let ref = carbonCmdKHotKeyRef { UnregisterEventHotKey(ref); carbonCmdKHotKeyRef = nil }
+        if let ref = carbonMeetingHotKeyRef { UnregisterEventHotKey(ref); carbonMeetingHotKeyRef = nil }
+        if let ref = carbonRerecognizeHotKeyRef { UnregisterEventHotKey(ref); carbonRerecognizeHotKeyRef = nil }
+        if let ref = carbonSpaceHotKeyRef { UnregisterEventHotKey(ref); carbonSpaceHotKeyRef = nil }
+        if let ref = carbonEscHotKeyRef { UnregisterEventHotKey(ref); carbonEscHotKeyRef = nil }
+        if let h = carbonEventHandlerRef { RemoveEventHandler(h); carbonEventHandlerRef = nil }
+        if let h = carbonEventHandlerUpRef { RemoveEventHandler(h); carbonEventHandlerUpRef = nil }
+        carbonHandlersInstalled = false
+    }
+
+    /// メイン・翻訳・⌃K・⌥⌘M・⌃⌥R のホットキー本体だけを登録。
+    /// イベントハンドラは別途インストール済みであることを前提とする。
+    private func registerCarbonHotKeyRefs(settings: AppSettings) {
+        // Carbon modifier変換
+        func carbonMods(_ nsMods: NSEvent.ModifierFlags) -> UInt32 {
+            var m: UInt32 = 0
+            if nsMods.contains(.command) { m |= UInt32(cmdKey) }
+            if nsMods.contains(.option)  { m |= UInt32(optionKey) }
+            if nsMods.contains(.control) { m |= UInt32(controlKey) }
+            if nsMods.contains(.shift)   { m |= UInt32(shiftKey) }
+            return m
+        }
+
+        // メインホットキー登録（既存があれば事前に解除してリーク防止）
+        if let ref = carbonHotKeyRef { UnregisterEventHotKey(ref); carbonHotKeyRef = nil }
         let mainMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers))
         var mainID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 1) // "Koe\0"
         let mainStatus = RegisterEventHotKey(UInt32(settings.shortcutKeyCode), mainMods,
                                               mainID, GetApplicationEventTarget(), 0, &carbonHotKeyRef)
         klog("Carbon hotkey main: status=\(mainStatus)")
 
-        // 翻訳ホットキー登録
+        // 翻訳ホットキー登録（同上）
+        if let ref = carbonTranslateHotKeyRef { UnregisterEventHotKey(ref); carbonTranslateHotKeyRef = nil }
         let transMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.translateHotkeyModifiers))
         var transID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 2)
         let transStatus = RegisterEventHotKey(UInt32(settings.translateHotkeyCode), transMods,
@@ -2283,6 +2312,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let m = eventMonitor { NSEvent.removeMonitor(m) }
         levelTimer?.invalidate()
         streamingTimer?.invalidate()
+        unregisterAllCarbonHotKeys()
     }
 }
 
@@ -2645,7 +2675,7 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
     /// Handle mouse move delta from iPhone trackpad
     func handleMouseMove(dx: Double, dy: Double) {
         let current = NSEvent.mouseLocation
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         // NSEvent.mouseLocation is bottom-left origin, CGEvent is top-left
         let flippedY = screen.frame.height - current.y
         let newX = current.x + CGFloat(dx)
@@ -2656,7 +2686,7 @@ final class IPhoneBridge: NSObject, MCSessionDelegate, MCNearbyServiceAdvertiser
 
     func postMouseClick(button: CGMouseButton) {
         let pos = NSEvent.mouseLocation
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let flippedY = screen.frame.height - pos.y
         let point = CGPoint(x: pos.x, y: flippedY)
         let downType: CGEventType = button == .right ? .rightMouseDown : .leftMouseDown

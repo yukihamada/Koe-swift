@@ -11,12 +11,19 @@ class OverlayWindow: NSPanel {
 
     init() {
         let w: CGFloat = 300, h: CGFloat = 56
-        let screen = NSScreen.main ?? NSScreen.screens[0]
-        let rect = CGRect(
-            x: screen.frame.midX - w / 2,
-            y: screen.visibleFrame.minY + 32,
-            width: w, height: h
-        )
+        // ヘッドレス / Screen Sharing 切断時に NSScreen.screens が空になり得るので
+        // どちらも nil なら 0,0 origin にフォールバック（直後の show() で再配置される）
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        let rect: CGRect
+        if let screen = screen {
+            rect = CGRect(
+                x: screen.frame.midX - w / 2,
+                y: screen.visibleFrame.minY + 32,
+                width: w, height: h
+            )
+        } else {
+            rect = CGRect(x: 0, y: 32, width: w, height: h)
+        }
         super.init(contentRect: rect,
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)

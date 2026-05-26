@@ -219,6 +219,7 @@ class WakeWordEngine {
         }
         guard let tgtFmt = targetFmt,
               let conv = AVAudioConverter(from: natFmt, to: tgtFmt) else {
+            audioEngine = nil
             isRunning = false; return
         }
         node.installTap(onBus: 0, bufferSize: 4096, format: natFmt) { [weak self] buf, _ in
@@ -229,6 +230,10 @@ class WakeWordEngine {
             try engine.start()
         } catch {
             klog("WakeWordEngine: engine error \(error)")
+            // start() 失敗時に tap を残すと次回 buildEngine() で
+            // "required condition is false: format.sampleRate == hwFormat.sampleRate" 系で crash する
+            node.removeTap(onBus: 0)
+            audioEngine = nil
             isRunning = false
         }
     }
@@ -322,7 +327,14 @@ class WakeWordEngine {
             if collected.count >= needed { sema.signal() }
         }
         do { engine.prepare(); try engine.start() }
-        catch { DispatchQueue.main.async { completion(false) }; return }
+        catch {
+            node.removeTap(onBus: 0)
+            DispatchQueue.main.async {
+                if wasRunning { self.start() }
+                completion(false)
+            }
+            return
+        }
 
         DispatchQueue.global().async {
             _ = sema.wait(timeout: .now() + duration + 1)

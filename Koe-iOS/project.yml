@@ -69,6 +69,8 @@ targets:
         MARKETING_VERSION: "1.3.0"
         CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
+    entitlements:
+      path: KoeKeyboard/KoeKeyboard.entitlements
 
   KoeShareExt:
     type: app-extension
@@ -83,6 +85,8 @@ targets:
         MARKETING_VERSION: "1.3.0"
         CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
+    entitlements:
+      path: KoeShareExt/KoeShareExt.entitlements
 
   KoeWidget:
     type: app-extension
@@ -97,3 +101,5 @@ targets:
         MARKETING_VERSION: "1.3.0"
         CURRENT_PROJECT_VERSION: "2"
         TARGETED_DEVICE_FAMILY: "1,2"
+    entitlements:
+      path: KoeWidget/KoeWidget.entitlements

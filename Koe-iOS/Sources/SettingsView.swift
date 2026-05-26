@@ -6,16 +6,17 @@ struct SettingsView: View {
     @StateObject private var modelManager = ModelManager.shared
     @ObservedObject var recorder: RecordingManager
     @ObservedObject private var macBridge = MacBridge.shared
-    @AppStorage("koe_language") private var language = "ja-JP"
-    @AppStorage("koe_auto_copy") private var autoCopy = false
-    @AppStorage("koe_llm_enabled") private var llmEnabled = false
-    @AppStorage("koe_llm_mode") private var llmMode = "correct"
-    @AppStorage("koe_silence_duration") private var silenceDuration = 0.0
-    @AppStorage("koe_auto_send_mac") private var autoSendMac = true
-    @AppStorage("koe_continuous_mode") private var continuousMode = false
-    @AppStorage("koe_translate_target") private var translateTarget = "en"
+    // Shared with extensions via App Group (group.com.yuki.koe).
+    @AppStorage("koe_language", store: .koeShared) private var language = "ja-JP"
+    @AppStorage("koe_auto_copy", store: .koeShared) private var autoCopy = false
+    @AppStorage("koe_llm_enabled", store: .koeShared) private var llmEnabled = false
+    @AppStorage("koe_llm_mode", store: .koeShared) private var llmMode = "correct"
+    @AppStorage("koe_silence_duration", store: .koeShared) private var silenceDuration = 0.0
+    @AppStorage("koe_auto_send_mac", store: .koeShared) private var autoSendMac = true
+    @AppStorage("koe_continuous_mode", store: .koeShared) private var continuousMode = false
+    @AppStorage("koe_translate_target", store: .koeShared) private var translateTarget = "en"
     @AppStorage("koe_screen_context") private var screenContextEnabled = false
-    @AppStorage("koe_streaming_preview") private var streamingPreview = false
+    @AppStorage("koe_streaming_preview", store: .koeShared) private var streamingPreview = false
     @State private var newPhrase = ""
     @State private var showAddPhrase = false
 

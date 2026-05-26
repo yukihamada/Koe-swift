@@ -28,8 +28,8 @@ final class CallTranscriber: ObservableObject {
 
     // 設定
     var autoRecord: Bool {
-        get { UserDefaults.standard.bool(forKey: "koe_call_auto_record") }
-        set { UserDefaults.standard.set(newValue, forKey: "koe_call_auto_record") }
+        get { UserDefaults.koeShared.bool(forKey: "koe_call_auto_record") }
+        set { UserDefaults.koeShared.set(newValue, forKey: "koe_call_auto_record") }
     }
 
     private init() {
@@ -101,10 +101,9 @@ final class CallTranscriber: ObservableObject {
         guard !isRecording else { return }
 
         do {
-            let session = AVAudioSession.sharedInstance()
-            // VoiceChat モードでエコーキャンセレーション有効化
-            try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetooth])
-            try session.setActive(true)
+            // VoiceChat mode (echo cancellation, Bluetooth) is selected by the
+            // coordinator when .callBridge is active.
+            try AudioSessionCoordinator.shared.acquire(.callBridge)
         } catch {
             print("[CallTranscriber] audio session error: \(error)")
             return
@@ -166,6 +165,7 @@ final class CallTranscriber: ObservableObject {
         audioEngine?.inputNode.removeTap(onBus: 0)
         audioEngine?.stop()
         audioEngine = nil
+        AudioSessionCoordinator.shared.release(.callBridge)
         isRecording = false
         print("[CallTranscriber] recording stopped, samples: \(pcmSamples.count)")
 
@@ -185,7 +185,7 @@ final class CallTranscriber: ObservableObject {
         isTranscribing = true
         transcribedText = "文字起こし中..."
 
-        let lang = UserDefaults.standard.string(forKey: "koe_language") ?? "ja"
+        let lang = UserDefaults.koeShared.string(forKey: "koe_language") ?? "ja"
 
         if WhisperContext.shared.isLoaded {
             // ローカルWhisper
@@ -224,12 +224,12 @@ final class CallTranscriber: ObservableObject {
 
     private func persistHistory() {
         if let data = try? JSONEncoder().encode(callHistory) {
-            UserDefaults.standard.set(data, forKey: "koe_call_history")
+            UserDefaults.koeShared.set(data, forKey: "koe_call_history")
         }
     }
 
     private func loadHistory() {
-        if let data = UserDefaults.standard.data(forKey: "koe_call_history"),
+        if let data = UserDefaults.koeShared.data(forKey: "koe_call_history"),
            let decoded = try? JSONDecoder().decode([CallTranscript].self, from: data) {
             callHistory = decoded
         }

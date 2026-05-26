@@ -105,7 +105,7 @@ class BLEAudioBridge: NSObject, ObservableObject {
             return await transcribeWithAppleSpeech(samples: samples)
         }
         return await withCheckedContinuation { continuation in
-            let lang = UserDefaults.standard.string(forKey: "koe_language") ?? "ja"
+            let lang = UserDefaults.koeShared.string(forKey: "koe_language") ?? "ja"
             WhisperContext.shared.transcribeBuffer(samples: samples, language: lang) { text in
                 continuation.resume(returning: text)
             }

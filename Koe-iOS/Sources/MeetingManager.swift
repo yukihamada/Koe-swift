@@ -114,7 +114,7 @@ final class MeetingManager: ObservableObject {
         guard samples.count > 4000 else { return }
         let timestamp = elapsedTime
 
-        let lang = UserDefaults.standard.string(forKey: "koe_language") ?? "ja-JP"
+        let lang = UserDefaults.koeShared.string(forKey: "koe_language") ?? "ja-JP"
         let whisperLang = lang == "auto" ? "auto" : (lang.components(separatedBy: "-").first ?? "ja")
 
         WhisperContext.shared.transcribeBuffer(samples: samples, language: whisperLang) { [weak self] text in

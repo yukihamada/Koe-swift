@@ -15,6 +15,10 @@ final class SoundMemory: ObservableObject {
     @Published var segments: [MemorySegment] = []
     @Published var bookmarks: [Bookmark] = []
     @Published var todayDuration: TimeInterval = 0
+    /// Set to `true` when capture was paused automatically due to low-power or
+    /// thermal pressure. UI may show an indicator and the user must re-enable
+    /// capture explicitly to resume.
+    @Published var pausedDueToSystemConditions = false
 
     // MARK: - Types
 
@@ -66,11 +70,70 @@ final class SoundMemory: ObservableObject {
         loadData()
         updateTodayDuration()
 
-        // 前回ONだった場合、自動で再開
+        // Low-power / thermal observers — battery-friendly behaviour required by
+        // App Store review and our own resource budget. Handlers stop the 30-s
+        // capture loop when the system signals pressure; resume requires an
+        // explicit user toggle (we do not auto-restart on recovery to avoid
+        // surprise battery drain).
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handlePowerStateChange),
+            name: .NSProcessInfoPowerStateDidChange,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleThermalChange),
+            name: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil
+        )
+
+        // 前回ONだった場合、自動で再開（ただしシステムが低電力 / 高温なら見送る）
         if UserDefaults.standard.bool(forKey: "koe_sound_memory_enabled") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-                self?.startCapture()
+                guard let self else { return }
+                if self.systemConditionsAllowCapture {
+                    self.startCapture()
+                } else {
+                    self.pausedDueToSystemConditions = true
+                }
             }
+        }
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // MARK: - System conditions
+
+    nonisolated private var systemConditionsAllowCapture: Bool {
+        if ProcessInfo.processInfo.isLowPowerModeEnabled { return false }
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious, .critical: return false
+        case .nominal, .fair: return true
+        @unknown default: return true
+        }
+    }
+
+    @objc private func handlePowerStateChange() {
+        Task { @MainActor in
+            self.evaluateSystemConditions(reason: "low-power")
+        }
+    }
+
+    @objc private func handleThermalChange() {
+        Task { @MainActor in
+            self.evaluateSystemConditions(reason: "thermal")
+        }
+    }
+
+    private func evaluateSystemConditions(reason: String) {
+        guard isEnabled else { return }
+        if !systemConditionsAllowCapture {
+            print("[SoundMemory] Pausing capture due to \(reason) pressure")
+            stopCapture()
+            pausedDueToSystemConditions = true
         }
     }
 
@@ -78,11 +141,10 @@ final class SoundMemory: ObservableObject {
 
     func startCapture() {
         guard !isEnabled else { return }
+        pausedDueToSystemConditions = false
 
-        let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try session.setActive(true, options: .notifyOthersOnDeactivation)
+            try AudioSessionCoordinator.shared.acquire(.soundMemory)
         } catch {
             print("[SoundMemory] Audio session error: \(error)")
             return
@@ -170,6 +232,7 @@ final class SoundMemory: ObservableObject {
         // Finalize last segment
         finalizeCurrentSegment()
 
+        AudioSessionCoordinator.shared.release(.soundMemory)
         isEnabled = false
         UserDefaults.standard.set(false, forKey: "koe_sound_memory_enabled")
         print("[SoundMemory] Capture stopped")
@@ -287,7 +350,7 @@ final class SoundMemory: ObservableObject {
         guard samples.count > 8000 else { return }  // < 0.5s
 
         // Transcribe on background queue
-        let lang = UserDefaults.standard.string(forKey: "koe_language") ?? "ja-JP"
+        let lang = UserDefaults.koeShared.string(forKey: "koe_language") ?? "ja-JP"
         let whisperLang = lang == "auto" ? "auto" : (lang.components(separatedBy: "-").first ?? "ja")
 
         WhisperContext.shared.transcribeBuffer(samples: samples, language: whisperLang) { [weak self] text in

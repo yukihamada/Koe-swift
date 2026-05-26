@@ -11,7 +11,7 @@ final class MacBridge: NSObject, ObservableObject {
     @Published var nearbyMacs: [MCPeerID] = []
     @Published var remoteTranscription = ""
     @Published var remoteTranslation = ""
-    @Published var useRemoteWhisper: Bool = UserDefaults.standard.bool(forKey: "koe_remote_whisper")
+    @Published var useRemoteWhisper: Bool = UserDefaults.koeShared.bool(forKey: "koe_remote_whisper")
     @Published var activeAppName: String = ""
     @Published var activeAppBundleID: String = ""
     @Published var screenImage: UIImage?
@@ -30,7 +30,7 @@ final class MacBridge: NSObject, ObservableObject {
 
     /// Paired Mac display names persisted for auto-reconnect without PIN
     private var pairedMacNames: Set<String> = {
-        let saved = UserDefaults.standard.stringArray(forKey: "koe_paired_macs") ?? []
+        let saved = UserDefaults.koeShared.stringArray(forKey: "koe_paired_macs") ?? []
         return Set(saved)
     }()
 
@@ -42,7 +42,7 @@ final class MacBridge: NSObject, ObservableObject {
     }
 
     private func savePairedMacs() {
-        UserDefaults.standard.set(Array(pairedMacNames), forKey: "koe_paired_macs")
+        UserDefaults.koeShared.set(Array(pairedMacNames), forKey: "koe_paired_macs")
     }
 
     func startBrowsing() {

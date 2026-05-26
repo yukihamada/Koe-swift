@@ -139,7 +139,10 @@ productbuild \
   "$STAGING/$PKG"
 
 # --- Sign the pkg (requires Developer ID Installer cert) ---
-INSTALLER_ID=$(security find-identity -v -p basic | grep "Developer ID Installer" | head -1 | awk -F'"' '{print $2}')
+# Note: `set -euo pipefail` is on, so if `grep` finds nothing it would kill
+# the whole script. Wrap the pipeline with `|| true` so a missing cert just
+# leaves INSTALLER_ID empty and we take the unsigned fallback.
+INSTALLER_ID=$(security find-identity -v -p basic 2>/dev/null | grep "Developer ID Installer" | head -1 | awk -F'"' '{print $2}' || true)
 if [[ -n "$INSTALLER_ID" ]]; then
   productsign --sign "$INSTALLER_ID" "$STAGING/$PKG" "$PKG"
   echo "✓ Signed $PKG"

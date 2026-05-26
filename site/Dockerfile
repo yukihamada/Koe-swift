@@ -1,4 +1,4 @@
-FROM rust:1.85-slim AS builder
+FROM rust:1.86-slim AS builder
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY Cargo.toml Cargo.lock* ./
@@ -11,6 +11,9 @@ COPY elio-icon.png .
 COPY vs-notta.html .
 COPY pricing.html .
 COPY support.html .
+# Added by PR #2 (audit); main.rs include_str!()s these so they must be in the build context.
+COPY robots.txt .
+COPY sitemap.xml .
 RUN cargo build --release
 
 FROM debian:bookworm-slim

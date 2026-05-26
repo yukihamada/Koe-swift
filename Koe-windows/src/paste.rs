@@ -1,12 +1,18 @@
-use log::info;
+use log::{info, warn};
 
 /// テキストをアクティブウィンドウに貼り付け
-/// 1. クリップボードの現在の内容を保存
-/// 2. 認識結果をクリップボードにセット
-/// 3. Ctrl+V をシミュレート
-/// 4. 120ms後に元のクリップボード内容を復元
+/// 1. 起動時のフォアグラウンドウィンドウ HWND を記録
+/// 2. クリップボードの現在の内容を保存
+/// 3. 認識結果をクリップボードにセット
+/// 4. SendInput 直前に再度フォアグラウンドを確認、変化していれば中止（W-04）
+/// 5. Ctrl+V をシミュレート
+/// 6. 120ms後に元のクリップボード内容を復元
 pub fn paste_text(text: &str) {
     info!("Pasting: '{}'", text);
+
+    // W-04: capture the foreground window at entry; we will refuse to paste
+    // if focus has moved by the time we are ready to SendInput.
+    let start_hwnd = current_foreground_hwnd();
 
     let mut clipboard = match arboard::Clipboard::new() {
         Ok(c) => c,
@@ -27,6 +33,21 @@ pub fn paste_text(text: &str) {
 
     // 少し待ってからCtrl+Vシミュレート（クリップボード反映待ち）
     std::thread::sleep(std::time::Duration::from_millis(30));
+
+    // W-04: re-check foreground; bail out if it changed (e.g. user Alt-Tabbed
+    // to a password manager / different field) — restore clipboard first.
+    let current_hwnd = current_foreground_hwnd();
+    if current_hwnd != start_hwnd {
+        warn!(
+            "Foreground window changed during paste (start={:?}, now={:?}); aborting SendInput",
+            start_hwnd, current_hwnd
+        );
+        if let Some(prev) = prev_text {
+            let _ = clipboard.set_text(prev);
+        }
+        return;
+    }
+
     simulate_paste();
 
     // 120ms後にクリップボード復元
@@ -34,6 +55,24 @@ pub fn paste_text(text: &str) {
     if let Some(prev) = prev_text {
         let _ = clipboard.set_text(prev);
     }
+}
+
+/// Returns an opaque identifier for the current foreground window.
+/// Returns `None` on non-Windows targets or if the API call fails.
+#[cfg(target_os = "windows")]
+fn current_foreground_hwnd() -> Option<isize> {
+    use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd.0 == 0 {
+        None
+    } else {
+        Some(hwnd.0)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn current_foreground_hwnd() -> Option<isize> {
+    None
 }
 
 /// Ctrl+V キー入力をシミュレート

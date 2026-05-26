@@ -1,5 +1,8 @@
 #!/bin/bash
-set -e
+# `set -u` is intentionally omitted: this script relies on several conditionally-
+# defined variables (WHISPER_LIBEXEC_LIB, brew prefix optionals, etc.) that would
+# trip nounset. Tightening to -u is tracked as a follow-up; see docs/audit/05-build-ci.md (B-01).
+set -eo pipefail
 
 cd "$(dirname "$0")"
 APP="build-macos/Koe.app"
@@ -389,10 +392,20 @@ sleep 0.5
 
 # Notarize only if staple ticket not already present (skip for fast dev iteration)
 if ! xcrun stapler validate "$APP" 2>/dev/null | grep -q "worked"; then
-    ditto -c -k --sequesterRsrc --keepParent "$APP" /tmp/Koe-install.zip 2>/dev/null
-    xcrun notarytool submit /tmp/Koe-install.zip --keychain-profile "notary" --wait 2>&1 | grep -E "status:|Accepted|Error" || true
-    xcrun stapler staple "$APP" 2>/dev/null || true
-    rm -f /tmp/Koe-install.zip
+    # Use a per-run temp file to avoid /tmp/Koe-install.zip symlink races on shared hosts.
+    TMPZ="$(mktemp -t Koe-install).zip"
+    trap 'rm -f "$TMPZ"' EXIT
+    ditto -c -k --sequesterRsrc --keepParent "$APP" "$TMPZ"
+    if xcrun notarytool history --keychain-profile "notary" >/dev/null 2>&1; then
+        # Surface notarization errors instead of swallowing them with `|| true`.
+        xcrun notarytool submit "$TMPZ" --keychain-profile "notary" --wait
+        xcrun stapler staple "$APP"
+        xcrun stapler validate "$APP" >/dev/null
+    else
+        echo "ℹ notarytool keychain profile 'notary' not configured; skipping notarization (local dev)."
+    fi
+    rm -f "$TMPZ"
+    trap - EXIT
 fi
 
 # Copy to /Applications (use sudo if needed for root-owned existing install)

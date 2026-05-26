@@ -18,6 +18,8 @@ const OG_SVG: &str = include_str!("../og.svg");
 const OG_PNG: &[u8] = include_bytes!("../og.png");
 const INSTALL_SH: &str = include_str!("../install.sh");
 const ELIO_ICON: &[u8] = include_bytes!("../elio-icon.png");
+const ROBOTS_TXT: &str = include_str!("../robots.txt");
+const SITEMAP_XML: &str = include_str!("../sitemap.xml");
 
 // --- Privacy-first analytics ---
 // No cookies, no IP storage, no PII. Just counters.
@@ -214,6 +216,20 @@ async fn install_script() -> impl IntoResponse {
     )
 }
 
+async fn robots_txt() -> impl IntoResponse {
+    (
+        [("content-type", "text/plain; charset=utf-8"), ("cache-control", "public, max-age=3600")],
+        ROBOTS_TXT,
+    )
+}
+
+async fn sitemap_xml() -> impl IntoResponse {
+    (
+        [("content-type", "application/xml; charset=utf-8"), ("cache-control", "public, max-age=3600")],
+        SITEMAP_XML,
+    )
+}
+
 // --- Stripe Checkout ---
 
 #[derive(Deserialize)]
@@ -406,6 +422,8 @@ async fn main() {
         .route("/og.png", get(og_image_png))
         .route("/install.sh", get(install_script))
         .route("/elio-icon.png", get(elio_icon))
+        .route("/robots.txt", get(robots_txt))
+        .route("/sitemap.xml", get(sitemap_xml))
         .route("/api/event", post(track_event).options(track_options))
         .route("/api/stats", get(get_stats))
         .with_state(analytics);

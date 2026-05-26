@@ -124,6 +124,9 @@ pub struct Config {
     pub recording_mode: RecordingMode,
     pub llm_enabled: bool,
     pub llm_provider: String,
+    /// API キーは config.json には保存しない。OS の credential store (Windows Credential
+    /// Manager / macOS Keychain / Linux Secret Service) に keyring crate 経由で保管する。
+    #[serde(skip)]
     pub llm_api_key: String,
     pub llm_base_url: String,
     pub llm_model: String,
@@ -131,6 +134,9 @@ pub struct Config {
     pub auto_copy: bool,
     pub streaming_preview: bool,
 }
+
+const KEYRING_SERVICE: &str = "Koe";
+const KEYRING_USER_LLM_KEY: &str = "llm_api_key";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RecordingMode {
@@ -184,16 +190,53 @@ impl Config {
     /// 設定を読み込み（なければデフォルト）
     pub fn load() -> Self {
         let path = Self::path();
+        let mut config: Self;
+        let mut legacy_api_key: Option<String> = None;
+
         if path.exists() {
             match std::fs::read_to_string(&path) {
-                Ok(s) => match serde_json::from_str(&s) {
-                    Ok(c) => return c,
-                    Err(e) => log::warn!("Config parse error: {}, using defaults", e),
-                },
-                Err(e) => log::warn!("Config read error: {}, using defaults", e),
+                Ok(s) => {
+                    // 旧バージョンの config.json には llm_api_key が平文で残っている可能性が
+                    // ある。serde で deserialize する前に値を抜き出して keyring に移行する。
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&s) {
+                        if let Some(k) = val.get("llm_api_key").and_then(|v| v.as_str()) {
+                            if !k.is_empty() {
+                                legacy_api_key = Some(k.to_string());
+                            }
+                        }
+                    }
+                    match serde_json::from_str::<Self>(&s) {
+                        Ok(c) => config = c,
+                        Err(e) => {
+                            log::warn!("Config parse error: {}, using defaults", e);
+                            config = Self::default();
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Config read error: {}, using defaults", e);
+                    config = Self::default();
+                }
             }
+        } else {
+            config = Self::default();
         }
-        let config = Self::default();
+
+        // keyring から API キーを復元 (もしくは legacy 値を移行)。
+        config.llm_api_key = match legacy_api_key {
+            Some(k) => {
+                if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER_LLM_KEY) {
+                    let _ = entry.set_password(&k);
+                }
+                k
+            }
+            None => keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER_LLM_KEY)
+                .and_then(|e| e.get_password())
+                .unwrap_or_default(),
+        };
+
+        // legacy migration が発生した場合 (もしくは初回作成時) は llm_api_key を含まない
+        // 新しい config.json を書き直す。
         let _ = config.save();
         config
     }
@@ -202,6 +245,16 @@ impl Config {
     pub fn save(&self) -> Result<(), std::io::Error> {
         let dir = Self::data_dir();
         std::fs::create_dir_all(&dir)?;
+
+        // API キーは config.json には書かない。OS の credential store に保存する。
+        if let Ok(entry) = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER_LLM_KEY) {
+            if self.llm_api_key.is_empty() {
+                let _ = entry.delete_credential();
+            } else {
+                let _ = entry.set_password(&self.llm_api_key);
+            }
+        }
+
         let json = serde_json::to_string_pretty(self).map_err(|e| {
             std::io::Error::new(std::io::ErrorKind::Other, e)
         })?;

@@ -293,7 +293,10 @@ class AppSettings: ObservableObject {
         AppSettings.quickLanguages.first { $0.code == language }?.flag ?? "🌐"
     }
     @Published var recognitionEngine: RecognitionEngine { didSet { ud.set(recognitionEngine.rawValue, forKey: "recognitionEngine") } }
-    @Published var whisperAPIKey: String     { didSet { ud.set(whisperAPIKey,           forKey: "whisperAPIKey") } }
+    @Published var whisperAPIKey: String     { didSet {
+        if whisperAPIKey.isEmpty { KeychainHelper.delete("whisperAPIKey") }
+        else { KeychainHelper.set(whisperAPIKey, for: "whisperAPIKey") }
+    }}
     @Published var whisperCppBinaryPath: String { didSet { ud.set(whisperCppBinaryPath, forKey: "whisperCppBinaryPath") } }
     @Published var whisperCppModelPath: String  { didSet { ud.set(whisperCppModelPath,  forKey: "whisperCppModelPath") } }
     @Published var nouPort: Int             { didSet { ud.set(nouPort,                 forKey: "nouPort") } }
@@ -311,7 +314,14 @@ class AppSettings: ObservableObject {
         }
     }}
     @Published var llmBaseURL: String { didSet { ud.set(llmBaseURL,  forKey: "llmBaseURL") } }
-    @Published var llmAPIKey: String  { didSet { ud.set(llmAPIKey,   forKey: "llmAPIKey") } }
+    @Published var llmAPIKey: String  { didSet {
+        // 機密情報は UserDefaults ではなく Keychain に保存する。
+        if llmAPIKey.isEmpty {
+            KeychainHelper.delete("llmAPIKey")
+        } else {
+            KeychainHelper.set(llmAPIKey, for: "llmAPIKey")
+        }
+    }}
     @Published var llmModel: String   { didSet { ud.set(llmModel,    forKey: "llmModel") } }
     @Published var llmCustomPrompt: String { didSet { ud.set(llmCustomPrompt, forKey: "llmCustomPrompt") } }
     @Published var llmMode: LLMMode { didSet { ud.set(llmMode.rawValue, forKey: "llmMode") } }
@@ -369,8 +379,14 @@ class AppSettings: ObservableObject {
 
     // Meeting integrations
     @Published var meetingTemplate: String { didSet { ud.set(meetingTemplate, forKey: "meetingTemplate") } }
-    @Published var slackWebhookURL: String { didSet { ud.set(slackWebhookURL, forKey: "slackWebhookURL") } }
-    @Published var notionToken: String { didSet { ud.set(notionToken, forKey: "notionToken") } }
+    @Published var slackWebhookURL: String { didSet {
+        if slackWebhookURL.isEmpty { KeychainHelper.delete("slackWebhookURL") }
+        else { KeychainHelper.set(slackWebhookURL, for: "slackWebhookURL") }
+    }}
+    @Published var notionToken: String { didSet {
+        if notionToken.isEmpty { KeychainHelper.delete("notionToken") }
+        else { KeychainHelper.set(notionToken, for: "notionToken") }
+    }}
     @Published var notionDatabaseID: String { didSet { ud.set(notionDatabaseID, forKey: "notionDatabaseID") } }
     @Published var autoSlackPost: Bool { didSet { ud.set(autoSlackPost, forKey: "autoSlackPost") } }
     @Published var autoNotionPost: Bool { didSet { ud.set(autoNotionPost, forKey: "autoNotionPost") } }
@@ -490,6 +506,22 @@ class AppSettings: ObservableObject {
         ud.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
     }
 
+    /// Keychain 優先で読み出し、旧 UserDefaults 値があれば一度だけ Keychain に移行する。
+    /// Keychain がすでに非空なら UserDefaults の古い値は捨てる（上書きしない）。
+    static func migrateSecret(ud: UserDefaults, key: String) -> String {
+        let legacy = ud.string(forKey: key) ?? ""
+        if let kc = KeychainHelper.get(key), !kc.isEmpty {
+            if !legacy.isEmpty { ud.removeObject(forKey: key) }
+            return kc
+        }
+        if !legacy.isEmpty {
+            KeychainHelper.set(legacy, for: key)
+            ud.removeObject(forKey: key)
+            return legacy
+        }
+        return ""
+    }
+
     private init() {
         shortcutKeyCode   = ud.object(forKey: "shortcutKeyCode") as? Int ?? 9
         let savedMods     = ud.object(forKey: "shortcutModifiers") as? Int
@@ -511,7 +543,7 @@ class AppSettings: ObservableObject {
         menuBarLanguageCodes = (ud.data(forKey: "menuBarLanguageCodes").flatMap { try? JSONDecoder().decode([String].self, from: $0) })
             ?? ["ja-JP", "en-US", "zh-CN", "ko-KR", "auto"]
         recognitionEngine = RecognitionEngine(rawValue: ud.string(forKey: "recognitionEngine") ?? "") ?? .whisperCpp
-        whisperAPIKey        = ud.string(forKey: "whisperAPIKey") ?? ""
+        whisperAPIKey        = AppSettings.migrateSecret(ud: ud, key: "whisperAPIKey")
         whisperCppBinaryPath = ud.string(forKey: "whisperCppBinaryPath") ?? ""
         whisperCppModelPath  = ud.string(forKey: "whisperCppModelPath") ?? ""
         nouPort              = ud.object(forKey: "nouPort") as? Int ?? 4001
@@ -528,7 +560,7 @@ class AppSettings: ObservableObject {
         llmUseLocal = ud.object(forKey: "llmUseLocal") as? Bool ?? true  // デフォルトはローカル
         llmProvider = LLMProvider(rawValue: ud.string(forKey: "llmProvider") ?? "") ?? .chatweb
         llmBaseURL  = ud.string(forKey: "llmBaseURL") ?? "https://api.chatweb.ai"
-        llmAPIKey   = ud.string(forKey: "llmAPIKey") ?? ""
+        llmAPIKey   = AppSettings.migrateSecret(ud: ud, key: "llmAPIKey")
         llmModel    = ud.string(forKey: "llmModel") ?? "auto"
         llmCustomPrompt = ud.string(forKey: "llmCustomPrompt") ?? ""
         llmMode = LLMMode(rawValue: ud.string(forKey: "llmMode") ?? "") ?? .none
@@ -548,8 +580,8 @@ class AppSettings: ObservableObject {
         whisperUseContext = ud.object(forKey: "whisperUseContext") as? Bool ?? true   // デフォルトON（長文の一貫性）
         diarizationEnabled = ud.object(forKey: "diarizationEnabled") as? Bool ?? false  // デフォルトOFF
         meetingTemplate = ud.string(forKey: "meetingTemplate") ?? "general"
-        slackWebhookURL = ud.string(forKey: "slackWebhookURL") ?? ""
-        notionToken = ud.string(forKey: "notionToken") ?? ""
+        slackWebhookURL = AppSettings.migrateSecret(ud: ud, key: "slackWebhookURL")
+        notionToken = AppSettings.migrateSecret(ud: ud, key: "notionToken")
         notionDatabaseID = ud.string(forKey: "notionDatabaseID") ?? ""
         autoSlackPost = ud.bool(forKey: "autoSlackPost")
         autoNotionPost = ud.bool(forKey: "autoNotionPost")

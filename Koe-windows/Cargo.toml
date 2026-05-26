@@ -1,6 +1,6 @@
 [package]
 name = "koe"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "Koe — Ultra-fast voice input for Windows (whisper.cpp + CUDA)"
 authors = ["Yuki Hamada"]

@@ -1,4 +1,4 @@
-name: Build & Release DMG
+name: Build & Release DMG + PKG
 
 on:
   push:
@@ -27,8 +27,26 @@ jobs:
           chmod +x build-dmg.sh
           bash build-dmg.sh
 
-      - name: Upload DMG to Release
+      # Also produce Koe.pkg so users who prefer the system installer
+      # have parity with the v2.9.x cadence (yukihamada used to upload .pkg
+      # alongside .dmg via local `release.sh`). build-pkg.sh handles missing
+      # Developer ID Installer cert gracefully (falls back to unsigned pkg
+      # with a warning) so this works in CI without provisioning data.
+      - name: Build PKG
+        continue-on-error: true
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          chmod +x build-pkg.sh
+          bash build-pkg.sh
+
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: Koe-Installer.dmg
+          files: |
+            Koe-Installer.dmg
+            Koe.pkg
+          fail_on_unmatched_files: false
           generate_release_notes: true

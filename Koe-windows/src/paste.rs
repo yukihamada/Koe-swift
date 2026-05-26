@@ -59,19 +59,23 @@ pub fn paste_text(text: &str) {
 
 /// Returns an opaque identifier for the current foreground window.
 /// Returns `None` on non-Windows targets or if the API call fails.
+///
+/// `HWND` in `windows` crate 0.58 is `pub struct HWND(pub *mut c_void)`,
+/// so we compare via `is_null()` and store as `usize` (PartialEq-friendly,
+/// no raw-pointer Send/Sync issues if we ever pass it across threads).
 #[cfg(target_os = "windows")]
-fn current_foreground_hwnd() -> Option<isize> {
+fn current_foreground_hwnd() -> Option<usize> {
     use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
     let hwnd = unsafe { GetForegroundWindow() };
-    if hwnd.0 == 0 {
+    if hwnd.0.is_null() {
         None
     } else {
-        Some(hwnd.0)
+        Some(hwnd.0 as usize)
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn current_foreground_hwnd() -> Option<isize> {
+fn current_foreground_hwnd() -> Option<usize> {
     None
 }
 

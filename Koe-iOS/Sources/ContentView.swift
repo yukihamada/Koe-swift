@@ -17,10 +17,10 @@ struct ContentView: View {
     @State private var showFeedbackSheet = false
     @State private var longPressStart: Date?
     @State private var longPressTimer: Timer?
-    @AppStorage("koe_llm_enabled") private var llmEnabled = false
-    @AppStorage("koe_llm_mode") private var llmMode = "correct"
+    @AppStorage("koe_llm_enabled", store: .koeShared) private var llmEnabled = false
+    @AppStorage("koe_llm_mode", store: .koeShared) private var llmMode = "correct"
     @AppStorage("koe_screen_context") private var screenContextEnabled = false
-    @AppStorage("koe_streaming_preview") private var streamingPreview = false
+    @AppStorage("koe_streaming_preview", store: .koeShared) private var streamingPreview = false
     @AppStorage("koe_phrase_palette") private var phrasePaletteEnabled = false
     @AppStorage("koe_watch_enabled") private var watchEnabled = false
     @AppStorage("koe_always_listening") private var alwaysListening = false

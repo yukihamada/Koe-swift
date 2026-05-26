@@ -121,7 +121,9 @@ class KeyboardViewController: UIInputViewController {
     // MARK: - Recording with Apple Speech
 
     private func startRecording() {
-        let locale = Locale(identifier: UserDefaults.standard.string(forKey: "koe_language") ?? "ja-JP")
+        // Read language from the shared App Group so the keyboard picks up the host app's choice.
+        let shared = UserDefaults(suiteName: "group.com.yuki.koe") ?? .standard
+        let locale = Locale(identifier: shared.string(forKey: "koe_language") ?? "ja-JP")
         guard let speechRecognizer = SFSpeechRecognizer(locale: locale),
               speechRecognizer.isAvailable else {
             statusLabel.text = "音声認識が利用できません"

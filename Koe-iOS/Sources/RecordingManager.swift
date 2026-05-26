@@ -14,14 +14,14 @@ final class RecordingManager: ObservableObject {
     @Published var statusText = "タップして録音"
     @Published var audioLevel: Float = 0
     @Published var history: [HistoryItem] = []
-    @Published var autoCopy: Bool = UserDefaults.standard.bool(forKey: "koe_auto_copy")
-    @Published var autoSendMac: Bool = UserDefaults.standard.bool(forKey: "koe_auto_send_mac") {
-        didSet { UserDefaults.standard.set(autoSendMac, forKey: "koe_auto_send_mac") }
+    @Published var autoCopy: Bool = UserDefaults.koeShared.bool(forKey: "koe_auto_copy")
+    @Published var autoSendMac: Bool = UserDefaults.koeShared.bool(forKey: "koe_auto_send_mac") {
+        didSet { UserDefaults.koeShared.set(autoSendMac, forKey: "koe_auto_send_mac") }
     }
-    @Published var continuousMode: Bool = UserDefaults.standard.bool(forKey: "koe_continuous_mode") {
-        didSet { UserDefaults.standard.set(continuousMode, forKey: "koe_continuous_mode") }
+    @Published var continuousMode: Bool = UserDefaults.koeShared.bool(forKey: "koe_continuous_mode") {
+        didSet { UserDefaults.koeShared.set(continuousMode, forKey: "koe_continuous_mode") }
     }
-    @Published var quickPhrases: [String] = UserDefaults.standard.stringArray(forKey: "koe_quick_phrases") ?? ["お世話になっております。", "承知いたしました。", "よろしくお願いいたします。"]
+    @Published var quickPhrases: [String] = UserDefaults.koeShared.stringArray(forKey: "koe_quick_phrases") ?? ["お世話になっております。", "承知いたしました。", "よろしくお願いいたします。"]
     @Published var streamingText: String = ""
 
     private var audioEngine = AVAudioEngine()
@@ -33,7 +33,7 @@ final class RecordingManager: ObservableObject {
     private var streamingRecognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var streamingRecognitionTask: SFSpeechRecognitionTask?
     private var streamingPreviewEnabled: Bool {
-        UserDefaults.standard.bool(forKey: "koe_streaming_preview")
+        UserDefaults.koeShared.bool(forKey: "koe_streaming_preview")
     }
 
     // whisper.cpp: オーディオスレッドで直接書き込む (ロックで保護)
@@ -52,7 +52,7 @@ final class RecordingManager: ObservableObject {
     private var silenceThreshold: Float { max(silenceThresholdBase, ambientNoiseLevel * 3.5) }
     private var silenceDuration: TimeInterval {
         // 0 = 無音自動停止OFF（手動停止のみ）
-        UserDefaults.standard.object(forKey: "koe_silence_duration") as? Double ?? 0
+        UserDefaults.koeShared.object(forKey: "koe_silence_duration") as? Double ?? 0
     }
     private var silenceTimer: Timer?
     private var isRecognizing = false
@@ -72,10 +72,10 @@ final class RecordingManager: ObservableObject {
 
     init() {
         // koe_auto_send_mac のデフォルトを true に設定
-        UserDefaults.standard.register(defaults: ["koe_auto_send_mac": true])
-        autoSendMac = UserDefaults.standard.bool(forKey: "koe_auto_send_mac")
+        UserDefaults.koeShared.register(defaults: ["koe_auto_send_mac": true])
+        autoSendMac = UserDefaults.koeShared.bool(forKey: "koe_auto_send_mac")
 
-        let locale = Locale(identifier: UserDefaults.standard.string(forKey: "koe_language") ?? "ja-JP")
+        let locale = Locale(identifier: UserDefaults.koeShared.string(forKey: "koe_language") ?? "ja-JP")
         speechRecognizer = SFSpeechRecognizer(locale: locale)
         loadHistory()
     }
@@ -95,10 +95,8 @@ final class RecordingManager: ObservableObject {
     }
 
     func startRecording() {
-        let audioSession = AVAudioSession.sharedInstance()
         do {
-            try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            try AudioSessionCoordinator.shared.acquire(.record)
         } catch {
             statusText = "オーディオエラー"
             return
@@ -395,6 +393,7 @@ final class RecordingManager: ObservableObject {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
         }
+        AudioSessionCoordinator.shared.release(.record)
         isRecording = false
         audioLevel = 0
 
@@ -426,7 +425,7 @@ final class RecordingManager: ObservableObject {
             // VoiceMemo保存用にサンプルを保持
             lastRecordedSamples = samples
 
-            let lang = UserDefaults.standard.string(forKey: "koe_language") ?? "ja-JP"
+            let lang = UserDefaults.koeShared.string(forKey: "koe_language") ?? "ja-JP"
             let whisperLang = lang == "auto" ? "auto" : (lang.components(separatedBy: "-").first ?? "en")
 
             WhisperContext.shared.transcribeBuffer(samples: samples, language: whisperLang) { [weak self] text in
@@ -451,6 +450,7 @@ final class RecordingManager: ObservableObject {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
         }
+        AudioSessionCoordinator.shared.release(.record)
         recognitionTask = nil
         recognitionRequest = nil
         isRecording = false
@@ -556,7 +556,7 @@ final class RecordingManager: ObservableObject {
 
     /// LLM後処理付きの認識結果ハンドラー
     private func handleRecognitionResultWithLLM(_ text: String) {
-        if UserDefaults.standard.bool(forKey: "koe_llm_enabled") {
+        if UserDefaults.koeShared.bool(forKey: "koe_llm_enabled") {
             statusText = "LLM修正中…"
             recognizedText = text
             postProcessWithLLM(text) { [weak self] processed in
@@ -611,12 +611,12 @@ final class RecordingManager: ObservableObject {
 
     private func saveHistory() {
         if let data = try? JSONEncoder().encode(history) {
-            UserDefaults.standard.set(data, forKey: "koe_history")
+            UserDefaults.koeShared.set(data, forKey: "koe_history")
         }
     }
 
     func loadHistory() {
-        if let data = UserDefaults.standard.data(forKey: "koe_history"),
+        if let data = UserDefaults.koeShared.data(forKey: "koe_history"),
            let items = try? JSONDecoder().decode([HistoryItem].self, from: data) {
             history = items
         }
@@ -629,7 +629,7 @@ final class RecordingManager: ObservableObject {
 
     func clearHistory() {
         history.removeAll()
-        UserDefaults.standard.removeObject(forKey: "koe_history")
+        UserDefaults.koeShared.removeObject(forKey: "koe_history")
     }
 
     func searchHistory(_ query: String) -> [HistoryItem] {
@@ -645,12 +645,12 @@ final class RecordingManager: ObservableObject {
 
     func addQuickPhrase(_ phrase: String) {
         quickPhrases.append(phrase)
-        UserDefaults.standard.set(quickPhrases, forKey: "koe_quick_phrases")
+        UserDefaults.koeShared.set(quickPhrases, forKey: "koe_quick_phrases")
     }
 
     func removeQuickPhrase(at offsets: IndexSet) {
         quickPhrases.remove(atOffsets: offsets)
-        UserDefaults.standard.set(quickPhrases, forKey: "koe_quick_phrases")
+        UserDefaults.koeShared.set(quickPhrases, forKey: "koe_quick_phrases")
     }
 
     // MARK: - LLM Post-Processing (chatweb.ai)
@@ -681,7 +681,7 @@ final class RecordingManager: ObservableObject {
     // MARK: - LLM Post-Processing (chatweb.ai)
 
     private func postProcessWithLLM(_ text: String, completion: @escaping (String) -> Void) {
-        let mode = UserDefaults.standard.string(forKey: "koe_llm_mode") ?? "correct"
+        let mode = UserDefaults.koeShared.string(forKey: "koe_llm_mode") ?? "correct"
         let instruction: String
         switch mode {
         case "email":

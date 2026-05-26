@@ -53,6 +53,7 @@ class WakeWordDetector: ObservableObject {
         isListening = false
         restartCount = 0
         teardown()
+        AudioSessionCoordinator.shared.release(.wakeWord)
     }
 
     // MARK: - Internal
@@ -65,11 +66,10 @@ class WakeWordDetector: ObservableObject {
 
         teardown()
 
-        // Audio session: playAndRecord allows wake word + other audio; measurement for low latency
-        let audioSession = AVAudioSession.sharedInstance()
+        // Route the wake-word intent through the coordinator so we don't clobber
+        // other audio engines (RecordingManager / SoundMemory) that may be active.
         do {
-            try audioSession.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker])
-            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+            try AudioSessionCoordinator.shared.acquire(.wakeWord)
         } catch {
             print("[WakeWord] Audio session error: \(error)")
             return

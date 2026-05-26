@@ -18,6 +18,35 @@ jobs:
         run: |
           brew install whisper-cpp llama.cpp
 
+      # Import the "Developer ID Application" certificate into a temporary
+      # keychain so build.sh signs with the real identity (not ad-hoc) and the
+      # notarytool submit in build-dmg.sh / build-pkg.sh can succeed. Ad-hoc
+      # signed apps are rejected by notarization, so without this step the 3
+      # notarization secrets alone would NOT remove the Gatekeeper warning.
+      # Gracefully skips (ad-hoc fallback) when the cert secret is absent.
+      - name: Import Developer ID certificate
+        env:
+          DEVELOPER_ID_CERT_BASE64: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
+          DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}
+        run: |
+          if [ -z "$DEVELOPER_ID_CERT_BASE64" ]; then
+            echo "::warning::DEVELOPER_ID_CERT_BASE64 not set — skipping cert import; build will use ad-hoc signing and will NOT be notarizable."
+            exit 0
+          fi
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/developer_id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
+          echo -n "$DEVELOPER_ID_CERT_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$DEVELOPER_ID_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed s/\"//g)
+          echo "Imported signing identities:"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
       - name: Build DMG
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}

@@ -27,6 +27,8 @@ VIAddVersionKey "LegalCopyright" "Copyright 2026 Yuki Hamada"
 ; Pages
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
+; W-05: show components page so users can opt out of auto-start on login.
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 
@@ -39,7 +41,8 @@ VIAddVersionKey "LegalCopyright" "Copyright 2026 Yuki Hamada"
 !insertmacro MUI_LANGUAGE "English"
 
 ; ── Install Section ──
-Section "Install"
+Section "-Core" SecCore
+    SectionIn RO
     SetOutPath "$INSTDIR"
 
     ; Main binary
@@ -59,9 +62,6 @@ Section "Install"
     ; Desktop shortcut
     CreateShortCut "$DESKTOP\Koe.lnk" "$INSTDIR\koe.exe"
 
-    ; Auto-start (registry)
-    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Koe" '"$INSTDIR\koe.exe"'
-
     ; Add/Remove Programs entry
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Koe" "DisplayName" "Koe — Voice Input"
     WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Koe" "UninstallString" '"$INSTDIR\Uninstall.exe"'
@@ -72,6 +72,20 @@ Section "Install"
     ; Install dir in registry
     WriteRegStr HKLM "Software\Koe" "InstallDir" "$INSTDIR"
 SectionEnd
+
+; W-05: auto-start is now an opt-in component (defaulted ON to preserve the
+; previous UX — users can untick it on the Components page).
+Section "Start Koe on login" SecAutoStart
+    WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Koe" '"$INSTDIR\koe.exe"'
+SectionEnd
+
+; Section descriptions shown on the Components page.
+LangString DESC_SecAutoStart ${LANG_ENGLISH} "Launch Koe automatically when you sign in to Windows."
+LangString DESC_SecAutoStart ${LANG_JAPANESE} "Windows サインイン時に Koe を自動起動します。"
+
+!insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
+    !insertmacro MUI_DESCRIPTION_TEXT ${SecAutoStart} $(DESC_SecAutoStart)
+!insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 ; ── Uninstall Section ──
 Section "Uninstall"

@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import CryptoKit
 
 /// 利用可能なモデル定義
 struct WhisperModel {
@@ -12,11 +13,15 @@ struct WhisperModel {
     let isDefault: Bool
     /// 対応言語コード（空=多言語対応）。"ja", "zh", "ko" などの2文字コード。
     let targetLanguages: [String]
+    /// 期待される SHA256 (16進小文字)。nil なら検証スキップ。
+    /// TODO: HuggingFace の各 ggml リリースから公式ハッシュを取得して埋める。
+    let expectedSHA256: String?
 
-    init(id: String, name: String, description: String, fileName: String, url: String, sizeMB: Int, isDefault: Bool, targetLanguages: [String] = []) {
+    init(id: String, name: String, description: String, fileName: String, url: String, sizeMB: Int, isDefault: Bool, targetLanguages: [String] = [], expectedSHA256: String? = nil) {
         self.id = id; self.name = name; self.description = description
         self.fileName = fileName; self.url = url; self.sizeMB = sizeMB
         self.isDefault = isDefault; self.targetLanguages = targetLanguages
+        self.expectedSHA256 = expectedSHA256
     }
 
     /// 後方互換: isJapaneseOnly
@@ -265,6 +270,21 @@ class ModelDownloader {
                 do {
                     try? FileManager.default.removeItem(at: dest)
                     try FileManager.default.moveItem(at: tempURL, to: dest)
+
+                    if let expected = model.expectedSHA256?.lowercased() {
+                        let actual = (try? Self.sha256Hex(of: dest)) ?? ""
+                        if actual != expected {
+                            klog("ModelDownloader: SHA256 mismatch expected=\(expected) actual=\(actual)")
+                            try? FileManager.default.removeItem(at: dest)
+                            self.showError("Model integrity check failed. Expected SHA256 \(expected) but got \(actual). File deleted.")
+                            completion(false)
+                            return
+                        }
+                        klog("ModelDownloader: SHA256 verified \(actual)")
+                    } else {
+                        klog("ModelDownloader: no expectedSHA256, skipping verification for \(model.id)")
+                    }
+
                     klog("ModelDownloader: saved to \(dest.path)")
                     self.selectModel(model)
                     completion(true)
@@ -339,6 +359,19 @@ class ModelDownloader {
         progressWindow = nil
         progressIndicator = nil
         progressLabel = nil
+    }
+
+    /// 大容量 (1.5GB+) でも RAM を爆発させないよう 1MB ずつ読みながら SHA256 を計算する。
+    static func sha256Hex(of url: URL) throws -> String {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while true {
+            let chunk = handle.readData(ofLength: 1 << 20)
+            if chunk.isEmpty { break }
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     private func showError(_ message: String) {

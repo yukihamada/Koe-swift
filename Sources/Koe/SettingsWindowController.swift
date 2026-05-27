@@ -527,8 +527,16 @@ struct GeneralTab: View {
                 Text("クラウドへの音声送信を一切行いません / Never send audio to the cloud")
                     .font(.system(size: 10)).foregroundColor(.secondary)
                 if settings.offlineModeEnabled {
-                    Text("ローカル音声認識・ローカル LLM のみ使用されます")
-                        .font(.system(size: 10)).foregroundColor(Lux.gold)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("✅ クラウドへの送信は一切ブロックされます")
+                            .font(.system(size: 10, weight: .semibold)).foregroundColor(Lux.gold)
+                        Text("• 音声認識: ローカル whisper.cpp のみ")
+                            .font(.system(size: 10)).foregroundColor(Lux.gold)
+                        Text("• LLM: ローカル llama.cpp のみ（クラウド API は無効化）")
+                            .font(.system(size: 10)).foregroundColor(Lux.gold)
+                        Text("• テレメトリ / クラッシュレポート送信なし")
+                            .font(.system(size: 10)).foregroundColor(Lux.gold)
+                    }
                 }
             } header: {
                 Label("プライバシー", systemImage: "lock.shield")
@@ -796,7 +804,19 @@ struct AudioArchiveSection: View {
     private func confirmEnableArchive() -> Bool {
         let alert = NSAlert()
         alert.messageText = "音声アーカイブを有効化しますか？"
-        alert.informativeText = "録音音声をローカルに蓄積します。ディスク容量が継続的に増え続けます。これはあなたのプライバシーに関わるデータです。本当に有効化しますか？\n\n保存先: \(settings.audioArchiveResolvedPath)"
+        alert.informativeText = """
+        録音音声をローカルに蓄積します。
+
+        ⚠️ これは取材源、会議内容、個人情報等、あなたのプライバシーに関わるデータです:
+        • ディスク内に平文 WAV として保存されます（暗号化なし）
+        • Time Machine / iCloud Drive / Dropbox 等の自動バックアップ対象になる可能性があります
+        • 同じ Mac の他ユーザーや、フルディスクアクセス権を持つアプリから読まれる可能性があります
+        • ディスク容量が継続的に増え続けます
+
+        保存先: \(settings.audioArchiveResolvedPath)
+
+        本当に有効化しますか？
+        """
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "有効化")

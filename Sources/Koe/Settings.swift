@@ -641,8 +641,8 @@ class AppSettings: ObservableObject {
         commandModeEnabled = ud.object(forKey: "commandModeEnabled") as? Bool ?? true  // デフォルトON
         showNoiseLevel = ud.object(forKey: "showNoiseLevel") as? Bool ?? true  // デフォルトON
         duckingVolume = ud.object(forKey: "duckingVolume") as? Int ?? 5  // デフォルト5%
-        duckingMode = ud.string(forKey: "duckingMode") ?? "manual"  // デフォルト manual（後方互換）
-        offlineModeEnabled = ud.object(forKey: "offlineModeEnabled") as? Bool ?? false  // デフォルトOFF
+        duckingMode = ud.string(forKey: "duckingMode") ?? "off"  // デフォルト off（共有スピーカー MTG での誤検知防止 / R1 privacy）
+        offlineModeEnabled = ud.object(forKey: "offlineModeEnabled") as? Bool ?? true  // デフォルトON（プライバシーファースト / R1 privacy）
         audioInputDeviceUID = ud.string(forKey: "audioInputDeviceUID") ?? ""  // 空 = システムデフォルト
         // 音声アーカイブ系（プライバシー配慮でデフォルト OFF）
         audioArchiveEnabled  = ud.object(forKey: "audioArchiveEnabled") as? Bool ?? false

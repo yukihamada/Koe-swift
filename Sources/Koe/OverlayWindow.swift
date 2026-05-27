@@ -305,8 +305,21 @@ struct OverlayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(.opacity)
         } else if model.state == .recording {
-            WaveformView(levels: model.levelHistory, accentColor: model.isTranslateMode ? blueAcc : recRed)
-                .frame(maxWidth: .infinity, maxHeight: 28)
+            // 配信モード時は waveform を隠す (P3 指摘: OBS 配信ソースとして "うるさい")
+            if !model.isLargeTextMode {
+                WaveformView(levels: model.levelHistory, accentColor: model.isTranslateMode ? blueAcc : recRed)
+                    .frame(maxWidth: .infinity, maxHeight: 28)
+            } else {
+                // large mode は単純な録音中インジケータだけにする
+                HStack(spacing: 8) {
+                    Circle().fill(recRed).frame(width: 10, height: 10)
+                    Text("録音中")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+                .padding(.leading, 24)
+            }
         } else {
             // Recognizing: show "認識中" label — streaming text appears in streamingRow below
             HStack(spacing: 6) {

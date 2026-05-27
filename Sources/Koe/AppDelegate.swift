@@ -610,6 +610,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Carbon Hot Key API でメインホットキーを登録（アクセシビリティ不要）
         registerCarbonHotKey(settings: settings)
 
+        // 起動 3 秒後に hotkey 衝突予測 alert (showHotkeyFailureAlert と被らないよう遅延)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.checkPreemptiveHotkeyConflict()
+        }
+
         // Global monitor は補助機能用 (IME切替, modifier release) — アクセシビリティ必要
         // Space/ESC は Carbon Hot Key で処理するため monitor がなくても基本機能は動作
         if AXIsProcessTrusted() {
@@ -817,6 +822,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 起動後 1 回だけ Carbon hotkey 失敗 alert を出すためのガード
     private var didShowFirstHotkeyAlert = false
+
+    /// P1 指摘 (R3): ⌥⌘V がよく衝突するアプリの bundleID リスト。
+    /// 起動時にこれらがフォアグラウンドにいたら事前警告 NSAlert を出す。
+    private static let knownOptCmdVConflicts: [String: String] = [
+        "com.mitchellh.ghostty": "Ghostty",
+        "com.googlecode.iterm2": "iTerm2",
+        "com.apple.Terminal": "ターミナル",
+        "com.hnc.Discord": "Discord",
+        "com.tinyspeck.slackmacgap": "Slack",
+        "com.apple.dt.Xcode": "Xcode",
+    ]
+
+    /// 起動時に⌥⌘V (またはユーザー設定の hotkey)がフォアグラウンド app で衝突予測されるか確認し、
+    /// 該当する場合だけ事前警告を出す。1 回だけ実行。
+    private var didCheckHotkeyConflictPreemptive = false
+    func checkPreemptiveHotkeyConflict() {
+        guard !didCheckHotkeyConflictPreemptive else { return }
+        didCheckHotkeyConflictPreemptive = true
+        // ⌥⌘V (NSEvent: option+command, keyCode=9) かどうか確認
+        let s = AppSettings.shared
+        let mods = NSEvent.ModifierFlags(rawValue: s.shortcutModifiers)
+        let isOptCmdV = (s.shortcutKeyCode == 9 && mods.contains(.command) && mods.contains(.option))
+        guard isOptCmdV else { return }
+        guard let bid = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              let name = Self.knownOptCmdVConflicts[bid] else { return }
+        let alert = NSAlert()
+        alert.messageText = "ホットキーが \(name) と衝突する可能性があります"
+        alert.informativeText = """
+        現在のショートカット ⌥⌘V は \(name) で別の機能 (典型的にはクリップボード貼付関連) に割り当てられていることが多いです。
+
+        Koe を \(name) で使うと、貼付操作と録音操作が混線する可能性があります。
+        Settings → General からショートカットを変更するか、Fn キー単独タップ (アクセシビリティ権限が必要) をお試しください。
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Settings を開く")
+        alert.addButton(withTitle: "このまま使う")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            openSettings()
+        }
+    }
 
     /// メイン・翻訳・⌃K・⌥⌘M・⌃⌥R のホットキー本体だけを登録。
     /// イベントハンドラは別途インストール済みであることを前提とする。

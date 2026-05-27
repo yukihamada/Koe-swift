@@ -584,7 +584,21 @@ struct GeneralTab: View {
                         .onChange(of: settings.fnKeyMode) { _ in
                             AppDelegate.shared?.reregisterHotkey()
                         }
+                        .accessibilityLabel(Text("Fn キーの動作モード"))
                     }
+                    // P4 指摘: 説明 2 行のみだったので詳細解説を追加
+                    Text(settings.fnKeyMode == "tap_toggle"
+                         ? "✦ Fn を**短く 1 回押して離す** → 録音開始 / もう 1 回タップ → 録音終了。0.6 秒以内のタップだけ反応するので、他のキーと組み合わせた使用には影響しません。"
+                         : "✦ Fn を**押している間だけ** 録音 (Push-to-Talk)。指を離した瞬間に文字起こし開始。短い発話のサクサク連発に最適。")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+                    Text(settings.fnKeyMode == "tap_toggle"
+                         ? "ヒント: Fn + 別キー (例: Fn+V) の通常用途には影響しません。"
+                         : "ヒント: 長押し中に他のキーを押すと record cancel されます。")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                        .italic()
                 }
                 if !axGranted {
                     Text("Fn キーの利用にはアクセシビリティ権限が必要です")

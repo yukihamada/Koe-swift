@@ -156,3 +156,48 @@ R1 で実装した改修 (合計 5 commits、~170 lines):
 4. **External connection gating in Offline Mode** — IPhoneBridge / Notion / chatweb.ai 系の URLSession 呼び出しに `AppSettings.shared.offlineModeEnabled` チェックを追加 (P2 critical)
 5. **OverlayView SwiftUI body 大文字対応** — `model.isLargeTextMode` を読んで font サイズを 22pt に切替、waveform を隠す (P3/P5 high)
 
+
+---
+
+## ROUND 3（😐 中立・厳しめ）
+
+### P1 田中健太郎の声 😐
+> "辞書 pre-seed は妥当。`async/await` 正しく出るようになった。でも自分の使う `tRPC` `Zustand` `useSWR` が無い → 自分で追加するの面倒。Settings に dictionary 編集 UI 欲しい。"
+
+- **【high 継続】 Settings IA / Fn 探索性** （変化なし）
+- **【medium 新規】 techTermDictionary を Settings UI で編集可能に**
+- **【medium 新規】 hotkey conflict の事前チェック (起動時に警告)**
+
+### P2 佐藤ゆかりの声 😐
+> "Slack/Notion を Offline で blocked にする log が出るのは確認できた。法務的に許容できるラインに乗った。次は議事録モードの 60分上限 + 自動章立て。"
+
+- **【high 継続】 議事録モード 60 分連続 / 自動章立て** （未実装）
+- **【medium 新規】 Offline Mode 中の log を Settings に表示する panel が欲しい（証跡として）**
+
+### P3 山田玲子の声 😐
+> "large text mode で streaming text が 22pt bold になった。OBS 配信としては及第点。でも recording 中の waveform が残ってると配信としてうるさい。large mode で waveform を隠して。"
+
+- **【high 残】 large text mode 時の waveform 非表示**
+- **【medium 新規】 アーカイブ容量 stats を Settings 内で grow チャート表示**
+
+### P4 木村健司の声 😐
+> "PersonaBar の VoiceOver 読み上げ確認した、`プリセット: ビジネス` まで読まれる。良い。残るは Fn key mode の説明拡充と Wake Word プリセット。"
+
+- **【high 残】 Fn キーモード 動作説明 + プレビュー** （Settings UI に簡潔な解説テキスト追加で対応可）
+- **【high 残】 Wake Word "ヘイこえ" プリセット**
+- **【medium 新規】 Settings → Automation tab を direct で開ける menu bar shortcut**
+
+### P5 鈴木拓海の声 😐
+> "tech term dict は基本英語 → カタカナ変換だけど、自分の英語発話が日本語訳されちゃう問題は未解決。AutoDetect の言語切替ロジックを segment-level に。"
+
+- **【high 残】 Auto Detect の segment-level 言語切替（whisper の language token を抽出して mid-stream で切替）**
+- **【high 残】 マイク per-device level meter**
+- **【medium 新規】 録音中の clipping 警告**: peak が 0.95 超えで「歪んでます」alert
+
+### → R3 改修内容
+
+R3 で実装する 3 件:
+
+1. **Hotkey conflict pre-check** (P1) — 起動時に既知の衝突アプリ (Ghostty, iTerm, Discord, Slack 等) のフォアグラウンド検出 → 警告 NSAlert
+2. **Fn キーモード Settings UI 拡充** (P4) — `tap_toggle` / `hold_ptt` の説明テキストをモード切替時に詳細に表示
+3. **OverlayView large text 時の waveform 非表示** (P3) — Recording 状態でも isLargeTextMode==true なら waveform 非表示、streaming text のみ

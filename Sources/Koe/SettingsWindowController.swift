@@ -670,9 +670,37 @@ struct GeneralTab: View {
 
 struct VoiceTab: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var inputDevices: [AudioDeviceEnumerator.InputDevice] = []
+    @State private var deviceObserverRegistered = false
 
     var body: some View {
         Form {
+            Section {
+                Picker("入力デバイス", selection: $settings.audioInputDeviceUID) {
+                    Text("システムデフォルト").tag("")
+                    ForEach(inputDevices, id: \.uid) { dev in
+                        Text(dev.name).tag(dev.uid)
+                    }
+                }
+                if !settings.audioInputDeviceUID.isEmpty
+                    && !inputDevices.contains(where: { $0.uid == settings.audioInputDeviceUID }) {
+                    Text("選択中のデバイスが見つかりません（切断中？）")
+                        .font(.system(size: 10)).foregroundColor(.orange)
+                }
+            } header: {
+                Label("マイク", systemImage: "mic")
+                    .foregroundColor(Lux.gold)
+            }
+            .onAppear {
+                inputDevices = AudioDeviceEnumerator.listInputDevices()
+                if !deviceObserverRegistered {
+                    deviceObserverRegistered = true
+                    AudioDeviceEnumerator.observeDeviceChanges {
+                        inputDevices = AudioDeviceEnumerator.listInputDevices()
+                    }
+                }
+            }
+
             Section {
                 // オフラインモード時はクラウド系エンジンを除外
                 let availableEngines: [RecognitionEngine] = settings.offlineModeEnabled

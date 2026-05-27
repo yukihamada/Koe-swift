@@ -448,6 +448,9 @@ class AppSettings: ObservableObject {
         AppDelegate.shared?.reloadSpeechEngine()
     }}
 
+    // 入力デバイス (空文字 = システムデフォルト、それ以外は CoreAudio の UID)
+    @Published var audioInputDeviceUID: String { didSet { ud.set(audioInputDeviceUID, forKey: "audioInputDeviceUID") } }
+
     private let ud = UserDefaults.standard
 
     // MARK: Computed
@@ -619,6 +622,7 @@ class AppSettings: ObservableObject {
         duckingVolume = ud.object(forKey: "duckingVolume") as? Int ?? 5  // デフォルト5%
         duckingMode = ud.string(forKey: "duckingMode") ?? "manual"  // デフォルト manual（後方互換）
         offlineModeEnabled = ud.object(forKey: "offlineModeEnabled") as? Bool ?? false  // デフォルトOFF
+        audioInputDeviceUID = ud.string(forKey: "audioInputDeviceUID") ?? ""  // 空 = システムデフォルト
         rebuildExpansionMap()
     }
 

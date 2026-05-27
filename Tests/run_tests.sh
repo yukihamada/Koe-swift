@@ -6,11 +6,28 @@ cd "$(dirname "$0")/.."
 echo "=== Koe Mac Tests ==="
 
 BREW_PREFIX=$(brew --prefix 2>/dev/null || echo "/opt/homebrew")
-WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/lib"
-[ ! -f "$WHISPER_LIB/libwhisper.dylib" ] && WHISPER_LIB="$BREW_PREFIX/lib"
-GGML_LIB="$WHISPER_LIB"
-LLAMA_LIB="$BREW_PREFIX/lib"
-[ ! -f "$LLAMA_LIB/libllama.dylib" ] && LLAMA_LIB="$BREW_PREFIX/opt/llama.cpp/lib"
+
+# Prefer source-builds at /tmp/{whisper,llama}.cpp (required on arm64 Macs that only
+# have x86_64 Homebrew, where brew dylibs cannot link into an arm64 target).
+WHISPER_SOURCE_BUILD="/tmp/whisper.cpp/build"
+if [ -f "$WHISPER_SOURCE_BUILD/src/libwhisper.dylib" ] && [ -f "$WHISPER_SOURCE_BUILD/ggml/src/libggml.dylib" ]; then
+    WHISPER_LIB="$WHISPER_SOURCE_BUILD/src"
+    GGML_LIB="$WHISPER_SOURCE_BUILD/ggml/src"
+else
+    WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/lib"
+    [ ! -f "$WHISPER_LIB/libwhisper.dylib" ] && WHISPER_LIB="$BREW_PREFIX/lib"
+    GGML_LIB="$WHISPER_LIB"
+fi
+
+LLAMA_SOURCE_BUILD="/tmp/llama.cpp/build"
+if [ -f "$LLAMA_SOURCE_BUILD/bin/libllama.dylib" ]; then
+    LLAMA_LIB="$LLAMA_SOURCE_BUILD/bin"
+elif [ -f "$LLAMA_SOURCE_BUILD/src/libllama.dylib" ]; then
+    LLAMA_LIB="$LLAMA_SOURCE_BUILD/src"
+else
+    LLAMA_LIB="$BREW_PREFIX/lib"
+    [ ! -f "$LLAMA_LIB/libllama.dylib" ] && LLAMA_LIB="$BREW_PREFIX/opt/llama.cpp/lib"
+fi
 
 ARCH=$(uname -m)
 SWIFT_TARGET="${ARCH}-apple-macos13.0"
@@ -46,6 +63,7 @@ swiftc -parse-as-library $SOURCES Tests/KoeTests.swift /tmp/koe_test_main.swift 
     -framework Vision -framework Carbon \
     -target "$SWIFT_TARGET" -O -D DEBUG \
     -Xlinker -rpath -Xlinker "$WHISPER_LIB" \
+    -Xlinker -rpath -Xlinker "$GGML_LIB" \
     -Xlinker -rpath -Xlinker "$LLAMA_LIB" \
     -o build-macos/KoeTests 2>&1
 

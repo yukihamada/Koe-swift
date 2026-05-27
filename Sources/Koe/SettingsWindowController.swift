@@ -553,6 +553,34 @@ struct GeneralTab: View {
                 }
 
                 Toggle(L10n.toggleCmdIMESwitch, isOn: $settings.cmdIMESwitchEnabled)
+
+                // Fn キーで録音 (CGEventTap 経由 — アクセシビリティ必須)
+                let axGranted = AXIsProcessTrusted()
+                Toggle("Fn キーで録音", isOn: $settings.fnKeyEnabled)
+                    .disabled(!axGranted)
+                    .onChange(of: settings.fnKeyEnabled) { _ in
+                        AppDelegate.shared?.reregisterHotkey()
+                    }
+                if settings.fnKeyEnabled {
+                    HStack {
+                        Text("Fn キーの動作")
+                        Spacer()
+                        Picker("", selection: $settings.fnKeyMode) {
+                            Text("タップでトグル").tag("tap_toggle")
+                            Text("押している間だけ").tag("hold_ptt")
+                        }
+                        .frame(width: 200)
+                        .onChange(of: settings.fnKeyMode) { _ in
+                            AppDelegate.shared?.reregisterHotkey()
+                        }
+                    }
+                }
+                if !axGranted {
+                    Text("Fn キーの利用にはアクセシビリティ権限が必要です")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                }
+
                 Toggle(L10n.toggleShowNoiseLevel, isOn: $settings.showNoiseLevel)
                 Toggle("メニューバーにマイクアイコンを表示", isOn: $settings.menuBarIconVisible)
 

@@ -621,8 +621,73 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             klog("Skipping global event monitor (no accessibility)")
         }
+
+        // Fn キー監視 (Carbon が扱えないため CGEventTap で別途処理)
+        configureFnKeyMonitor(settings: settings)
+
         rebuildMenu()
         klog("Hotkey registered: \(settings.shortcutDisplayString)")
+    }
+
+    /// Fn キー監視の有効化/設定更新。設定 OFF または AX なしなら停止する。
+    private func configureFnKeyMonitor(settings: AppSettings) {
+        let monitor = FnKeyMonitor.shared
+
+        // Fn+letter コンボ対象 (メインショートカットが .function を含む場合のみ)
+        let comboKey: Int? = settings.shortcutUsesFn ? settings.shortcutKeyCode : nil
+        let needTap = settings.fnKeyEnabled || comboKey != nil
+
+        guard needTap else {
+            monitor.stop()
+            return
+        }
+
+        monitor.reconfigure(mode: settings.fnKeyMode, comboKeyCode: comboKey)
+
+        // 単独タップ → 録音トグル (or 議事録切替を伴う処理は Carbon パスと同じ挙動)
+        monitor.onFnTap = { [weak self] in
+            guard let self else { return }
+            guard settings.fnKeyEnabled else { return }
+            self.fnTriggerToggle()
+        }
+        // hold_ptt: Fn 押下開始 → 録音開始
+        monitor.onFnHoldStart = { [weak self] in
+            guard let self else { return }
+            guard settings.fnKeyEnabled, !self.isRecording else { return }
+            self.isMeetingAutoRecording = false
+            self.mainKeyHeld = true
+            self.startRecording()
+        }
+        // hold_ptt: Fn 解放 → 認識して停止
+        monitor.onFnHoldEnd = { [weak self] in
+            guard let self else { return }
+            guard settings.fnKeyEnabled, self.isRecording else { return }
+            self.mainKeyHeld = false
+            self.stopAndRecognize()
+        }
+        // Fn+letter コンボ → メインホットキー扱いでトグル
+        monitor.onFnComboShortcut = { [weak self] in
+            self?.fnTriggerToggle()
+        }
+
+        monitor.start()
+    }
+
+    /// Fn 経由で発火する録音トグル (Carbon ハンドラの main hotkey 分岐と同等の挙動)。
+    fileprivate func fnTriggerToggle() {
+        let settings = AppSettings.shared
+        let isToggle = settings.recordingMode == .toggle
+        if isRecording && isMeetingAutoRecording && MeetingMode.shared.isActive {
+            cancelRecording()
+            isMeetingAutoRecording = false
+            startRecording()
+        } else if isToggle {
+            isRecording ? stopAndRecognize() : startRecording()
+        } else if !isRecording {
+            isMeetingAutoRecording = false
+            mainKeyHeld = true
+            startRecording()
+        }
     }
 
     // MARK: - Carbon Hot Key (アクセシビリティ不要)
@@ -765,11 +830,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // メインホットキー登録（既存があれば事前に解除してリーク防止）
         if let ref = carbonHotKeyRef { UnregisterEventHotKey(ref); carbonHotKeyRef = nil }
-        let mainMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers))
-        var mainID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 1) // "Koe\0"
-        let mainStatus = RegisterEventHotKey(UInt32(settings.shortcutKeyCode), mainMods,
-                                              mainID, GetApplicationEventTarget(), 0, &carbonHotKeyRef)
-        klog("Carbon hotkey main: status=\(mainStatus)")
+        // .function を含むショートカットは Carbon で扱えない (修飾子なしで暴発するため登録しない)
+        // → FnKeyMonitor (CGEventTap) 側で発火する
+        if !settings.shortcutUsesFn {
+            let mainMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers))
+            var mainID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 1) // "Koe\0"
+            let mainStatus = RegisterEventHotKey(UInt32(settings.shortcutKeyCode), mainMods,
+                                                  mainID, GetApplicationEventTarget(), 0, &carbonHotKeyRef)
+            klog("Carbon hotkey main: status=\(mainStatus)")
+        } else {
+            klog("Carbon hotkey main: skipped (uses Fn — handled by FnKeyMonitor)")
+        }
 
         // 翻訳ホットキー登録（同上）
         if let ref = carbonTranslateHotKeyRef { UnregisterEventHotKey(ref); carbonTranslateHotKeyRef = nil }
@@ -887,6 +958,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard event.keyCode == targetCode, !event.isARepeat else { return }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags == targetMods else { return }
+            // .function 入りショートカットは FnKeyMonitor で発火するため、ここでは無視 (二重発火防止)
+            if targetMods.contains(.function) { return }
             if isToggle {
                 DispatchQueue.main.async { self.isRecording ? self.stopAndRecognize() : self.startRecording() }
             } else {

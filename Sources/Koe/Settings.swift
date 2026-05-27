@@ -436,9 +436,6 @@ class AppSettings: ObservableObject {
     @Published var duckingVolume: Int { didSet { ud.set(duckingVolume, forKey: "duckingVolume") } }
 
     // 音量ダッキングのモード ("off" | "manual" | "auto")
-    // off    : 常にダッキングしない
-    // manual : duckingVolume の値まで常にダッキング（従来動作・デフォルト）
-    // auto   : 出力音量が 0 より大きい時のみダッキング（音が鳴っていない時は何もしない）
     @Published var duckingMode: String { didSet { ud.set(duckingMode, forKey: "duckingMode") } }
 
     // オフラインモード (クラウド送信を一切行わない)
@@ -453,14 +450,19 @@ class AppSettings: ObservableObject {
 
     // 音声アーカイブ: 録音した WAV をローカルに蓄積するかどうか（プライバシー配慮でデフォルト OFF）
     @Published var audioArchiveEnabled: Bool { didSet { ud.set(audioArchiveEnabled, forKey: "audioArchiveEnabled") } }
-    // 音声アーカイブの保存先パス（空文字なら既定 ~/Library/Application Support/Koe/AudioArchive/ を使用）
     @Published var audioArchivePath: String { didSet { ud.set(audioArchivePath, forKey: "audioArchivePath") } }
-    // 容量上限（GB）— これを超えた場合、古いものから削除
     @Published var audioArchiveMaxGB: Double { didSet { ud.set(audioArchiveMaxGB, forKey: "audioArchiveMaxGB") } }
-    // 日数上限 — これより古いファイルは自動削除
     @Published var audioArchiveMaxDays: Int { didSet { ud.set(audioArchiveMaxDays, forKey: "audioArchiveMaxDays") } }
-    // 自動 prune (false の場合は閾値超過しても削除しない、UI 表示のみ)
     @Published var audioArchiveAutoPrune: Bool { didSet { ud.set(audioArchiveAutoPrune, forKey: "audioArchiveAutoPrune") } }
+
+    // Fn キー対応: 単独タップ / 押している間だけ録音
+    @Published var fnKeyEnabled: Bool { didSet { ud.set(fnKeyEnabled, forKey: "fnKeyEnabled") } }
+    @Published var fnKeyMode: String  { didSet { ud.set(fnKeyMode, forKey: "fnKeyMode") } }
+
+    // メインショートカットが .function modifier を含むか (Carbon 不可 → CGEventTap で処理)
+    var shortcutUsesFn: Bool {
+        NSEvent.ModifierFlags(rawValue: shortcutModifiers).contains(.function)
+    }
 
     /// 音声アーカイブの実効パス（未設定なら既定パスを返す）
     var audioArchiveResolvedPath: String {
@@ -476,6 +478,7 @@ class AppSettings: ObservableObject {
     var shortcutDisplayString: String {
         var parts: [String] = []
         let mods = NSEvent.ModifierFlags(rawValue: shortcutModifiers)
+        if mods.contains(.function) { parts.append("fn") }
         if mods.contains(.control) { parts.append("⌃") }
         if mods.contains(.option)  { parts.append("⌥") }
         if mods.contains(.shift)   { parts.append("⇧") }
@@ -647,6 +650,9 @@ class AppSettings: ObservableObject {
         audioArchiveMaxGB    = ud.object(forKey: "audioArchiveMaxGB") as? Double ?? 10.0
         audioArchiveMaxDays  = ud.object(forKey: "audioArchiveMaxDays") as? Int ?? 30
         audioArchiveAutoPrune = ud.object(forKey: "audioArchiveAutoPrune") as? Bool ?? true
+        // Fn キー設定（デフォルトOFF / tap_toggle）
+        fnKeyEnabled = ud.object(forKey: "fnKeyEnabled") as? Bool ?? false
+        fnKeyMode    = ud.string(forKey: "fnKeyMode") ?? "tap_toggle"
         rebuildExpansionMap()
     }
 

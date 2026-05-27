@@ -420,10 +420,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let s = AppSettings.shared
         let badge = s.recognitionEngine.isLocal ? "LOCAL" : "CLOUD"
+        let offlinePrefix = s.offlineModeEnabled ? "🔒 " : ""
 
-        // ステータスヘッダー: ショートカット + モード + エンジン
+        // ステータスヘッダー: ショートカット + モード + エンジン (+ オフライン表示)
         let modeIcon = s.recordingMode == .toggle ? "トグル" : "ホールド"
-        let header = NSMenuItem(title: "\(s.languageFlag)  \(s.shortcutDisplayString) [\(modeIcon)]  \(badge)", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "\(offlinePrefix)\(s.languageFlag)  \(s.shortcutDisplayString) [\(modeIcon)]  \(badge)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         // Quickstart hint for new users
@@ -522,6 +523,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 item.button?.image = img
             }
             item.button?.contentTintColor = recording ? .systemRed : nil
+            // オフラインモード ON 時は鍵バッジを表示
+            if AppSettings.shared.offlineModeEnabled {
+                item.button?.title = "🔒"
+                item.button?.imagePosition = .imageLeading
+            } else {
+                item.button?.title = ""
+            }
         }
         if AppSettings.shared.floatingButtonEnabled {
             FloatingButton.shared.setRecording(recording)
@@ -1974,6 +1982,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func reloadSpeechEngine() {
         speech = SpeechEngine()
         rebuildMenu()
+        // オフラインモード等の状態をステータスバーアイコンに反映
+        setIcon(recording: isRecording)
 
         // 言語変更時にモデルを自動切替
         let rawLang = AppSettings.shared.language

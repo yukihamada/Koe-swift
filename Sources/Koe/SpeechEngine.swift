@@ -20,7 +20,16 @@ class SpeechEngine {
 
     func recognize(url: URL, prompt: String = "", languageOverride: String = "", onDone: @escaping (String) -> Void) {
         klog("recognize: \(url.lastPathComponent) prompt='\(prompt)' lang='\(languageOverride)'")
-        switch AppSettings.shared.recognitionEngine {
+        // オフラインモード中はクラウド系エンジンを Apple オンデバイスへフォールバック
+        let engine: RecognitionEngine = {
+            let cur = AppSettings.shared.recognitionEngine
+            if AppSettings.shared.offlineModeEnabled && !cur.isLocal {
+                klog("Offline mode: redirecting \(cur.rawValue) -> appleOnDevice")
+                return .appleOnDevice
+            }
+            return cur
+        }()
+        switch engine {
         case .whisperCpp:
             recognizeWhisperCpp(url: url, prompt: prompt, languageOverride: languageOverride, onDone: onDone)
         case .appleCloud, .appleOnDevice:

@@ -515,6 +515,26 @@ struct GeneralTab: View {
                     .foregroundColor(Lux.gold)
             }
 
+            // オフラインモード: クラウドへの音声送信を一切行わない
+            Section {
+                Toggle(isOn: $settings.offlineModeEnabled) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundColor(settings.offlineModeEnabled ? Lux.gold : .secondary)
+                        Text("オフラインモード")
+                    }
+                }
+                Text("クラウドへの音声送信を一切行いません / Never send audio to the cloud")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+                if settings.offlineModeEnabled {
+                    Text("ローカル音声認識・ローカル LLM のみ使用されます")
+                        .font(.system(size: 10)).foregroundColor(Lux.gold)
+                }
+            } header: {
+                Label("プライバシー", systemImage: "lock.shield")
+                    .foregroundColor(Lux.gold)
+            }
+
             Section {
                 Toggle(L10n.toggleLaunchAtLogin, isOn: $settings.launchAtLogin)
                 Toggle(L10n.toggleCopyToClipboard, isOn: $settings.autoCopyToClipboard)
@@ -654,13 +674,21 @@ struct VoiceTab: View {
     var body: some View {
         Form {
             Section {
+                // オフラインモード時はクラウド系エンジンを除外
+                let availableEngines: [RecognitionEngine] = settings.offlineModeEnabled
+                    ? RecognitionEngine.allCases.filter { $0.isLocal }
+                    : RecognitionEngine.allCases
                 Picker(L10n.labelRecognitionEngine, selection: $settings.recognitionEngine) {
-                    ForEach(RecognitionEngine.allCases, id: \.self) { engine in
+                    ForEach(availableEngines, id: \.self) { engine in
                         Text(engine.displayName).tag(engine)
                     }
                 }
                 .onChange(of: settings.recognitionEngine) { _ in
                     AppDelegate.shared?.reloadSpeechEngine()
+                }
+                if settings.offlineModeEnabled {
+                    Text("オフラインモード中: ローカルエンジンのみ選択可能")
+                        .font(.system(size: 10)).foregroundColor(.secondary)
                 }
 
                 if settings.recognitionEngine == .whisperCpp {
@@ -1115,12 +1143,21 @@ struct AITab: View {
                         }
                     }
 
-                    Picker(L10n.labelProcessingEngine, selection: $s.llmUseLocal) {
-                        Text(L10n.engineLocal).tag(true)
-                        Text(L10n.engineCloud).tag(false)
+                    // オフラインモード中はクラウド LLM を選択不可（ローカル固定）
+                    if !s.offlineModeEnabled {
+                        Picker(L10n.labelProcessingEngine, selection: $s.llmUseLocal) {
+                            Text(L10n.engineLocal).tag(true)
+                            Text(L10n.engineCloud).tag(false)
+                        }
+                    } else {
+                        HStack {
+                            Image(systemName: "lock.fill").foregroundColor(.secondary)
+                            Text("オフラインモード: ローカル LLM 固定")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                        }
                     }
 
-                    if s.llmUseLocal {
+                    if s.llmUseLocal || s.offlineModeEnabled {
                         LocalLLMSettingsView()
                     } else {
                         Picker(L10n.labelProvider, selection: $s.llmProvider) {

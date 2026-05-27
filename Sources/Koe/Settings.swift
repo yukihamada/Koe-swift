@@ -441,6 +441,13 @@ class AppSettings: ObservableObject {
     // auto   : 出力音量が 0 より大きい時のみダッキング（音が鳴っていない時は何もしない）
     @Published var duckingMode: String { didSet { ud.set(duckingMode, forKey: "duckingMode") } }
 
+    // オフラインモード (クラウド送信を一切行わない)
+    @Published var offlineModeEnabled: Bool { didSet {
+        ud.set(offlineModeEnabled, forKey: "offlineModeEnabled")
+        if offlineModeEnabled { applyOfflineModeConstraints() }
+        AppDelegate.shared?.reloadSpeechEngine()
+    }}
+
     private let ud = UserDefaults.standard
 
     // MARK: Computed
@@ -611,7 +618,22 @@ class AppSettings: ObservableObject {
         showNoiseLevel = ud.object(forKey: "showNoiseLevel") as? Bool ?? true  // デフォルトON
         duckingVolume = ud.object(forKey: "duckingVolume") as? Int ?? 5  // デフォルト5%
         duckingMode = ud.string(forKey: "duckingMode") ?? "manual"  // デフォルト manual（後方互換）
+        offlineModeEnabled = ud.object(forKey: "offlineModeEnabled") as? Bool ?? false  // デフォルトOFF
         rebuildExpansionMap()
+    }
+
+    /// オフラインモード ON 時にクラウド系設定を強制ローカル化する
+    private func applyOfflineModeConstraints() {
+        // クラウド系の音声認識エンジンが選択されていればローカルへ切り替え
+        if !recognitionEngine.isLocal {
+            // whisper.cpp の準備があればそちらを優先（高精度・最速）、なければ Apple オンデバイス
+            let hasWhisperCpp = !whisperCppBinaryPath.isEmpty || !whisperCppModelPath.isEmpty
+            recognitionEngine = hasWhisperCpp ? .whisperCpp : .appleOnDevice
+        }
+        // LLM がクラウドプロバイダ経由ならローカル LLM 推論に固定
+        if llmEnabled && !llmUseLocal {
+            llmUseLocal = true
+        }
     }
 
     private static func defaultProfiles() -> [AppProfile] {

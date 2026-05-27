@@ -201,3 +201,40 @@ R3 で実装する 3 件:
 1. **Hotkey conflict pre-check** (P1) — 起動時に既知の衝突アプリ (Ghostty, iTerm, Discord, Slack 等) のフォアグラウンド検出 → 警告 NSAlert
 2. **Fn キーモード Settings UI 拡充** (P4) — `tap_toggle` / `hold_ptt` の説明テキストをモード切替時に詳細に表示
 3. **OverlayView large text 時の waveform 非表示** (P3) — Recording 状態でも isLargeTextMode==true なら waveform 非表示、streaming text のみ
+
+---
+
+## ROUND 4（🙂 まあまあ・建設的）
+
+### P1 田中健太郎の声 🙂
+> "Hotkey 事前警告は良い設計。Ghostty で起動したら即アラート出た。残りは techTerm を Settings から自分で追加できれば文句なし。"
+
+- **【medium 残】 techTermDictionary editor UI** — table で view/add/delete
+
+### P2 佐藤ゆかりの声 🙂
+> "Offline log は心強い。あと欲しいのは議事録モードの max-time soft warning だけ。30 分経ったら overlay にちょい hint 出してくれれば。"
+
+- **【medium 残】 議事録 30 分 soft warning** — overlay hint で続行確認
+
+### P3 山田玲子の声 🙂
+> "Large mode で waveform 消えた、配信 OK。あと残るは Time Machine 除外パスの誘導かな。デフォパスがまだ ~/Library/Application Support だから。"
+
+- **【medium 残】 archive デフォパス Time Machine 除外** — 既定パスを ~/Movies/Koe/AudioArchive 等に変更 (Time Machine デフォルト除外なし → 警告のみ)
+- **【low】 archive growth stats**
+
+### P4 木村健司の声 🙂
+> "Fn 説明が詳細になった。VoiceOver 90% 読まれるようになった。ここまで来れば及第点。残るは Wake Word の '作るのが面倒' 問題。"
+
+- **【high 残】 Wake Word プリセット** — 大改修必要、R5 へ持ち越し
+- **【medium 残】 Settings → Automation tab direct shortcut**
+
+### P5 鈴木拓海の声 🙂
+> "Auto Detect の言語切替が segment-level でないのは残るけど、tech term post-process でだいぶ救われる。最後にクリッピング警告だけ欲しい (大きい声出した時に検知)。"
+
+- **【medium 残】 クリッピング警告**: peak > 0.95 で「音量歪んでます」hint
+- **【high 残】 whisper streaming** — R5 へ持ち越し or R6+
+
+### → R4 改修内容
+
+1. **techTermDictionary editor UI** — Voice tab に簡易テーブル: 表示・追加・削除
+2. **クリッピング警告** — OverlayWindow に peak > 0.95 検知時の hint 表示

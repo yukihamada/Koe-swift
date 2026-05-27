@@ -1009,6 +1009,9 @@ struct VoiceTab: View {
                     .foregroundColor(Lux.gold)
             }
 
+            // P1 R3/R4 medium: 技術用語辞書 (音声誤認識の英単語復元) を Settings で編集可能に
+            TechTermDictionarySection()
+
             Section {
                 Toggle(L10n.toggleContextAware, isOn: $settings.contextAwareEnabled)
                 if settings.contextAwareEnabled {
@@ -1355,6 +1358,80 @@ struct ProfileEditSheet: View {
                 manualBundle = p.bundleID
                 llmInstruction = p.llmInstruction
             }
+        }
+    }
+}
+
+// MARK: - Tech Term Dictionary editor (P1 R4)
+
+/// 認識結果の英単語復元辞書を Settings から編集できる簡易テーブル。
+/// pre-seed されたエントリ + ユーザー追加分を view・追加・削除できる。
+struct TechTermDictionarySection: View {
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var newKey: String = ""
+    @State private var newValue: String = ""
+
+    var body: some View {
+        Section {
+            Text("音声認識後に置換される英単語辞書。例: 「あしんく あう」→「async/await」。")
+                .font(.system(size: 10)).foregroundColor(.secondary)
+
+            // 新規追加 row
+            HStack {
+                TextField("ひらがな（例: ゆーず すてーと）", text: $newKey)
+                    .textFieldStyle(.roundedBorder)
+                Text("→")
+                TextField("英単語（例: useState）", text: $newValue)
+                    .textFieldStyle(.roundedBorder)
+                Button("追加") {
+                    let k = newKey.trimmingCharacters(in: .whitespaces).lowercased()
+                    let v = newValue.trimmingCharacters(in: .whitespaces)
+                    guard !k.isEmpty, !v.isEmpty else { return }
+                    var dict = settings.techTermDictionary
+                    dict[k] = v
+                    settings.techTermDictionary = dict
+                    newKey = ""; newValue = ""
+                }
+                .disabled(newKey.isEmpty || newValue.isEmpty)
+            }
+
+            // 既存エントリ list (key 昇順)
+            let pairs = settings.techTermDictionary.sorted { $0.key < $1.key }
+            if pairs.isEmpty {
+                Text("辞書は空です").font(.caption).foregroundColor(.secondary)
+            } else {
+                ForEach(pairs, id: \.key) { pair in
+                    HStack {
+                        Text(pair.key)
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(minWidth: 140, alignment: .leading)
+                        Text("→")
+                            .foregroundColor(.secondary)
+                        Text(pair.value)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.green)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button(action: {
+                            var dict = settings.techTermDictionary
+                            dict.removeValue(forKey: pair.key)
+                            settings.techTermDictionary = dict
+                        }) {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(Text("「\(pair.key)」のエントリを削除"))
+                    }
+                }
+            }
+
+            Button("デフォルトに戻す") {
+                settings.techTermDictionary = AppSettings.defaultTechTermDictionary()
+            }
+            .controlSize(.small)
+            .padding(.top, 4)
+        } header: {
+            Label("技術用語辞書", systemImage: "character.book.closed")
+                .foregroundColor(Lux.gold)
         }
     }
 }

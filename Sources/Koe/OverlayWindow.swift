@@ -161,6 +161,14 @@ class OverlayWindow: NSPanel {
             let avg = stateModel.levelHistory.suffix(20).reduce(0, +) / 20
             stateModel.noiseLevel = avg > 0.06 ? .poor : avg > 0.03 ? .fair : .good
         }
+
+        // P5 R4 medium: クリッピング警告。peak が連続フレームで 0.95 超なら hint で通知
+        if level > 0.95 && stateModel.state == .recording {
+            // hint がまだクリッピング系でない場合のみ表示（毎フレーム上書きは避ける）
+            if !stateModel.hint.contains("歪") {
+                showHint("⚠️ 音量が歪んでいます — マイクから離れるか入力ゲインを下げてください")
+            }
+        }
     }
 
     func showHint(_ text: String) {

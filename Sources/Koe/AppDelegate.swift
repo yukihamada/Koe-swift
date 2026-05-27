@@ -1879,7 +1879,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Volume Ducking (録音中の音量ダッキング)
 
     /// 録音開始時にシステム音量を設定値まで下げる（非同期 — 録音開始をブロックしない）
+    /// duckingMode に応じて動作を切り替える:
+    ///   - "off"    : 何もしない
+    ///   - "manual" : 従来通り duckingVolume まで常にダッキング
+    ///   - "auto"   : 現在の出力音量が 0 より大きい時のみダッキング（音が出ていないなら触らない）
     private func duckSystemVolume() {
+        let mode = AppSettings.shared.duckingMode
+        guard mode != "off" else { return }
         let targetVol = AppSettings.shared.duckingVolume
         guard targetVol > 0 else { return }  // 0 = ダッキングOFF
 
@@ -1896,13 +1902,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             guard let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   let vol = Int(str), vol > targetVol else { return }
+            // auto モード: 出力音量が 0（実質ミュート）の時はそもそも音が鳴っていないので何もしない
+            if mode == "auto", vol <= 0 {
+                klog("Volume duck skipped (auto mode, output volume = \(vol))")
+                return
+            }
             DispatchQueue.main.async { self.savedVolume = vol }
             let setScript = "set volume output volume \(targetVol)"
             let setTask = Process()
             setTask.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
             setTask.arguments = ["-e", setScript]
             try? setTask.run()
-            klog("Volume ducked: \(vol) → \(targetVol)")
+            klog("Volume ducked (\(mode)): \(vol) → \(targetVol)")
         }
     }
 

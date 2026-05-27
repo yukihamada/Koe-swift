@@ -435,6 +435,12 @@ class AppSettings: ObservableObject {
     // 録音中の音量ダッキング (0=OFF, 1〜100=ダッキング後の音量%)
     @Published var duckingVolume: Int { didSet { ud.set(duckingVolume, forKey: "duckingVolume") } }
 
+    // 音量ダッキングのモード ("off" | "manual" | "auto")
+    // off    : 常にダッキングしない
+    // manual : duckingVolume の値まで常にダッキング（従来動作・デフォルト）
+    // auto   : 出力音量が 0 より大きい時のみダッキング（音が鳴っていない時は何もしない）
+    @Published var duckingMode: String { didSet { ud.set(duckingMode, forKey: "duckingMode") } }
+
     private let ud = UserDefaults.standard
 
     // MARK: Computed
@@ -604,6 +610,7 @@ class AppSettings: ObservableObject {
         commandModeEnabled = ud.object(forKey: "commandModeEnabled") as? Bool ?? true  // デフォルトON
         showNoiseLevel = ud.object(forKey: "showNoiseLevel") as? Bool ?? true  // デフォルトON
         duckingVolume = ud.object(forKey: "duckingVolume") as? Int ?? 5  // デフォルト5%
+        duckingMode = ud.string(forKey: "duckingMode") ?? "manual"  // デフォルト manual（後方互換）
         rebuildExpansionMap()
     }
 

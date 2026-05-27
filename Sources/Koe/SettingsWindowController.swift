@@ -536,18 +536,34 @@ struct GeneralTab: View {
                 Toggle(L10n.toggleShowNoiseLevel, isOn: $settings.showNoiseLevel)
                 Toggle("メニューバーにマイクアイコンを表示", isOn: $settings.menuBarIconVisible)
 
-                // 録音中の音量ダッキング
+                // 録音中の音量ダッキング: モード選択 + （manual時のみ）スライダー
                 HStack {
                     Text("録音中の音量")
-                    Slider(value: Binding(
-                        get: { Double(settings.duckingVolume) },
-                        set: { settings.duckingVolume = Int($0) }
-                    ), in: 0...50, step: 5)
-                    Text(settings.duckingVolume == 0 ? "OFF" : "\(settings.duckingVolume)%")
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(width: 36, alignment: .trailing)
+                    Spacer()
+                    Picker("", selection: $settings.duckingMode) {
+                        Text("OFF").tag("off")
+                        Text("手動").tag("manual")
+                        Text("自動").tag("auto")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
                 }
-                .help("録音中にシステム音量を自動で下げます（0=OFF）")
+                .help("OFF=ダッキングしない / 手動=常に下げる / 自動=音が鳴っている時だけ下げる")
+
+                if settings.duckingMode != "off" {
+                    HStack {
+                        Text("下げる音量")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Slider(value: Binding(
+                            get: { Double(settings.duckingVolume) },
+                            set: { settings.duckingVolume = Int($0) }
+                        ), in: 0...50, step: 5)
+                        Text(settings.duckingVolume == 0 ? "OFF" : "\(settings.duckingVolume)%")
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
             } header: {
                 Label(L10n.sectionBehavior, systemImage: "slider.horizontal.3")
                     .foregroundColor(Lux.gold)

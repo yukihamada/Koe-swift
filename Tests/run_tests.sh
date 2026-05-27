@@ -44,7 +44,7 @@ swiftc -parse-as-library $SOURCES Tests/KoeTests.swift /tmp/koe_test_main.swift 
     -framework AudioToolbox -framework CoreAudio -framework UserNotifications \
     -framework ServiceManagement -framework MultipeerConnectivity \
     -framework Vision -framework Carbon \
-    -target "$SWIFT_TARGET" -O \
+    -target "$SWIFT_TARGET" -O -D DEBUG \
     -Xlinker -rpath -Xlinker "$WHISPER_LIB" \
     -Xlinker -rpath -Xlinker "$LLAMA_LIB" \
     -o build-macos/KoeTests 2>&1

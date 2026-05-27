@@ -589,6 +589,9 @@ struct GeneralTab: View {
                     .foregroundColor(Lux.gold)
             }
 
+            // 音声アーカイブ（プライバシー機微: 同意付きトグル + 自動 prune）
+            AudioArchiveSection()
+
             Section {
                 DisclosureGroup(L10n.labelMenuBarLanguages) {
                     Text(L10n.labelMenuBarLanguagesDesc).font(.system(size: 10)).foregroundColor(.secondary)
@@ -663,6 +666,134 @@ struct GeneralTab: View {
     private func stopRecording() {
         isRecordingKey = false
         if let m = keyMonitor { NSEvent.removeMonitor(m); keyMonitor = nil }
+    }
+}
+
+// MARK: - Audio Archive Section (録音音声のローカル蓄積 + 自動 prune)
+
+struct AudioArchiveSection: View {
+    @ObservedObject private var settings = AppSettings.shared
+
+    var body: some View {
+        Section {
+            // 同意トグル: ON 時にプライバシー確認モーダルを出す
+            Toggle("録音音声をローカルに保存", isOn: Binding(
+                get: { settings.audioArchiveEnabled },
+                set: { newValue in
+                    if newValue && !settings.audioArchiveEnabled {
+                        // OFF → ON: 同意モーダルを表示し、Cancel ならロールバック
+                        if confirmEnableArchive() {
+                            settings.audioArchiveEnabled = true
+                        } else {
+                            // SwiftUI の Binding を即座に反転するため明示代入（UI が一度 true を反映するため）
+                            settings.audioArchiveEnabled = false
+                        }
+                    } else {
+                        settings.audioArchiveEnabled = newValue
+                    }
+                }
+            ))
+            .help("録音した音声 WAV をローカルに蓄積します（プライバシーに関わるため既定で OFF）")
+
+            if settings.audioArchiveEnabled {
+                // 保存先パス
+                HStack {
+                    Text("保存先")
+                    Spacer()
+                    Text(settings.audioArchiveResolvedPath)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("選択…") { chooseFolder() }
+                        .controlSize(.small)
+                    Button("Finder で開く") { revealInFinder() }
+                        .controlSize(.small)
+                }
+
+                // 容量上限
+                HStack {
+                    Text("容量上限")
+                    Spacer()
+                    TextField("", value: $settings.audioArchiveMaxGB, formatter: Self.gbFormatter)
+                        .frame(width: 60)
+                        .textFieldStyle(.roundedBorder)
+                    Text("GB").foregroundColor(.secondary)
+                }
+
+                // 日数上限
+                HStack {
+                    Text("保存日数")
+                    Spacer()
+                    TextField("", value: $settings.audioArchiveMaxDays, formatter: Self.daysFormatter)
+                        .frame(width: 60)
+                        .textFieldStyle(.roundedBorder)
+                    Text("日").foregroundColor(.secondary)
+                }
+
+                Toggle("上限超過時は自動削除（古い順）", isOn: $settings.audioArchiveAutoPrune)
+                    .help("OFF の場合、上限超過しても削除しません")
+
+                // 統計
+                let stats = AudioArchive.shared.stats()
+                Text("保存済み: \(stats.count) ファイル / \(String(format: "%.1f", stats.totalMB)) MB")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Label("音声アーカイブ", systemImage: "waveform.circle")
+                .foregroundColor(Lux.gold)
+        }
+    }
+
+    // MARK: Number formatters
+    private static let gbFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.minimum = 0.1
+        f.maximum = 500
+        f.maximumFractionDigits = 1
+        return f
+    }()
+
+    private static let daysFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .none
+        f.minimum = 1
+        f.maximum = 3650
+        return f
+    }()
+
+    /// 有効化確認モーダル。ユーザーが「有効化」を押したら true を返す。
+    private func confirmEnableArchive() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "音声アーカイブを有効化しますか？"
+        alert.informativeText = "録音音声をローカルに蓄積します。ディスク容量が継続的に増え続けます。これはあなたのプライバシーに関わるデータです。本当に有効化しますか？\n\n保存先: \(settings.audioArchiveResolvedPath)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "有効化")
+        // .alertFirstButtonReturn = Cancel, .alertSecondButtonReturn = 有効化
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "選択"
+        panel.message = "音声アーカイブの保存先フォルダを選んでください"
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.audioArchivePath = url.path
+        }
+    }
+
+    private func revealInFinder() {
+        let path = settings.audioArchiveResolvedPath
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }
 

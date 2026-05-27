@@ -451,6 +451,24 @@ class AppSettings: ObservableObject {
     // 入力デバイス (空文字 = システムデフォルト、それ以外は CoreAudio の UID)
     @Published var audioInputDeviceUID: String { didSet { ud.set(audioInputDeviceUID, forKey: "audioInputDeviceUID") } }
 
+    // 音声アーカイブ: 録音した WAV をローカルに蓄積するかどうか（プライバシー配慮でデフォルト OFF）
+    @Published var audioArchiveEnabled: Bool { didSet { ud.set(audioArchiveEnabled, forKey: "audioArchiveEnabled") } }
+    // 音声アーカイブの保存先パス（空文字なら既定 ~/Library/Application Support/Koe/AudioArchive/ を使用）
+    @Published var audioArchivePath: String { didSet { ud.set(audioArchivePath, forKey: "audioArchivePath") } }
+    // 容量上限（GB）— これを超えた場合、古いものから削除
+    @Published var audioArchiveMaxGB: Double { didSet { ud.set(audioArchiveMaxGB, forKey: "audioArchiveMaxGB") } }
+    // 日数上限 — これより古いファイルは自動削除
+    @Published var audioArchiveMaxDays: Int { didSet { ud.set(audioArchiveMaxDays, forKey: "audioArchiveMaxDays") } }
+    // 自動 prune (false の場合は閾値超過しても削除しない、UI 表示のみ)
+    @Published var audioArchiveAutoPrune: Bool { didSet { ud.set(audioArchiveAutoPrune, forKey: "audioArchiveAutoPrune") } }
+
+    /// 音声アーカイブの実効パス（未設定なら既定パスを返す）
+    var audioArchiveResolvedPath: String {
+        if !audioArchivePath.isEmpty { return (audioArchivePath as NSString).expandingTildeInPath }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("Koe/AudioArchive", isDirectory: true).path
+    }
+
     private let ud = UserDefaults.standard
 
     // MARK: Computed
@@ -623,6 +641,12 @@ class AppSettings: ObservableObject {
         duckingMode = ud.string(forKey: "duckingMode") ?? "manual"  // デフォルト manual（後方互換）
         offlineModeEnabled = ud.object(forKey: "offlineModeEnabled") as? Bool ?? false  // デフォルトOFF
         audioInputDeviceUID = ud.string(forKey: "audioInputDeviceUID") ?? ""  // 空 = システムデフォルト
+        // 音声アーカイブ系（プライバシー配慮でデフォルト OFF）
+        audioArchiveEnabled  = ud.object(forKey: "audioArchiveEnabled") as? Bool ?? false
+        audioArchivePath     = ud.string(forKey: "audioArchivePath") ?? ""
+        audioArchiveMaxGB    = ud.object(forKey: "audioArchiveMaxGB") as? Double ?? 10.0
+        audioArchiveMaxDays  = ud.object(forKey: "audioArchiveMaxDays") as? Int ?? 30
+        audioArchiveAutoPrune = ud.object(forKey: "audioArchiveAutoPrune") as? Bool ?? true
         rebuildExpansionMap()
     }
 

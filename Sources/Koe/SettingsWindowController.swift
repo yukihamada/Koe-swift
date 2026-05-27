@@ -625,6 +625,23 @@ struct GeneralTab: View {
                     .foregroundColor(Lux.gold)
             }
 
+            // Overlay / 配信表示
+            Section {
+                Toggle("配信モード（大文字表示）", isOn: $settings.overlayLargeTextMode)
+                Text("OBS 等の配信ソースで読みやすい大きな文字で表示します。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+                Text("⌥ キーを押しながらドラッグで Overlay の位置を移動・保存できます。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+                if settings.overlayHasCustomOrigin {
+                    Button("Overlay 位置をリセット") {
+                        settings.overlayHasCustomOrigin = false
+                    }
+                }
+            } header: {
+                Label("Overlay 表示", systemImage: "rectangle.on.rectangle")
+                    .foregroundColor(Lux.gold)
+            }
+
             // 音声アーカイブ（プライバシー機微: 同意付きトグル + 自動 prune）
             AudioArchiveSection()
 

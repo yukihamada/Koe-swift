@@ -459,6 +459,13 @@ class AppSettings: ObservableObject {
     @Published var fnKeyEnabled: Bool { didSet { ud.set(fnKeyEnabled, forKey: "fnKeyEnabled") } }
     @Published var fnKeyMode: String  { didSet { ud.set(fnKeyMode, forKey: "fnKeyMode") } }
 
+    // Overlay window 拡張: 配信用 large text モード + ユーザーが動かした位置の永続化
+    @Published var overlayLargeTextMode: Bool { didSet { ud.set(overlayLargeTextMode, forKey: "overlayLargeTextMode") } }
+    @Published var overlayOriginX: Double { didSet { ud.set(overlayOriginX, forKey: "overlayOriginX") } }
+    @Published var overlayOriginY: Double { didSet { ud.set(overlayOriginY, forKey: "overlayOriginY") } }
+    /// overlayOriginX/Y が有効値 (起動時にユーザー位置を採用するか) を示す
+    @Published var overlayHasCustomOrigin: Bool { didSet { ud.set(overlayHasCustomOrigin, forKey: "overlayHasCustomOrigin") } }
+
     // メインショートカットが .function modifier を含むか (Carbon 不可 → CGEventTap で処理)
     var shortcutUsesFn: Bool {
         NSEvent.ModifierFlags(rawValue: shortcutModifiers).contains(.function)
@@ -653,6 +660,11 @@ class AppSettings: ObservableObject {
         // Fn キー設定（デフォルトOFF / tap_toggle）
         fnKeyEnabled = ud.object(forKey: "fnKeyEnabled") as? Bool ?? false
         fnKeyMode    = ud.string(forKey: "fnKeyMode") ?? "tap_toggle"
+        // Overlay 拡張
+        overlayLargeTextMode  = ud.object(forKey: "overlayLargeTextMode") as? Bool ?? false
+        overlayOriginX        = ud.object(forKey: "overlayOriginX") as? Double ?? 0
+        overlayOriginY        = ud.object(forKey: "overlayOriginY") as? Double ?? 0
+        overlayHasCustomOrigin = ud.object(forKey: "overlayHasCustomOrigin") as? Bool ?? false
         rebuildExpansionMap()
     }
 

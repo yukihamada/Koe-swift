@@ -8,14 +8,22 @@ enum OverlayState {
 
 class OverlayWindow: NSPanel {
     private var stateModel = OverlayStateModel()
+    /// ⌥ キー押下中だけ drag を許可するため flagsChanged をリッスン
+    private var flagsMonitor: Any?
 
     init() {
-        let w: CGFloat = 300, h: CGFloat = 56
+        let isLarge = AppSettings.shared.overlayLargeTextMode
+        let w: CGFloat = isLarge ? 600 : 300
+        let h: CGFloat = isLarge ? 120 : 56
         // ヘッドレス / Screen Sharing 切断時に NSScreen.screens が空になり得るので
         // どちらも nil なら 0,0 origin にフォールバック（直後の show() で再配置される）
         let screen = NSScreen.main ?? NSScreen.screens.first
         let rect: CGRect
-        if let screen = screen {
+        // 保存されたユーザー位置があれば優先
+        let settings = AppSettings.shared
+        if settings.overlayHasCustomOrigin {
+            rect = CGRect(x: settings.overlayOriginX, y: settings.overlayOriginY, width: w, height: h)
+        } else if let screen = screen {
             rect = CGRect(
                 x: screen.frame.midX - w / 2,
                 y: screen.visibleFrame.minY + 32,
@@ -33,11 +41,50 @@ class OverlayWindow: NSPanel {
         isOpaque = false
         hasShadow = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // デフォルトは clickthrough。⌥ 押下中だけ drag のため flagsChanged で切替
         ignoresMouseEvents = true
+        isMovable = false  // ⌥ で許可するまで動かせない
+        stateModel.isLargeTextMode = isLarge
         let hosting = NSHostingView(rootView: OverlayView(model: stateModel))
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = CGColor.clear
         contentView = hosting
+
+        // ⌥ で drag enable / 離して disable
+        flagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
+            guard let self = self else { return }
+            let optDown = event.modifierFlags.contains(.option)
+            DispatchQueue.main.async {
+                self.ignoresMouseEvents = !optDown
+                self.isMovable = optDown
+                self.isMovableByWindowBackground = optDown
+            }
+        }
+    }
+
+    deinit {
+        if let m = flagsMonitor { NSEvent.removeMonitor(m); flagsMonitor = nil }
+    }
+
+    /// drag で動かしたあと位置を AppSettings に保存
+    override func setFrameOrigin(_ point: NSPoint) {
+        super.setFrameOrigin(point)
+        if isMovable {
+            // ユーザーが意図的に動かした (⌥ 押下中) ときだけ保存
+            let s = AppSettings.shared
+            s.overlayOriginX = Double(point.x)
+            s.overlayOriginY = Double(point.y)
+            s.overlayHasCustomOrigin = true
+        }
+    }
+
+    /// 配信モード / 通常モード切替時に位置情報をリセット
+    func resetCustomOrigin() {
+        AppSettings.shared.overlayHasCustomOrigin = false
+        if let screen = NSScreen.main ?? NSScreen.screens.first {
+            let w = frame.width
+            setFrameOrigin(NSPoint(x: screen.frame.midX - w / 2, y: screen.visibleFrame.minY + 32))
+        }
     }
 
     func setTranslateMode(_ on: Bool) {
@@ -171,6 +218,8 @@ class OverlayStateModel: ObservableObject {
     @Published var noiseLevel: NoiseQuality = .good
     @Published var levelHistory: [Float] = Array(repeating: 0, count: 36)
     @Published var isSeamless: Bool = false
+    /// 配信用大文字モード: OBS source 化想定で waveform を隠し、text を 22pt に拡大
+    @Published var isLargeTextMode: Bool = false
     var engineBadge: String { AppSettings.shared.recognitionEngine.badgeText }
 
     enum NoiseQuality { case good, fair, poor }

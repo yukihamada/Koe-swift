@@ -21,7 +21,9 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     override init() {
         super.init()
-        // 設定変更時にレコーダーを再構築（次回録音から新デバイスが反映される）
+        // 設定変更時はレコーダーを破棄するだけ（次回 start() で新デバイスを反映した状態で再構築）。
+        // prepare() でデバイス書き換えはせず、start() の applySelectedInputDevice() → 再生成の順で
+        // AVAudioRecorder が選択 UID にバインドされることを保証する。
         settingObserver = AppSettings.shared.$audioInputDeviceUID
             .dropFirst()
             .receive(on: DispatchQueue.main)
@@ -29,8 +31,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
                 guard let self = self else { return }
                 if self.recorder?.isRecording == true { return }  // 録音中は触らない
                 self.recorder = nil
-                self.prepare()
-                klog("AudioRecorder: re-prepared after input device change")
+                klog("AudioRecorder: dropped recorder after input device change (will rebuild at next start)")
             }
     }
 
@@ -56,8 +57,14 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func start() {
+        // P5 指摘の prepare-order バグ対策: applySelectedInputDevice() で
+        // システムデフォルト入力を選択 UID に切り替えてから AVAudioRecorder を生成する。
+        // AVAudioRecorder は init 時点のデフォルトにバインドされるため、デバイス切替前に
+        // 作成された recorder があれば破棄して再生成する。
         applySelectedInputDevice()
-        if recorder == nil { prepare() }
+        if recorder == nil {
+            prepare()
+        }
         guard let r = recorder else {
             klog("AudioRecorder: recorder is nil after prepare, retrying")
             prepare()
@@ -66,7 +73,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
                 return
             }
             let ok = r2.record()
-            klog("Recording started (retry), ok=\(ok)")
+            klog("Recording started (retry), ok=\(ok) deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
             return
         }
         // recorderが前回のセッションから残っている場合、明示的にリセット
@@ -80,9 +87,9 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             recorder = nil
             prepare()
             let retryOk = recorder?.record() ?? false
-            klog("Recording started (re-prepare), ok=\(retryOk)")
+            klog("Recording started (re-prepare), ok=\(retryOk) deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
         } else {
-            klog("Recording started, ok=true")
+            klog("Recording started, ok=true deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
         }
     }
 
@@ -111,8 +118,9 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         if !MeetingMode.shared.isActive {
             cleanOldFiles()
         }
+        // 順序重要: restore → recorder = nil → 次回 start() が applySelectedInputDevice → prepare の正しい順で動く
         restoreDefaultInputDevice()
-        prepare()   // 次回のために即再準備
+        recorder = nil
         return dest
     }
 
@@ -136,8 +144,9 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         recorder = nil
         if let url = tempURL { try? FileManager.default.removeItem(at: url) }
         klog("Recording cancelled")
+        // restoreDefaultInputDevice() を先に呼んでから recorder = nil。
+        // ここでは pre-prepare せず、次回 start() で applySelectedInputDevice → prepare の順を保証する。
         restoreDefaultInputDevice()
-        prepare()
     }
 
     // MARK: - 入力デバイス切り替え

@@ -815,6 +815,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         carbonHandlersInstalled = false
     }
 
+    /// 起動後 1 回だけ Carbon hotkey 失敗 alert を出すためのガード
+    private var didShowFirstHotkeyAlert = false
+
     /// メイン・翻訳・⌃K・⌥⌘M・⌃⌥R のホットキー本体だけを登録。
     /// イベントハンドラは別途インストール済みであることを前提とする。
     private func registerCarbonHotKeyRefs(settings: AppSettings) {
@@ -828,6 +831,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return m
         }
 
+        // P4 指摘: status != noErr の register 失敗を UI に出さないと衝突に気付けない
+        var failedHotkeys: [String] = []
+
         // メインホットキー登録（既存があれば事前に解除してリーク防止）
         if let ref = carbonHotKeyRef { UnregisterEventHotKey(ref); carbonHotKeyRef = nil }
         // .function を含むショートカットは Carbon で扱えない (修飾子なしで暴発するため登録しない)
@@ -838,6 +844,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let mainStatus = RegisterEventHotKey(UInt32(settings.shortcutKeyCode), mainMods,
                                                   mainID, GetApplicationEventTarget(), 0, &carbonHotKeyRef)
             klog("Carbon hotkey main: status=\(mainStatus)")
+            if mainStatus != noErr { failedHotkeys.append("\(settings.shortcutDisplayString) (録音)") }
         } else {
             klog("Carbon hotkey main: skipped (uses Fn — handled by FnKeyMonitor)")
         }
@@ -849,6 +856,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let transStatus = RegisterEventHotKey(UInt32(settings.translateHotkeyCode), transMods,
                                                transID, GetApplicationEventTarget(), 0, &carbonTranslateHotKeyRef)
         klog("Carbon hotkey translate: status=\(transStatus)")
+        if transStatus != noErr { failedHotkeys.append("⌥⌘T (翻訳)") }
 
         // ⌃K ショートカット（追加のクイック起動キー）
         if let ref = carbonCmdKHotKeyRef {
@@ -859,6 +867,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let ctrlKStatus = RegisterEventHotKey(UInt32(kVK_ANSI_K), UInt32(controlKey),
                                                ctrlKID, GetApplicationEventTarget(), 0, &carbonCmdKHotKeyRef)
         klog("Carbon hotkey ⌃K: status=\(ctrlKStatus)")
+        if ctrlKStatus != noErr { failedHotkeys.append("⌃K") }
 
         // ⌥⌘M 議事録トグル
         if let ref = carbonMeetingHotKeyRef {
@@ -870,6 +879,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                                  UInt32(cmdKey | optionKey),
                                                  meetingID, GetApplicationEventTarget(), 0, &carbonMeetingHotKeyRef)
         klog("Carbon hotkey ⌥⌘M: status=\(meetingStatus)")
+        if meetingStatus != noErr { failedHotkeys.append("⌥⌘M (議事録)") }
 
         // ⌃⌥R 直前の認識をやり直す
         if let ref = carbonRerecognizeHotKeyRef {
@@ -881,6 +891,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                                UInt32(controlKey | optionKey),
                                                rerecID, GetApplicationEventTarget(), 0, &carbonRerecognizeHotKeyRef)
         klog("Carbon hotkey ⌃⌥R: status=\(rerecStatus)")
+        if rerecStatus != noErr { failedHotkeys.append("⌃⌥R (再認識)") }
+
+        // 起動後初回の register で失敗があれば NSAlert で通知（reregisterHotkey 経由の再登録時は alert 出さず log のみ）
+        if !failedHotkeys.isEmpty && !didShowFirstHotkeyAlert {
+            didShowFirstHotkeyAlert = true
+            DispatchQueue.main.async { [weak self] in
+                self?.showHotkeyFailureAlert(failed: failedHotkeys)
+            }
+        }
+    }
+
+    /// Carbon hotkey 登録失敗を NSAlert でユーザーに通知。
+    /// 他アプリと衝突した場合、Settings → General からショートカットを変更する導線を提示する。
+    private func showHotkeyFailureAlert(failed: [String]) {
+        let alert = NSAlert()
+        alert.messageText = "ホットキー登録に失敗しました"
+        alert.informativeText = """
+        以下のショートカットを登録できませんでした:
+        \(failed.map { "• \($0)" }.joined(separator: "\n"))
+
+        他のアプリと衝突している可能性があります。Settings → General からショートカットを変更してください。
+
+        ヒント: 衝突を避けたい場合は Fn キー単独タップ (Settings → General → Fn キーで録音) や ⌃⇧Space を試してください。
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Settings を開く")
+        alert.addButton(withTitle: "閉じる")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            openSettings()
+        }
     }
 
     /// 録音中のみ有効な Space/ESC ホットキーを登録

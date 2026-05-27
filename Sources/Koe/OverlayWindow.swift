@@ -344,15 +344,17 @@ struct OverlayView: View {
     // MARK: Streaming text row
 
     private var streamingRow: some View {
-        Text(model.streamingText)
-            .font(.system(size: 11, weight: .regular, design: .rounded))
-            .foregroundColor(.white.opacity(0.55))
-            .lineLimit(2)
+        // P3/P5 指摘: 配信モード時は 22pt まで拡大 + 行数を 3 行に
+        let isLarge = model.isLargeTextMode
+        return Text(model.streamingText)
+            .font(.system(size: isLarge ? 22 : 11, weight: isLarge ? .bold : .regular, design: .rounded))
+            .foregroundColor(.white.opacity(isLarge ? 0.95 : 0.55))
+            .lineLimit(isLarge ? 3 : 2)
             .truncationMode(.head)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
+            .padding(.horizontal, isLarge ? 24 : 16)
+            .padding(.bottom, isLarge ? 18 : 10)
             .transition(.opacity.combined(with: .move(edge: .top)))
     }
 

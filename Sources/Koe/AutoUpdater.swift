@@ -13,6 +13,11 @@ class AutoUpdater {
 
     /// 起動時に呼ぶ（バックグラウンドでチェック）
     func checkForUpdates(silent: Bool = true) {
+        // P2 critical: Offline Mode 中は GitHub Releases 問合せもブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("AutoUpdater: skipped (Offline Mode)")
+            return
+        }
         DispatchQueue.global(qos: .utility).async {
             self.fetchLatestRelease { release in
                 guard let release else { return }

@@ -459,6 +459,14 @@ class AppSettings: ObservableObject {
     @Published var fnKeyEnabled: Bool { didSet { ud.set(fnKeyEnabled, forKey: "fnKeyEnabled") } }
     @Published var fnKeyMode: String  { didSet { ud.set(fnKeyMode, forKey: "fnKeyMode") } }
 
+    // 技術用語辞書: 音声認識後に「あしんく あう」→「async/await」のように post-process で復元する
+    // P1 critical 指摘 (英単語混じり日本語の破壊) 対策。Settings UI から編集可能 (R2 では pre-seed のみ)。
+    @Published var techTermDictionary: [String: String] { didSet {
+        if let data = try? JSONEncoder().encode(techTermDictionary) {
+            ud.set(data, forKey: "techTermDictionary")
+        }
+    }}
+
     // Overlay window 拡張: 配信用 large text モード + ユーザーが動かした位置の永続化
     @Published var overlayLargeTextMode: Bool { didSet { ud.set(overlayLargeTextMode, forKey: "overlayLargeTextMode") } }
     @Published var overlayOriginX: Double { didSet { ud.set(overlayOriginX, forKey: "overlayOriginX") } }
@@ -660,6 +668,13 @@ class AppSettings: ObservableObject {
         // Fn キー設定（デフォルトOFF / tap_toggle）
         fnKeyEnabled = ud.object(forKey: "fnKeyEnabled") as? Bool ?? false
         fnKeyMode    = ud.string(forKey: "fnKeyMode") ?? "tap_toggle"
+        // 技術用語辞書（pre-seed: 開発でよく出る英単語の音声誤認識を復元）
+        if let data = ud.data(forKey: "techTermDictionary"),
+           let dict = try? JSONDecoder().decode([String: String].self, from: data) {
+            techTermDictionary = dict
+        } else {
+            techTermDictionary = AppSettings.defaultTechTermDictionary()
+        }
         // Overlay 拡張
         overlayLargeTextMode  = ud.object(forKey: "overlayLargeTextMode") as? Bool ?? false
         overlayOriginX        = ud.object(forKey: "overlayOriginX") as? Double ?? 0
@@ -680,6 +695,64 @@ class AppSettings: ObservableObject {
         if llmEnabled && !llmUseLocal {
             llmUseLocal = true
         }
+    }
+
+    /// 開発でよく出る英単語の音声誤認識を復元するための pre-seeded mapping。
+    /// 認識結果が ja-JP で英単語が「あしんく あう」のように壊れている場合、これで戻す。
+    /// 全部小文字で 比較するために key は小文字統一。
+    static func defaultTechTermDictionary() -> [String: String] {
+        return [
+            // 非同期 / Promise 系
+            "あしんく あう": "async/await",
+            "あしんく あうぇいと": "async/await",
+            "ぷろみす": "Promise",
+            // React / JS
+            "ゆーずえふぇくと": "useEffect",
+            "ゆーず すてーと": "useState",
+            "ゆーず めも": "useMemo",
+            "じぇーえす": "JS",
+            "てぃーえす": "TS",
+            "じゃーばすくりぷと": "JavaScript",
+            "たいぷすくりぷと": "TypeScript",
+            // Swift / iOS
+            "すいふと ゆーあい": "SwiftUI",
+            "ゆーあいきっと": "UIKit",
+            "こんばいん": "Combine",
+            "あくたー": "actor",
+            // Python
+            "ぱいそん": "Python",
+            "ぱんだす": "pandas",
+            "なんぱい": "NumPy",
+            // インフラ / ツール
+            "どっかー": "Docker",
+            "くーばねてす": "Kubernetes",
+            "けーえいと えす": "k8s",
+            "ぎっとはぶ": "GitHub",
+            "ぎっとらぼ": "GitLab",
+            "あちょらぶる": "Actuallable",  // dummy intentional — show extensibility
+            "えーぴーあい": "API",
+            "えすえすえいち": "SSH",
+            "あいでぃーいー": "IDE",
+            // AI / ML
+            "えるえるえむ": "LLM",
+            "じーぴーてぃー": "GPT",
+            "くろーど": "Claude",
+            "ういすぱー": "Whisper",
+        ]
+    }
+
+    /// 認識結果に対して techTermDictionary を適用して壊れた英単語を復元する。
+    /// SpeechEngine の recognize 完了時に呼ばれる。
+    func applyTechTermDictionary(_ text: String) -> String {
+        guard !techTermDictionary.isEmpty else { return text }
+        var out = text
+        // 長い key から先に置換（短い key が長い key の prefix にならないように）
+        let sortedKeys = techTermDictionary.keys.sorted { $0.count > $1.count }
+        for key in sortedKeys {
+            guard let value = techTermDictionary[key] else { continue }
+            out = out.replacingOccurrences(of: key, with: value)
+        }
+        return out
     }
 
     private static func defaultProfiles() -> [AppProfile] {

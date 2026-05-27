@@ -11,6 +11,12 @@ class MeetingIntegrations {
 
     /// Slack Webhook URLに議事録を投稿
     func postToSlack(webhookURL: String, summary: String, meetingTitle: String, completion: @escaping (Bool) -> Void) {
+        // P2 critical: Offline Mode 中は外部送信を完全に遮断
+        if AppSettings.shared.offlineModeEnabled {
+            klog("Slack: blocked by Offline Mode")
+            completion(false)
+            return
+        }
         guard let url = URL(string: webhookURL) else {
             klog("Slack: invalid webhook URL")
             completion(false)
@@ -44,6 +50,12 @@ class MeetingIntegrations {
 
     /// Notion APIで議事録ページを作成
     func postToNotion(token: String, databaseID: String, title: String, content: String, completion: @escaping (Bool) -> Void) {
+        // P2 critical: Offline Mode 中は外部送信を完全に遮断
+        if AppSettings.shared.offlineModeEnabled {
+            klog("Notion: blocked by Offline Mode")
+            completion(false)
+            return
+        }
         guard let url = URL(string: "https://api.notion.com/v1/pages") else {
             completion(false); return
         }

@@ -252,6 +252,12 @@ class LLMProcessor {
     private func processRemoteWith(text: String, instruction: String,
                                     baseURL: String, model: String, apiKey: String,
                                     completion: @escaping (String) -> Void) {
+        // P2 critical: Offline Mode 中はクラウド LLM への HTTPS 送信を完全ブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("LLM(cloud): blocked by Offline Mode (\(baseURL))")
+            completion("")
+            return
+        }
         let body: [String: Any] = [
             "model": model,
             "messages": [

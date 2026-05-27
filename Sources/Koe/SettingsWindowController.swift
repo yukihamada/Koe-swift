@@ -253,6 +253,9 @@ struct PersonaBar: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    // P4 critical 対策: VoiceOver で「Button」とだけ読まれていた状態を解消
+                    .accessibilityLabel(Text("プリセット: \(persona.name)"))
+                    .accessibilityHint(Text(persona.description))
                 }
             }
         }
@@ -603,6 +606,8 @@ struct GeneralTab: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 180)
+                    .accessibilityLabel(Text("録音中の音量ダッキングモード"))
+                    .accessibilityValue(Text(settings.duckingMode == "off" ? "OFF" : settings.duckingMode == "auto" ? "自動" : "手動"))
                 }
                 .help("OFF=ダッキングしない / 手動=常に下げる / 自動=音が鳴っている時だけ下げる")
 
@@ -760,8 +765,10 @@ struct AudioArchiveSection: View {
                         .truncationMode(.middle)
                     Button("選択…") { chooseFolder() }
                         .controlSize(.small)
+                        .accessibilityLabel(Text("音声アーカイブの保存先フォルダを選択"))
                     Button("Finder で開く") { revealInFinder() }
                         .controlSize(.small)
+                        .accessibilityLabel(Text("音声アーカイブを Finder で表示"))
                 }
 
                 // 容量上限

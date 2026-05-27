@@ -29,6 +29,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var carbonHandlersInstalled = false
     private var meetingOverlay: MeetingOverlayWindow?
     private var meetingLiveWindow: MeetingLiveWindow?
+    private var languageObserverToken: NSObjectProtocol?
+    private var workspaceActivateObserverToken: NSObjectProtocol?
     private var meetingChatWindow: MeetingChatWindow?
     private var levelTimer: Timer?
     private var isRecording      = false
@@ -293,7 +295,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Send active Mac app info to iPhone
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { notif in
+        workspaceActivateObserverToken = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { notif in
             if let app = notif.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
                 IPhoneBridge.shared.sendActiveApp(
                     bundleID: app.bundleIdentifier ?? "",
@@ -305,6 +307,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         WakeWordDetector.shared.onDetected = { [weak self] in self?.startRecording() }
         if AppSettings.shared.wakeWordEnabled { WakeWordDetector.shared.start() }
         if AppSettings.shared.floatingButtonEnabled { FloatingButton.shared.show() }
+
+        // 言語切替通知 → SpeechEngine / WhisperContext を確実に再ロード
+        // (AppDelegate.shared が nil の状態で AppSettings.language を変更されても拾うため)
+        languageObserverToken = NotificationCenter.default.addObserver(
+            forName: .koeLanguageDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.reloadSpeechEngine()
+        }
 
         // ログイン時自動起動（ユーザーが設定でONにした場合のみ）
         if AppSettings.shared.launchAtLogin {
@@ -389,6 +401,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // (deinit はアプリ終了時に確実には呼ばれない)
         unregisterAllCarbonHotKeys()
         if let m = eventMonitor { NSEvent.removeMonitor(m); eventMonitor = nil }
+        if let t = languageObserverToken {
+            NotificationCenter.default.removeObserver(t)
+            languageObserverToken = nil
+        }
+        if let t = workspaceActivateObserverToken {
+            NSWorkspace.shared.notificationCenter.removeObserver(t)
+            workspaceActivateObserverToken = nil
+        }
+        NotificationCenter.default.removeObserver(self)
     }
 
     // MARK: - Status Bar
@@ -1961,6 +1982,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Speech engine reload (on language change)
 
     func reloadSpeechEngine() {
+        klog("reloadSpeechEngine: lang=\(AppSettings.shared.language)")
+        // 旧 SpeechEngine の進行中タスクを確実に止めてから差し替える
+        speech.cancel()
         speech = SpeechEngine()
         rebuildMenu()
 

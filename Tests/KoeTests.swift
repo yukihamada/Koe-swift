@@ -174,6 +174,69 @@ func testAgentCommandProperties() {
 }
 
 // ══════════════════════════════════════
+// WakeWordEngine: rebuild failure must not recurse
+// ══════════════════════════════════════
+#if DEBUG
+func testWakeWordEngineDoesNotRecurseOnRebuildFailure() {
+    print("\n--- WakeWordEngine rebuild backoff ---")
+    let engine = WakeWordEngine.shared
+    // 既存状態をクリーンに
+    engine.stop()
+    engine.consecutiveBuildFailures = 0
+    engine.testHookForcedFailure = true
+
+    var notified = false
+    let observer = NotificationCenter.default.addObserver(
+        forName: .koeWakeWordEngineFailed,
+        object: nil, queue: .main
+    ) { _ in
+        notified = true
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    engine.start()  // 1 + 2 + 4 = 7s で 3 回 retry → 4 回目 catch で通知発火期待
+    // retry は main queue 上で asyncAfter されるので、main RunLoop を回す必要がある
+    let deadline = Date().addingTimeInterval(15)
+    while !notified && Date() < deadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.1))
+    }
+    check(notified, "koeWakeWordEngineFailed notification fired within 15s")
+    check(engine.consecutiveBuildFailures == 3, "consecutiveBuildFailures capped at 3 (got \(engine.consecutiveBuildFailures))")
+    check(engine.isRunning == false, "engine is not running after giving up")
+
+    // cleanup
+    engine.testHookForcedFailure = false
+    engine.consecutiveBuildFailures = 0
+}
+#endif
+
+// ══════════════════════════════════════
+// Settings.language → koeLanguageDidChange notification
+// ══════════════════════════════════════
+func testLanguageChangeReloadsSpeechEngineEvenWithoutAppDelegate() {
+    print("\n--- Settings.language notification ---")
+    var reloadCalls = 0
+    let observer = NotificationCenter.default.addObserver(
+        forName: .koeLanguageDidChange,
+        object: nil, queue: .main
+    ) { _ in
+        reloadCalls += 1
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+
+    let original = AppSettings.shared.language
+    AppSettings.shared.language = "en-US"
+
+    // 通知は main queue で配送されるので、main RunLoop を回して dispatch を消化する
+    RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.2))
+    check(reloadCalls >= 1, "koeLanguageDidChange fired on language change (got \(reloadCalls))")
+
+    // restore
+    AppSettings.shared.language = original
+    RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.2))
+}
+
+// ══════════════════════════════════════
 // Run all tests
 // ══════════════════════════════════════
 func runAllTests() {
@@ -184,6 +247,10 @@ func runAllTests() {
     testL10n()
     testLLMSanitization()
     testAgentCommandProperties()
+    testLanguageChangeReloadsSpeechEngineEvenWithoutAppDelegate()
+    #if DEBUG
+    testWakeWordEngineDoesNotRecurseOnRebuildFailure()
+    #endif
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }
 }

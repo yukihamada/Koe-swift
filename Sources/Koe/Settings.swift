@@ -242,7 +242,13 @@ class AppSettings: ObservableObject {
     @Published var translateTargetLang: String { didSet { ud.set(translateTargetLang, forKey: "translateTargetLang") } }
 
     // Recognition
-    @Published var language: String          { didSet { ud.set(language,               forKey: "language"); AppDelegate.shared?.reloadSpeechEngine() } }
+    @Published var language: String          { didSet {
+        ud.set(language, forKey: "language")
+        // AppDelegate.shared が nil の場合（起動初期 / teardown）でも届くよう通知ベースに。
+        // 直接 AppDelegate.shared?.reloadSpeechEngine() を呼んでいた頃、optional chaining で
+        // silent skip され SpeechEngine / WhisperContext が再ロードされない退行があった。
+        NotificationCenter.default.post(name: .koeLanguageDidChange, object: nil)
+    }}
 
     /// 主要言語のフラグ・表示名マッピング（メニューバー・設定画面で共用）
     static let quickLanguages: [(flag: String, name: String, code: String)] = [

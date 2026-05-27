@@ -39,6 +39,15 @@ class WakeWordEngine {
     private var targetFmt: AVAudioFormat?         // キャッシュ: 毎回生成しない
     private(set) var isRunning = false
 
+    /// AVAudioEngine.start() の連続失敗回数。3 回までは指数 backoff で retry、
+    /// それ以上は諦めて koeWakeWordEngineFailed 通知を発火する（無限再帰防止）。
+    internal var consecutiveBuildFailures: Int = 0
+    #if DEBUG
+    /// テスト用フック: true の間 buildEngine() の catch 分岐を強制的に実行する。
+    /// DEBUG ビルドのみ存在し、production ビルドには出てこない。
+    internal var testHookForcedFailure: Bool = false
+    #endif
+
     var onDetected: (() -> Void)?
 
     // MARK: - Init
@@ -189,7 +198,12 @@ class WakeWordEngine {
 
     func start() {
         guard !isRunning else { return }
-        guard isReady else {
+        #if DEBUG
+        let forced = testHookForcedFailure
+        #else
+        let forced = false
+        #endif
+        guard isReady || forced else {
             klog("WakeWordEngine: need \(Self.minTemplates) templates (have \(templates.count))")
             return
         }
@@ -208,6 +222,16 @@ class WakeWordEngine {
     }
 
     private func buildEngine() {
+        #if DEBUG
+        // テスト用フック: AVAudioEngine 自体を組み立てずに catch 分岐へ直行する。
+        // CLI テスト環境では AVAudioEngine.inputNode が CoreAudio 待ちで無期限ブロックするため、
+        // 実音声デバイスに触れずに backoff state machine を検証できるようにしておく。
+        if testHookForcedFailure {
+            handleBuildFailure(NSError(domain: "WakeWordEngineTest", code: -1))
+            return
+        }
+        #endif
+
         let engine = AVAudioEngine()
         audioEngine = engine
         let node = engine.inputNode
@@ -228,13 +252,35 @@ class WakeWordEngine {
         do {
             engine.prepare()
             try engine.start()
+            // 起動成功 → 失敗カウンタをリセット
+            consecutiveBuildFailures = 0
         } catch {
-            klog("WakeWordEngine: engine error \(error)")
             // start() 失敗時に tap を残すと次回 buildEngine() で
             // "required condition is false: format.sampleRate == hwFormat.sampleRate" 系で crash する
             node.removeTap(onBus: 0)
-            audioEngine = nil
-            isRunning = false
+            handleBuildFailure(error)
+        }
+    }
+
+    /// AVAudioEngine.start() の失敗を一元処理する: tear-down → カウンタ更新 → backoff retry or give-up。
+    /// 直接 self.start() を再帰呼び出ししていた旧実装は連続失敗時にスタックを食い潰してハングした。
+    private func handleBuildFailure(_ error: Error) {
+        klog("WakeWordEngine: engine error \(error) (failures=\(consecutiveBuildFailures + 1))")
+        audioEngine = nil
+        isRunning = false
+
+        if consecutiveBuildFailures < 3 {
+            consecutiveBuildFailures += 1
+            // 1s / 2s / 4s の指数 backoff で retry
+            let delay = pow(2.0, Double(consecutiveBuildFailures - 1))
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.start()
+            }
+        } else {
+            // すでに 3 回失敗済み → これ以上 retry せず通知。
+            // counter は 3 のまま据え置き（success 時に 0 にリセットされる）。
+            klog("WakeWordEngine: giving up after \(consecutiveBuildFailures) consecutive failures")
+            NotificationCenter.default.post(name: .koeWakeWordEngineFailed, object: nil)
         }
     }
 
@@ -328,11 +374,12 @@ class WakeWordEngine {
         }
         do { engine.prepare(); try engine.start() }
         catch {
+            klog("WakeWordEngine.recordTemplate: engine error \(error)")
             node.removeTap(onBus: 0)
-            DispatchQueue.main.async {
-                if wasRunning { self.start() }
-                completion(false)
-            }
+            // 以前ここで wasRunning && self.start() を呼んでいたが、buildEngine() 失敗が
+            // 連続する状況下で無限再帰してアプリがハングする退行を生んでいた。検出側の
+            // 再開は recordTemplate 利用元 (設定 UI 等) が判断する。
+            DispatchQueue.main.async { completion(false) }
             return
         }
 

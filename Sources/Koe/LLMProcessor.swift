@@ -304,13 +304,17 @@ class LLMProcessor {
                 return
             }
             let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            klog("LLM remote fallback done: '\(result)'")
+            klog("LLM remote fallback done: '\(result.prefix(80))'")
             DispatchQueue.main.async { completion(result) }
         }.resume()
     }
 
     private func processRemote(text: String, instruction: String, completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
+        if s.offlineModeEnabled {
+            klog("LLM(cloud): blocked by Offline Mode (\(s.llmProvider.rawValue))")
+            completion(text); return
+        }
         let baseURL = s.llmProvider == .custom ? s.llmBaseURL : s.llmProvider.baseURL
         let model   = s.llmModel
 
@@ -349,7 +353,7 @@ class LLMProcessor {
                 return
             }
             let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            klog("LLM remote done: '\(result)'")
+            klog("LLM remote done: '\(result.prefix(80))'")
             DispatchQueue.main.async { completion(result) }
         }.resume()
     }
@@ -358,6 +362,10 @@ class LLMProcessor {
 
     private func processAnthropic(text: String, instruction: String, completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
+        if s.offlineModeEnabled {
+            klog("LLM(Anthropic): blocked by Offline Mode")
+            completion(text); return
+        }
         let model = s.llmModel
         let body: [String: Any] = [
             "model": model,
@@ -390,7 +398,7 @@ class LLMProcessor {
                 return
             }
             let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            klog("LLM Anthropic done: '\(result)'")
+            klog("LLM Anthropic done: '\(result.prefix(80))'")
             DispatchQueue.main.async { completion(result) }
         }.resume()
     }

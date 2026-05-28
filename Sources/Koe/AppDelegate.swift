@@ -383,6 +383,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         HistoryStore.shared.flushSync()
+        // 録音中に終了するとシステムデフォルト入力デバイスが選択 UID に固定されたままになる
+        // ので、cancel() で必ず restoreDefaultInputDevice() を通す
+        recorder.cancel()
         WhisperServer.shared.stop()
         WakeWordDetector.shared.stop()
         // Carbon の global hotkey / event handler を確実に解放

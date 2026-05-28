@@ -50,6 +50,13 @@ final class CloudWakeTrainer {
         progress: @escaping (String) -> Void,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
+        // P2 critical: Offline Mode 中はクラウド Wake Word 学習 API へのリクエストを完全ブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("CloudWakeTrainer: blocked by Offline Mode")
+            completion(.failure(NSError(domain: "Koe.OfflineMode", code: -1,
+                                        userInfo: [NSLocalizedDescriptionKey: "Offline Mode 有効中はクラウド学習を利用できません"])))
+            return
+        }
         // 1. submit
         progress("サーバーに学習リクエスト送信中…")
         let jobIdResult = submitSync(text: text, modelName: modelName)

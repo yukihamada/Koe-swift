@@ -103,15 +103,32 @@ if [ ! -f "$WHISPER_LIB/libwhisper.dylib" ]; then
 fi
 
 # llama.cpp library paths
-LLAMA_LIB="$BREW_PREFIX/lib"
-if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then
-    LLAMA_LIB="$BREW_PREFIX/opt/llama.cpp/lib"
+# Mirror the whisper.cpp source-build fallback above: arm64 Macs with only
+# x86_64 Homebrew (no /opt/homebrew) cannot link against brew's llama.cpp.
+# If /tmp/llama.cpp/build exists, use it.
+LLAMA_SOURCE_BUILD="/tmp/llama.cpp/build"
+# cmake puts the shared library under build/bin (not build/src) when BUILD_SHARED_LIBS=ON
+if [ -f "$LLAMA_SOURCE_BUILD/bin/libllama.dylib" ]; then
+    echo "Using source-built llama.cpp ($LLAMA_SOURCE_BUILD/bin)"
+    LLAMA_LIB="$LLAMA_SOURCE_BUILD/bin"
+    USE_SOURCE_LLAMA=1
+elif [ -f "$LLAMA_SOURCE_BUILD/src/libllama.dylib" ]; then
+    echo "Using source-built llama.cpp ($LLAMA_SOURCE_BUILD/src)"
+    LLAMA_LIB="$LLAMA_SOURCE_BUILD/src"
+    USE_SOURCE_LLAMA=1
+else
+    USE_SOURCE_LLAMA=0
+    LLAMA_LIB="$BREW_PREFIX/lib"
+    if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then
+        LLAMA_LIB="$BREW_PREFIX/opt/llama.cpp/lib"
+    fi
 fi
 
 # Verify llama dylib exists
 if [ ! -f "$LLAMA_LIB/libllama.dylib" ]; then
     echo "⚠ libllama.dylib not found at $LLAMA_LIB"
     echo "  Install: brew install llama.cpp"
+    echo "  Or build from source into /tmp/llama.cpp (see docs/build-arm64.md)"
     exit 1
 fi
 
@@ -214,8 +231,9 @@ if [ -f "$LLAMA_LIB/libllama.dylib" ]; then
 fi
 # Bundle homebrew ggml 0.9.11 (for llama) under -hb names to coexist with source-built ggml 0.9.8 (for whisper)
 # libllama depends on ggml 0.9.11 which has different symbols than our bundled ggml 0.9.8
+# Skip the -hb shim when llama is *also* source-built: it then shares the same ggml as whisper.
 HB_GGML="$BREW_PREFIX/opt/ggml/lib"
-if [ "$USE_SOURCE_GGML" = "1" ] && [ -f "$HB_GGML/libggml.dylib" ] && [ -f "$LLAMA_LIB/libllama.dylib" ]; then
+if [ "$USE_SOURCE_GGML" = "1" ] && [ "$USE_SOURCE_LLAMA" != "1" ] && [ -f "$HB_GGML/libggml.dylib" ] && [ -f "$LLAMA_LIB/libllama.dylib" ]; then
     cp "$HB_GGML/libggml.dylib" "$FRAMEWORKS/libggml-hb.dylib"
     cp "$HB_GGML/libggml-base.dylib" "$FRAMEWORKS/libggml-base-hb.dylib"
     install_name_tool -id "@rpath/libggml-hb.dylib" "$FRAMEWORKS/libggml-hb.dylib" 2>/dev/null || true
@@ -275,7 +293,9 @@ for lib in "$FRAMEWORKS"/*.dylib; do
 done
 
 # Redirect libllama's ggml refs to the -hb versions (homebrew ggml 0.9.11 bundled separately)
-if [ "$USE_SOURCE_GGML" = "1" ] && [ -f "$FRAMEWORKS/libggml-hb.dylib" ]; then
+# When llama is also source-built (USE_SOURCE_LLAMA=1) the -hb shim is not produced and the
+# default @rpath/libggml.dylib refs already resolve to the bundled source-built ggml.
+if [ "$USE_SOURCE_GGML" = "1" ] && [ "$USE_SOURCE_LLAMA" != "1" ] && [ -f "$FRAMEWORKS/libggml-hb.dylib" ]; then
     for glib in libggml libggml-base; do
         install_name_tool -change "@rpath/${glib}.dylib" "@rpath/${glib}-hb.dylib" "$FRAMEWORKS/libllama.dylib" 2>/dev/null || true
         install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}-hb.dylib" "$FRAMEWORKS/libllama.dylib" 2>/dev/null || true
@@ -284,6 +304,7 @@ fi
 
 # Also fix versioned refs in the main binary
 install_name_tool -change "@rpath/libwhisper.1.dylib" "@rpath/libwhisper.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
+install_name_tool -change "@rpath/libllama.0.dylib" "@rpath/libllama.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
 for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
     install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
 done
@@ -302,12 +323,17 @@ for dir in $ALL_LIB_DIRS; do
     done
 done
 
-# Create versioned copies for ggml (must be real files, not symlinks — symlinks break codesign --deep)
+# Create versioned copies for ggml + llama (must be real files, not symlinks — symlinks break codesign --deep)
 for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
     if [ -f "$FRAMEWORKS/${glib}.dylib" ] && [ ! -f "$FRAMEWORKS/${glib}.0.dylib" ]; then
         cp "$FRAMEWORKS/${glib}.dylib" "$FRAMEWORKS/${glib}.0.dylib"
     fi
 done
+# llama: the source-built libllama.dylib carries SONAME libllama.0.dylib, so callers may
+# dlopen the versioned name. Provide a real-file copy alongside the unversioned one.
+if [ -f "$FRAMEWORKS/libllama.dylib" ] && [ ! -f "$FRAMEWORKS/libllama.0.dylib" ]; then
+    cp "$FRAMEWORKS/libllama.dylib" "$FRAMEWORKS/libllama.0.dylib"
+fi
 
 # Strip debug symbols (only real files, skip .0.dylib duplicates to avoid double-work)
 echo "  Stripping debug symbols..."
@@ -316,7 +342,7 @@ for lib in "$FRAMEWORKS"/*.dylib; do
     strip -x "$lib" 2>/dev/null || true
 done
 # Sync stripped content to .0.dylib copies (use cp -f to overwrite without error on identical)
-for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal libllama; do
     if [ -f "$FRAMEWORKS/${glib}.dylib" ] && [ -f "$FRAMEWORKS/${glib}.0.dylib" ]; then
         cp -f "$FRAMEWORKS/${glib}.dylib" "$FRAMEWORKS/${glib}.0.dylib" 2>/dev/null || true
     fi

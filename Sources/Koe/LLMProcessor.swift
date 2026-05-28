@@ -72,6 +72,12 @@ class LLMProcessor {
     /// VLM（Vision Language Model）: 画像 + テキストプロンプトで処理
     /// スクリーンショットを直接VLMに送って画面の内容を理解させる
     func processWithVision(image: CGImage, prompt: String, completion: @escaping (String) -> Void) {
+        // P2 critical: Offline Mode 中は VLM (cloud) を完全ブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("LLM(VLM): blocked by Offline Mode")
+            completion("")
+            return
+        }
         let s = AppSettings.shared
 
         // 画像をJPEG Base64に変換（品質70%でサイズ削減）
@@ -148,6 +154,12 @@ class LLMProcessor {
     /// 画面コンテキスト専用: llmEnabled/llmModeに関係なく、利用可能なLLMで処理
     func processScreenContext(prompt: String, completion: @escaping (String) -> Void) {
         guard !prompt.isEmpty else { completion(""); return }
+        // P2 critical: Offline Mode 中は cloud LLM への画面コンテキスト送信を完全ブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("LLM(screen): blocked by Offline Mode")
+            completion("")
+            return
+        }
         let s = AppSettings.shared
 
         // UTF-8文字化けをサニタイズするラッパー
@@ -252,6 +264,12 @@ class LLMProcessor {
     private func processRemoteWith(text: String, instruction: String,
                                     baseURL: String, model: String, apiKey: String,
                                     completion: @escaping (String) -> Void) {
+        // P2 critical: Offline Mode 中はクラウド LLM への HTTPS 送信を完全ブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("LLM(cloud): blocked by Offline Mode (\(baseURL))")
+            completion("")
+            return
+        }
         let body: [String: Any] = [
             "model": model,
             "messages": [
@@ -286,13 +304,17 @@ class LLMProcessor {
                 return
             }
             let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            klog("LLM remote fallback done: '\(result)'")
+            klog("LLM remote fallback done: '\(result.prefix(80))'")
             DispatchQueue.main.async { completion(result) }
         }.resume()
     }
 
     private func processRemote(text: String, instruction: String, completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
+        if s.offlineModeEnabled {
+            klog("LLM(cloud): blocked by Offline Mode (\(s.llmProvider.rawValue))")
+            completion(text); return
+        }
         let baseURL = s.llmProvider == .custom ? s.llmBaseURL : s.llmProvider.baseURL
         let model   = s.llmModel
 
@@ -331,7 +353,7 @@ class LLMProcessor {
                 return
             }
             let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            klog("LLM remote done: '\(result)'")
+            klog("LLM remote done: '\(result.prefix(80))'")
             DispatchQueue.main.async { completion(result) }
         }.resume()
     }
@@ -340,6 +362,10 @@ class LLMProcessor {
 
     private func processAnthropic(text: String, instruction: String, completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
+        if s.offlineModeEnabled {
+            klog("LLM(Anthropic): blocked by Offline Mode")
+            completion(text); return
+        }
         let model = s.llmModel
         let body: [String: Any] = [
             "model": model,
@@ -372,7 +398,7 @@ class LLMProcessor {
                 return
             }
             let result = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            klog("LLM Anthropic done: '\(result)'")
+            klog("LLM Anthropic done: '\(result.prefix(80))'")
             DispatchQueue.main.async { completion(result) }
         }.resume()
     }

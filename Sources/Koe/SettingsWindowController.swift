@@ -36,34 +36,117 @@ private enum Lux {
     static let charcoal  = Color(red: 0.10, green: 0.09, blue: 0.08)
 }
 
+/// Settings tab 列挙: SettingsRootView でカスタムタブバーに使う。
+/// 順番・ラベル・アイコンは旧 TabView と完全一致 (構成変更なし、UI のみ刷新)。
+private enum KoeSettingsTab: String, CaseIterable, Identifiable {
+    case general, voice, ai, automation, stats, history
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .general:    return L10n.tabGeneral
+        case .voice:      return L10n.tabVoice
+        case .ai:         return L10n.tabAI
+        case .automation: return L10n.tabAutomation
+        case .stats:      return L10n.tabStats
+        case .history:    return L10n.tabHistory
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .general:    return "gear"
+        case .voice:      return "waveform"
+        case .ai:         return "brain.head.profile"
+        case .automation: return "bolt.fill"
+        case .stats:      return "chart.bar.fill"
+        case .history:    return "clock.arrow.circlepath"
+        }
+    }
+}
+
 struct SettingsRootView: View {
     @State private var selectedPersona: Persona?
+    @State private var selectedTab: KoeSettingsTab = .general
 
     var body: some View {
         VStack(spacing: 0) {
             // Persona quick-select bar
             PersonaBar(selectedPersona: $selectedPersona)
 
-            TabView {
-                GeneralTab()
-                    .tabItem { Label(L10n.tabGeneral, systemImage: "gear") }
-                VoiceTab()
-                    .tabItem { Label(L10n.tabVoice, systemImage: "waveform") }
-                AITab()
-                    .tabItem { Label(L10n.tabAI, systemImage: "brain.head.profile") }
-                AutomationTab()
-                    .tabItem { Label(L10n.tabAutomation, systemImage: "bolt.fill") }
-                StatsTab()
-                    .tabItem { Label(L10n.tabStats, systemImage: "chart.bar.fill") }
-                HistoryTab()
-                    .tabItem { Label(L10n.tabHistory, systemImage: "clock.arrow.circlepath") }
+            // P1/P4 指摘 (Settings IA): >> 隠しポップアップを廃止し、6 タブを常時表示の
+            // 水平タブストリップに置換。順番・ラベル・アイコンは旧 TabView と同じ。
+            HStack(spacing: 4) {
+                ForEach(KoeSettingsTab.allCases) { tab in
+                    SettingsTabButton(
+                        tab: tab,
+                        isSelected: selectedTab == tab,
+                        action: { selectedTab = tab }
+                    )
+                }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.55))
+            )
+            .padding(.horizontal, 4)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+
+            // タブ内容: 旧 TabView と同じ 6 View をそのまま差し替え (構成不変)
+            Group {
+                switch selectedTab {
+                case .general:    GeneralTab()
+                case .voice:      VoiceTab()
+                case .ai:         AITab()
+                case .automation: AutomationTab()
+                case .stats:      StatsTab()
+                case .history:    HistoryTab()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(16)
-        .frame(width: 580, height: 580)
+        .frame(width: 720, height: 640)  // タブ常時表示で横幅を少し広げ、6 タブが余裕で並ぶ
         .sheet(item: $selectedPersona) { persona in
             PersonaDetailView(persona: persona) { selectedPersona = nil }
         }
+    }
+}
+
+/// 1 タブボタン: アイコン上 + ラベル下、選択中は gold ハイライト。
+/// accessibilityLabel 必須 (P4 critical 対策)。
+private struct SettingsTabButton: View {
+    let tab: KoeSettingsTab
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: tab.systemImage)
+                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? Lux.gold : .secondary)
+                Text(tab.label)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Lux.gold.opacity(0.18) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Lux.gold.opacity(0.4) : Color.clear, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(tab.label))
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
 }
 
@@ -253,6 +336,9 @@ struct PersonaBar: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    // P4 critical 対策: VoiceOver で「Button」とだけ読まれていた状態を解消
+                    .accessibilityLabel(Text("プリセット: \(persona.name)"))
+                    .accessibilityHint(Text(persona.description))
                 }
             }
         }
@@ -515,6 +601,34 @@ struct GeneralTab: View {
                     .foregroundColor(Lux.gold)
             }
 
+            // オフラインモード: クラウドへの音声送信を一切行わない
+            Section {
+                Toggle(isOn: $settings.offlineModeEnabled) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield.fill")
+                            .foregroundColor(settings.offlineModeEnabled ? Lux.gold : .secondary)
+                        Text("オフラインモード")
+                    }
+                }
+                Text("クラウドへの音声送信を一切行いません / Never send audio to the cloud")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+                if settings.offlineModeEnabled {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("✅ クラウドへの送信は一切ブロックされます")
+                            .font(.system(size: 10, weight: .semibold)).foregroundColor(Lux.gold)
+                        Text("• 音声認識: ローカル whisper.cpp のみ")
+                            .font(.system(size: 10)).foregroundColor(Lux.gold)
+                        Text("• LLM: ローカル llama.cpp のみ（クラウド API は無効化）")
+                            .font(.system(size: 10)).foregroundColor(Lux.gold)
+                        Text("• テレメトリ / クラッシュレポート送信なし")
+                            .font(.system(size: 10)).foregroundColor(Lux.gold)
+                    }
+                }
+            } header: {
+                Label("プライバシー", systemImage: "lock.shield")
+                    .foregroundColor(Lux.gold)
+            }
+
             Section {
                 Toggle(L10n.toggleLaunchAtLogin, isOn: $settings.launchAtLogin)
                 Toggle(L10n.toggleCopyToClipboard, isOn: $settings.autoCopyToClipboard)
@@ -533,25 +647,105 @@ struct GeneralTab: View {
                 }
 
                 Toggle(L10n.toggleCmdIMESwitch, isOn: $settings.cmdIMESwitchEnabled)
+
+                // Fn キーで録音 (CGEventTap 経由 — アクセシビリティ必須)
+                let axGranted = AXIsProcessTrusted()
+                Toggle("Fn キーで録音", isOn: $settings.fnKeyEnabled)
+                    .disabled(!axGranted)
+                    .onChange(of: settings.fnKeyEnabled) { _ in
+                        AppDelegate.shared?.reregisterHotkey()
+                    }
+                if settings.fnKeyEnabled {
+                    HStack {
+                        Text("Fn キーの動作")
+                        Spacer()
+                        Picker("", selection: $settings.fnKeyMode) {
+                            Text("タップでトグル").tag("tap_toggle")
+                            Text("押している間だけ").tag("hold_ptt")
+                        }
+                        .frame(width: 200)
+                        .onChange(of: settings.fnKeyMode) { _ in
+                            AppDelegate.shared?.reregisterHotkey()
+                        }
+                        .accessibilityLabel(Text("Fn キーの動作モード"))
+                    }
+                    // P4 指摘: 説明 2 行のみだったので詳細解説を追加
+                    Text(settings.fnKeyMode == "tap_toggle"
+                         ? "✦ Fn を**短く 1 回押して離す** → 録音開始 / もう 1 回タップ → 録音終了。0.6 秒以内のタップだけ反応するので、他のキーと組み合わせた使用には影響しません。"
+                         : "✦ Fn を**押している間だけ** 録音 (Push-to-Talk)。指を離した瞬間に文字起こし開始。短い発話のサクサク連発に最適。")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .padding(.top, 2)
+                    Text(settings.fnKeyMode == "tap_toggle"
+                         ? "ヒント: Fn + 別キー (例: Fn+V) の通常用途には影響しません。"
+                         : "ヒント: 長押し中に他のキーを押すと record cancel されます。")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                        .italic()
+                }
+                if !axGranted {
+                    Text("Fn キーの利用にはアクセシビリティ権限が必要です")
+                        .font(.system(size: 10))
+                        .foregroundColor(.orange)
+                }
+
                 Toggle(L10n.toggleShowNoiseLevel, isOn: $settings.showNoiseLevel)
                 Toggle("メニューバーにマイクアイコンを表示", isOn: $settings.menuBarIconVisible)
 
-                // 録音中の音量ダッキング
+                // 録音中の音量ダッキング: モード選択 + （manual時のみ）スライダー
                 HStack {
                     Text("録音中の音量")
-                    Slider(value: Binding(
-                        get: { Double(settings.duckingVolume) },
-                        set: { settings.duckingVolume = Int($0) }
-                    ), in: 0...50, step: 5)
-                    Text(settings.duckingVolume == 0 ? "OFF" : "\(settings.duckingVolume)%")
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(width: 36, alignment: .trailing)
+                    Spacer()
+                    Picker("", selection: $settings.duckingMode) {
+                        Text("OFF").tag("off")
+                        Text("手動").tag("manual")
+                        Text("自動").tag("auto")
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 180)
+                    .accessibilityLabel(Text("録音中の音量ダッキングモード"))
+                    .accessibilityValue(Text(settings.duckingMode == "off" ? "OFF" : settings.duckingMode == "auto" ? "自動" : "手動"))
                 }
-                .help("録音中にシステム音量を自動で下げます（0=OFF）")
+                .help("OFF=ダッキングしない / 手動=常に下げる / 自動=音が鳴っている時だけ下げる")
+
+                if settings.duckingMode != "off" {
+                    HStack {
+                        Text("下げる音量")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        Slider(value: Binding(
+                            get: { Double(settings.duckingVolume) },
+                            set: { settings.duckingVolume = Int($0) }
+                        ), in: 0...50, step: 5)
+                        Text(settings.duckingVolume == 0 ? "OFF" : "\(settings.duckingVolume)%")
+                            .font(.system(size: 11, design: .monospaced))
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                }
             } header: {
                 Label(L10n.sectionBehavior, systemImage: "slider.horizontal.3")
                     .foregroundColor(Lux.gold)
             }
+
+            // Overlay / 配信表示
+            Section {
+                Toggle("配信モード（大文字表示）", isOn: $settings.overlayLargeTextMode)
+                Text("OBS 等の配信ソースで読みやすい大きな文字で表示します。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+                Text("⌥ キーを押しながらドラッグで Overlay の位置を移動・保存できます。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+                if settings.overlayHasCustomOrigin {
+                    Button("Overlay 位置をリセット") {
+                        settings.overlayHasCustomOrigin = false
+                    }
+                }
+            } header: {
+                Label("Overlay 表示", systemImage: "rectangle.on.rectangle")
+                    .foregroundColor(Lux.gold)
+            }
+
+            // 音声アーカイブ（プライバシー機微: 同意付きトグル + 自動 prune）
+            AudioArchiveSection()
 
             Section {
                 DisclosureGroup(L10n.labelMenuBarLanguages) {
@@ -630,21 +824,199 @@ struct GeneralTab: View {
     }
 }
 
+// MARK: - Audio Archive Section (録音音声のローカル蓄積 + 自動 prune)
+
+struct AudioArchiveSection: View {
+    @ObservedObject private var settings = AppSettings.shared
+
+    var body: some View {
+        Section {
+            // 同意トグル: ON 時にプライバシー確認モーダルを出す
+            Toggle("録音音声をローカルに保存", isOn: Binding(
+                get: { settings.audioArchiveEnabled },
+                set: { newValue in
+                    if newValue && !settings.audioArchiveEnabled {
+                        // OFF → ON: 同意モーダルを表示し、Cancel ならロールバック
+                        if confirmEnableArchive() {
+                            settings.audioArchiveEnabled = true
+                        } else {
+                            // SwiftUI の Binding を即座に反転するため明示代入（UI が一度 true を反映するため）
+                            settings.audioArchiveEnabled = false
+                        }
+                    } else {
+                        settings.audioArchiveEnabled = newValue
+                    }
+                }
+            ))
+            .help("録音した音声 WAV をローカルに蓄積します（プライバシーに関わるため既定で OFF）")
+
+            if settings.audioArchiveEnabled {
+                // 保存先パス
+                HStack {
+                    Text("保存先")
+                    Spacer()
+                    Text(settings.audioArchiveResolvedPath)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button("選択…") { chooseFolder() }
+                        .controlSize(.small)
+                        .accessibilityLabel(Text("音声アーカイブの保存先フォルダを選択"))
+                    Button("Finder で開く") { revealInFinder() }
+                        .controlSize(.small)
+                        .accessibilityLabel(Text("音声アーカイブを Finder で表示"))
+                }
+
+                // 容量上限
+                HStack {
+                    Text("容量上限")
+                    Spacer()
+                    TextField("", value: $settings.audioArchiveMaxGB, formatter: Self.gbFormatter)
+                        .frame(width: 60)
+                        .textFieldStyle(.roundedBorder)
+                    Text("GB").foregroundColor(.secondary)
+                }
+
+                // 日数上限
+                HStack {
+                    Text("保存日数")
+                    Spacer()
+                    TextField("", value: $settings.audioArchiveMaxDays, formatter: Self.daysFormatter)
+                        .frame(width: 60)
+                        .textFieldStyle(.roundedBorder)
+                    Text("日").foregroundColor(.secondary)
+                }
+
+                Toggle("上限超過時は自動削除（古い順）", isOn: $settings.audioArchiveAutoPrune)
+                    .help("OFF の場合、上限超過しても削除しません")
+
+                // 統計
+                let stats = AudioArchive.shared.stats()
+                Text("保存済み: \(stats.count) ファイル / \(String(format: "%.1f", stats.totalMB)) MB")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        } header: {
+            Label("音声アーカイブ", systemImage: "waveform.circle")
+                .foregroundColor(Lux.gold)
+        }
+    }
+
+    // MARK: Number formatters
+    private static let gbFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.minimum = 0.1
+        f.maximum = 500
+        f.maximumFractionDigits = 1
+        return f
+    }()
+
+    private static let daysFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .none
+        f.minimum = 1
+        f.maximum = 3650
+        return f
+    }()
+
+    /// 有効化確認モーダル。ユーザーが「有効化」を押したら true を返す。
+    private func confirmEnableArchive() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "音声アーカイブを有効化しますか？"
+        alert.informativeText = """
+        録音音声をローカルに蓄積します。
+
+        ⚠️ これは取材源、会議内容、個人情報等、あなたのプライバシーに関わるデータです:
+        • ディスク内に平文 WAV として保存されます（暗号化なし）
+        • Time Machine / iCloud Drive / Dropbox 等の自動バックアップ対象になる可能性があります
+        • 同じ Mac の他ユーザーや、フルディスクアクセス権を持つアプリから読まれる可能性があります
+        • ディスク容量が継続的に増え続けます
+
+        保存先: \(settings.audioArchiveResolvedPath)
+
+        本当に有効化しますか？
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "有効化")
+        // .alertFirstButtonReturn = Cancel, .alertSecondButtonReturn = 有効化
+        return alert.runModal() == .alertSecondButtonReturn
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.prompt = "選択"
+        panel.message = "音声アーカイブの保存先フォルダを選んでください"
+        if panel.runModal() == .OK, let url = panel.url {
+            settings.audioArchivePath = url.path
+        }
+    }
+
+    private func revealInFinder() {
+        let path = settings.audioArchiveResolvedPath
+        let url = URL(fileURLWithPath: path, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+}
+
 // MARK: - Voice Tab (音声: エンジン、モデル、認識パラメータ)
 
 struct VoiceTab: View {
     @ObservedObject private var settings = AppSettings.shared
+    @State private var inputDevices: [AudioDeviceEnumerator.InputDevice] = []
+    @State private var deviceObserverRegistered = false
 
     var body: some View {
         Form {
             Section {
+                Picker("入力デバイス", selection: $settings.audioInputDeviceUID) {
+                    Text("システムデフォルト").tag("")
+                    ForEach(inputDevices, id: \.uid) { dev in
+                        Text(dev.name).tag(dev.uid)
+                    }
+                }
+                if !settings.audioInputDeviceUID.isEmpty
+                    && !inputDevices.contains(where: { $0.uid == settings.audioInputDeviceUID }) {
+                    Text("選択中のデバイスが見つかりません（切断中？）")
+                        .font(.system(size: 10)).foregroundColor(.orange)
+                }
+            } header: {
+                Label("マイク", systemImage: "mic")
+                    .foregroundColor(Lux.gold)
+            }
+            .onAppear {
+                inputDevices = AudioDeviceEnumerator.listInputDevices()
+                if !deviceObserverRegistered {
+                    deviceObserverRegistered = true
+                    AudioDeviceEnumerator.observeDeviceChanges {
+                        inputDevices = AudioDeviceEnumerator.listInputDevices()
+                    }
+                }
+            }
+
+            Section {
+                // オフラインモード時はクラウド系エンジンを除外
+                let availableEngines: [RecognitionEngine] = settings.offlineModeEnabled
+                    ? RecognitionEngine.allCases.filter { $0.isLocal }
+                    : RecognitionEngine.allCases
                 Picker(L10n.labelRecognitionEngine, selection: $settings.recognitionEngine) {
-                    ForEach(RecognitionEngine.allCases, id: \.self) { engine in
+                    ForEach(availableEngines, id: \.self) { engine in
                         Text(engine.displayName).tag(engine)
                     }
                 }
                 .onChange(of: settings.recognitionEngine) { _ in
                     AppDelegate.shared?.reloadSpeechEngine()
+                }
+                if settings.offlineModeEnabled {
+                    Text("オフラインモード中: ローカルエンジンのみ選択可能")
+                        .font(.system(size: 10)).foregroundColor(.secondary)
                 }
 
                 if settings.recognitionEngine == .whisperCpp {
@@ -719,6 +1091,9 @@ struct VoiceTab: View {
                 Label(L10n.sectionTextProcessing, systemImage: "text.badge.checkmark")
                     .foregroundColor(Lux.gold)
             }
+
+            // P1 R3/R4 medium: 技術用語辞書 (音声誤認識の英単語復元) を Settings で編集可能に
+            TechTermDictionarySection()
 
             Section {
                 Toggle(L10n.toggleContextAware, isOn: $settings.contextAwareEnabled)
@@ -1070,6 +1445,80 @@ struct ProfileEditSheet: View {
     }
 }
 
+// MARK: - Tech Term Dictionary editor (P1 R4)
+
+/// 認識結果の英単語復元辞書を Settings から編集できる簡易テーブル。
+/// pre-seed されたエントリ + ユーザー追加分を view・追加・削除できる。
+struct TechTermDictionarySection: View {
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var newKey: String = ""
+    @State private var newValue: String = ""
+
+    var body: some View {
+        Section {
+            Text("音声認識後に置換される英単語辞書。例: 「あしんく あう」→「async/await」。")
+                .font(.system(size: 10)).foregroundColor(.secondary)
+
+            // 新規追加 row
+            HStack {
+                TextField("ひらがな（例: ゆーず すてーと）", text: $newKey)
+                    .textFieldStyle(.roundedBorder)
+                Text("→")
+                TextField("英単語（例: useState）", text: $newValue)
+                    .textFieldStyle(.roundedBorder)
+                Button("追加") {
+                    let k = newKey.trimmingCharacters(in: .whitespaces).lowercased()
+                    let v = newValue.trimmingCharacters(in: .whitespaces)
+                    guard !k.isEmpty, !v.isEmpty else { return }
+                    var dict = settings.techTermDictionary
+                    dict[k] = v
+                    settings.techTermDictionary = dict
+                    newKey = ""; newValue = ""
+                }
+                .disabled(newKey.isEmpty || newValue.isEmpty)
+            }
+
+            // 既存エントリ list (key 昇順)
+            let pairs = settings.techTermDictionary.sorted { $0.key < $1.key }
+            if pairs.isEmpty {
+                Text("辞書は空です").font(.caption).foregroundColor(.secondary)
+            } else {
+                ForEach(pairs, id: \.key) { pair in
+                    HStack {
+                        Text(pair.key)
+                            .font(.system(size: 10, design: .monospaced))
+                            .frame(minWidth: 140, alignment: .leading)
+                        Text("→")
+                            .foregroundColor(.secondary)
+                        Text(pair.value)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.green)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button(action: {
+                            var dict = settings.techTermDictionary
+                            dict.removeValue(forKey: pair.key)
+                            settings.techTermDictionary = dict
+                        }) {
+                            Image(systemName: "trash")
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel(Text("「\(pair.key)」のエントリを削除"))
+                    }
+                }
+            }
+
+            Button("デフォルトに戻す") {
+                settings.techTermDictionary = AppSettings.defaultTechTermDictionary()
+            }
+            .controlSize(.small)
+            .padding(.top, 4)
+        } header: {
+            Label("技術用語辞書", systemImage: "character.book.closed")
+                .foregroundColor(Lux.gold)
+        }
+    }
+}
+
 struct RunningAppInfo: Identifiable, Hashable {
     let id: String
     let name: String
@@ -1099,12 +1548,21 @@ struct AITab: View {
                         }
                     }
 
-                    Picker(L10n.labelProcessingEngine, selection: $s.llmUseLocal) {
-                        Text(L10n.engineLocal).tag(true)
-                        Text(L10n.engineCloud).tag(false)
+                    // オフラインモード中はクラウド LLM を選択不可（ローカル固定）
+                    if !s.offlineModeEnabled {
+                        Picker(L10n.labelProcessingEngine, selection: $s.llmUseLocal) {
+                            Text(L10n.engineLocal).tag(true)
+                            Text(L10n.engineCloud).tag(false)
+                        }
+                    } else {
+                        HStack {
+                            Image(systemName: "lock.fill").foregroundColor(.secondary)
+                            Text("オフラインモード: ローカル LLM 固定")
+                                .font(.system(size: 11)).foregroundColor(.secondary)
+                        }
                     }
 
-                    if s.llmUseLocal {
+                    if s.llmUseLocal || s.offlineModeEnabled {
                         LocalLLMSettingsView()
                     } else {
                         Picker(L10n.labelProvider, selection: $s.llmProvider) {

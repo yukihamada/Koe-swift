@@ -435,6 +435,57 @@ class AppSettings: ObservableObject {
     // 録音中の音量ダッキング (0=OFF, 1〜100=ダッキング後の音量%)
     @Published var duckingVolume: Int { didSet { ud.set(duckingVolume, forKey: "duckingVolume") } }
 
+    // 音量ダッキングのモード ("off" | "manual" | "auto")
+    @Published var duckingMode: String { didSet { ud.set(duckingMode, forKey: "duckingMode") } }
+
+    // オフラインモード (クラウド送信を一切行わない)
+    @Published var offlineModeEnabled: Bool { didSet {
+        ud.set(offlineModeEnabled, forKey: "offlineModeEnabled")
+        if offlineModeEnabled { applyOfflineModeConstraints() }
+        AppDelegate.shared?.reloadSpeechEngine()
+    }}
+
+    // 入力デバイス (空文字 = システムデフォルト、それ以外は CoreAudio の UID)
+    @Published var audioInputDeviceUID: String { didSet { ud.set(audioInputDeviceUID, forKey: "audioInputDeviceUID") } }
+
+    // 音声アーカイブ: 録音した WAV をローカルに蓄積するかどうか（プライバシー配慮でデフォルト OFF）
+    @Published var audioArchiveEnabled: Bool { didSet { ud.set(audioArchiveEnabled, forKey: "audioArchiveEnabled") } }
+    @Published var audioArchivePath: String { didSet { ud.set(audioArchivePath, forKey: "audioArchivePath") } }
+    @Published var audioArchiveMaxGB: Double { didSet { ud.set(audioArchiveMaxGB, forKey: "audioArchiveMaxGB") } }
+    @Published var audioArchiveMaxDays: Int { didSet { ud.set(audioArchiveMaxDays, forKey: "audioArchiveMaxDays") } }
+    @Published var audioArchiveAutoPrune: Bool { didSet { ud.set(audioArchiveAutoPrune, forKey: "audioArchiveAutoPrune") } }
+
+    // Fn キー対応: 単独タップ / 押している間だけ録音
+    @Published var fnKeyEnabled: Bool { didSet { ud.set(fnKeyEnabled, forKey: "fnKeyEnabled") } }
+    @Published var fnKeyMode: String  { didSet { ud.set(fnKeyMode, forKey: "fnKeyMode") } }
+
+    // 技術用語辞書: 音声認識後に「あしんく あう」→「async/await」のように post-process で復元する
+    // P1 critical 指摘 (英単語混じり日本語の破壊) 対策。Settings UI から編集可能 (R2 では pre-seed のみ)。
+    @Published var techTermDictionary: [String: String] { didSet {
+        if let data = try? JSONEncoder().encode(techTermDictionary) {
+            ud.set(data, forKey: "techTermDictionary")
+        }
+    }}
+
+    // Overlay window 拡張: 配信用 large text モード + ユーザーが動かした位置の永続化
+    @Published var overlayLargeTextMode: Bool { didSet { ud.set(overlayLargeTextMode, forKey: "overlayLargeTextMode") } }
+    @Published var overlayOriginX: Double { didSet { ud.set(overlayOriginX, forKey: "overlayOriginX") } }
+    @Published var overlayOriginY: Double { didSet { ud.set(overlayOriginY, forKey: "overlayOriginY") } }
+    /// overlayOriginX/Y が有効値 (起動時にユーザー位置を採用するか) を示す
+    @Published var overlayHasCustomOrigin: Bool { didSet { ud.set(overlayHasCustomOrigin, forKey: "overlayHasCustomOrigin") } }
+
+    // メインショートカットが .function modifier を含むか (Carbon 不可 → CGEventTap で処理)
+    var shortcutUsesFn: Bool {
+        NSEvent.ModifierFlags(rawValue: shortcutModifiers).contains(.function)
+    }
+
+    /// 音声アーカイブの実効パス（未設定なら既定パスを返す）
+    var audioArchiveResolvedPath: String {
+        if !audioArchivePath.isEmpty { return (audioArchivePath as NSString).expandingTildeInPath }
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return base.appendingPathComponent("Koe/AudioArchive", isDirectory: true).path
+    }
+
     private let ud = UserDefaults.standard
 
     // MARK: Computed
@@ -442,6 +493,7 @@ class AppSettings: ObservableObject {
     var shortcutDisplayString: String {
         var parts: [String] = []
         let mods = NSEvent.ModifierFlags(rawValue: shortcutModifiers)
+        if mods.contains(.function) { parts.append("fn") }
         if mods.contains(.control) { parts.append("⌃") }
         if mods.contains(.option)  { parts.append("⌥") }
         if mods.contains(.shift)   { parts.append("⇧") }
@@ -604,7 +656,103 @@ class AppSettings: ObservableObject {
         commandModeEnabled = ud.object(forKey: "commandModeEnabled") as? Bool ?? true  // デフォルトON
         showNoiseLevel = ud.object(forKey: "showNoiseLevel") as? Bool ?? true  // デフォルトON
         duckingVolume = ud.object(forKey: "duckingVolume") as? Int ?? 5  // デフォルト5%
+        duckingMode = ud.string(forKey: "duckingMode") ?? "off"  // デフォルト off（共有スピーカー MTG での誤検知防止 / R1 privacy）
+        offlineModeEnabled = ud.object(forKey: "offlineModeEnabled") as? Bool ?? true  // デフォルトON（プライバシーファースト / R1 privacy）
+        audioInputDeviceUID = ud.string(forKey: "audioInputDeviceUID") ?? ""  // 空 = システムデフォルト
+        // 音声アーカイブ系（プライバシー配慮でデフォルト OFF）
+        audioArchiveEnabled  = ud.object(forKey: "audioArchiveEnabled") as? Bool ?? false
+        audioArchivePath     = ud.string(forKey: "audioArchivePath") ?? ""
+        audioArchiveMaxGB    = ud.object(forKey: "audioArchiveMaxGB") as? Double ?? 10.0
+        audioArchiveMaxDays  = ud.object(forKey: "audioArchiveMaxDays") as? Int ?? 30
+        audioArchiveAutoPrune = ud.object(forKey: "audioArchiveAutoPrune") as? Bool ?? true
+        // Fn キー設定（デフォルトOFF / tap_toggle）
+        fnKeyEnabled = ud.object(forKey: "fnKeyEnabled") as? Bool ?? false
+        fnKeyMode    = ud.string(forKey: "fnKeyMode") ?? "tap_toggle"
+        // 技術用語辞書（pre-seed: 開発でよく出る英単語の音声誤認識を復元）
+        if let data = ud.data(forKey: "techTermDictionary"),
+           let dict = try? JSONDecoder().decode([String: String].self, from: data) {
+            techTermDictionary = dict
+        } else {
+            techTermDictionary = AppSettings.defaultTechTermDictionary()
+        }
+        // Overlay 拡張
+        overlayLargeTextMode  = ud.object(forKey: "overlayLargeTextMode") as? Bool ?? false
+        overlayOriginX        = ud.object(forKey: "overlayOriginX") as? Double ?? 0
+        overlayOriginY        = ud.object(forKey: "overlayOriginY") as? Double ?? 0
+        overlayHasCustomOrigin = ud.object(forKey: "overlayHasCustomOrigin") as? Bool ?? false
         rebuildExpansionMap()
+    }
+
+    /// オフラインモード ON 時にクラウド系設定を強制ローカル化する
+    private func applyOfflineModeConstraints() {
+        // クラウド系の音声認識エンジンが選択されていればローカルへ切り替え
+        if !recognitionEngine.isLocal {
+            // whisper.cpp の準備があればそちらを優先（高精度・最速）、なければ Apple オンデバイス
+            let hasWhisperCpp = !whisperCppBinaryPath.isEmpty || !whisperCppModelPath.isEmpty
+            recognitionEngine = hasWhisperCpp ? .whisperCpp : .appleOnDevice
+        }
+        // LLM がクラウドプロバイダ経由ならローカル LLM 推論に固定
+        if llmEnabled && !llmUseLocal {
+            llmUseLocal = true
+        }
+    }
+
+    /// 開発でよく出る英単語の音声誤認識を復元するための pre-seeded mapping。
+    /// 認識結果が ja-JP で英単語が「あしんく あう」のように壊れている場合、これで戻す。
+    /// 全部小文字で 比較するために key は小文字統一。
+    static func defaultTechTermDictionary() -> [String: String] {
+        return [
+            // 非同期 / Promise 系
+            "あしんく あう": "async/await",
+            "あしんく あうぇいと": "async/await",
+            "ぷろみす": "Promise",
+            // React / JS
+            "ゆーずえふぇくと": "useEffect",
+            "ゆーず すてーと": "useState",
+            "ゆーず めも": "useMemo",
+            "じぇーえす": "JS",
+            "てぃーえす": "TS",
+            "じゃーばすくりぷと": "JavaScript",
+            "たいぷすくりぷと": "TypeScript",
+            // Swift / iOS
+            "すいふと ゆーあい": "SwiftUI",
+            "ゆーあいきっと": "UIKit",
+            "こんばいん": "Combine",
+            "あくたー": "actor",
+            // Python
+            "ぱいそん": "Python",
+            "ぱんだす": "pandas",
+            "なんぱい": "NumPy",
+            // インフラ / ツール
+            "どっかー": "Docker",
+            "くーばねてす": "Kubernetes",
+            "けーえいと えす": "k8s",
+            "ぎっとはぶ": "GitHub",
+            "ぎっとらぼ": "GitLab",
+            "あちょらぶる": "Actuallable",  // dummy intentional — show extensibility
+            "えーぴーあい": "API",
+            "えすえすえいち": "SSH",
+            "あいでぃーいー": "IDE",
+            // AI / ML
+            "えるえるえむ": "LLM",
+            "じーぴーてぃー": "GPT",
+            "くろーど": "Claude",
+            "ういすぱー": "Whisper",
+        ]
+    }
+
+    /// 認識結果に対して techTermDictionary を適用して壊れた英単語を復元する。
+    /// SpeechEngine の recognize 完了時に呼ばれる。
+    func applyTechTermDictionary(_ text: String) -> String {
+        guard !techTermDictionary.isEmpty else { return text }
+        var out = text
+        // 長い key から先に置換（短い key が長い key の prefix にならないように）
+        let sortedKeys = techTermDictionary.keys.sorted { $0.count > $1.count }
+        for key in sortedKeys {
+            guard let value = techTermDictionary[key] else { continue }
+            out = out.replacingOccurrences(of: key, with: value)
+        }
+        return out
     }
 
     private static func defaultProfiles() -> [AppProfile] {

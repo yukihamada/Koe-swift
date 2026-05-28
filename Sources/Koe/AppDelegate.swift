@@ -383,6 +383,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         HistoryStore.shared.flushSync()
+        // 録音中に終了するとシステムデフォルト入力デバイスが選択 UID に固定されたままになる
+        // ので、cancel() で必ず restoreDefaultInputDevice() を通す
+        recorder.cancel()
         WhisperServer.shared.stop()
         WakeWordDetector.shared.stop()
         // Carbon の global hotkey / event handler を確実に解放
@@ -420,10 +423,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         let s = AppSettings.shared
         let badge = s.recognitionEngine.isLocal ? "LOCAL" : "CLOUD"
+        let offlinePrefix = s.offlineModeEnabled ? "🔒 " : ""
 
-        // ステータスヘッダー: ショートカット + モード + エンジン
+        // ステータスヘッダー: ショートカット + モード + エンジン (+ オフライン表示)
         let modeIcon = s.recordingMode == .toggle ? "トグル" : "ホールド"
-        let header = NSMenuItem(title: "\(s.languageFlag)  \(s.shortcutDisplayString) [\(modeIcon)]  \(badge)", action: nil, keyEquivalent: "")
+        let header = NSMenuItem(title: "\(offlinePrefix)\(s.languageFlag)  \(s.shortcutDisplayString) [\(modeIcon)]  \(badge)", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         // Quickstart hint for new users
@@ -522,6 +526,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 item.button?.image = img
             }
             item.button?.contentTintColor = recording ? .systemRed : nil
+            // オフラインモード ON 時は鍵バッジを表示
+            if AppSettings.shared.offlineModeEnabled {
+                item.button?.title = "🔒"
+                item.button?.imagePosition = .imageLeading
+            } else {
+                item.button?.title = ""
+            }
         }
         if AppSettings.shared.floatingButtonEnabled {
             FloatingButton.shared.setRecording(recording)
@@ -602,6 +613,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Carbon Hot Key API でメインホットキーを登録（アクセシビリティ不要）
         registerCarbonHotKey(settings: settings)
 
+        // 起動 3 秒後に hotkey 衝突予測 alert (showHotkeyFailureAlert と被らないよう遅延)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.checkPreemptiveHotkeyConflict()
+        }
+
         // Global monitor は補助機能用 (IME切替, modifier release) — アクセシビリティ必要
         // Space/ESC は Carbon Hot Key で処理するため monitor がなくても基本機能は動作
         if AXIsProcessTrusted() {
@@ -613,8 +629,73 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             klog("Skipping global event monitor (no accessibility)")
         }
+
+        // Fn キー監視 (Carbon が扱えないため CGEventTap で別途処理)
+        configureFnKeyMonitor(settings: settings)
+
         rebuildMenu()
         klog("Hotkey registered: \(settings.shortcutDisplayString)")
+    }
+
+    /// Fn キー監視の有効化/設定更新。設定 OFF または AX なしなら停止する。
+    private func configureFnKeyMonitor(settings: AppSettings) {
+        let monitor = FnKeyMonitor.shared
+
+        // Fn+letter コンボ対象 (メインショートカットが .function を含む場合のみ)
+        let comboKey: Int? = settings.shortcutUsesFn ? settings.shortcutKeyCode : nil
+        let needTap = settings.fnKeyEnabled || comboKey != nil
+
+        guard needTap else {
+            monitor.stop()
+            return
+        }
+
+        monitor.reconfigure(mode: settings.fnKeyMode, comboKeyCode: comboKey)
+
+        // 単独タップ → 録音トグル (or 議事録切替を伴う処理は Carbon パスと同じ挙動)
+        monitor.onFnTap = { [weak self] in
+            guard let self else { return }
+            guard settings.fnKeyEnabled else { return }
+            self.fnTriggerToggle()
+        }
+        // hold_ptt: Fn 押下開始 → 録音開始
+        monitor.onFnHoldStart = { [weak self] in
+            guard let self else { return }
+            guard settings.fnKeyEnabled, !self.isRecording else { return }
+            self.isMeetingAutoRecording = false
+            self.mainKeyHeld = true
+            self.startRecording()
+        }
+        // hold_ptt: Fn 解放 → 認識して停止
+        monitor.onFnHoldEnd = { [weak self] in
+            guard let self else { return }
+            guard settings.fnKeyEnabled, self.isRecording else { return }
+            self.mainKeyHeld = false
+            self.stopAndRecognize()
+        }
+        // Fn+letter コンボ → メインホットキー扱いでトグル
+        monitor.onFnComboShortcut = { [weak self] in
+            self?.fnTriggerToggle()
+        }
+
+        monitor.start()
+    }
+
+    /// Fn 経由で発火する録音トグル (Carbon ハンドラの main hotkey 分岐と同等の挙動)。
+    fileprivate func fnTriggerToggle() {
+        let settings = AppSettings.shared
+        let isToggle = settings.recordingMode == .toggle
+        if isRecording && isMeetingAutoRecording && MeetingMode.shared.isActive {
+            cancelRecording()
+            isMeetingAutoRecording = false
+            startRecording()
+        } else if isToggle {
+            isRecording ? stopAndRecognize() : startRecording()
+        } else if !isRecording {
+            isMeetingAutoRecording = false
+            mainKeyHeld = true
+            startRecording()
+        }
     }
 
     // MARK: - Carbon Hot Key (アクセシビリティ不要)
@@ -742,6 +823,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         carbonHandlersInstalled = false
     }
 
+    /// 起動後 1 回だけ Carbon hotkey 失敗 alert を出すためのガード
+    private var didShowFirstHotkeyAlert = false
+
+    /// P1 指摘 (R3): ⌥⌘V がよく衝突するアプリの bundleID リスト。
+    /// 起動時にこれらがフォアグラウンドにいたら事前警告 NSAlert を出す。
+    private static let knownOptCmdVConflicts: [String: String] = [
+        "com.mitchellh.ghostty": "Ghostty",
+        "com.googlecode.iterm2": "iTerm2",
+        "com.apple.Terminal": "ターミナル",
+        "com.hnc.Discord": "Discord",
+        "com.tinyspeck.slackmacgap": "Slack",
+        "com.apple.dt.Xcode": "Xcode",
+    ]
+
+    /// 起動時に⌥⌘V (またはユーザー設定の hotkey)がフォアグラウンド app で衝突予測されるか確認し、
+    /// 該当する場合だけ事前警告を出す。1 回だけ実行。
+    private var didCheckHotkeyConflictPreemptive = false
+    func checkPreemptiveHotkeyConflict() {
+        guard !didCheckHotkeyConflictPreemptive else { return }
+        didCheckHotkeyConflictPreemptive = true
+        // ⌥⌘V (NSEvent: option+command, keyCode=9) かどうか確認
+        let s = AppSettings.shared
+        let mods = NSEvent.ModifierFlags(rawValue: s.shortcutModifiers)
+        let isOptCmdV = (s.shortcutKeyCode == 9 && mods.contains(.command) && mods.contains(.option))
+        guard isOptCmdV else { return }
+        guard let bid = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+              let name = Self.knownOptCmdVConflicts[bid] else { return }
+        let alert = NSAlert()
+        alert.messageText = "ホットキーが \(name) と衝突する可能性があります"
+        alert.informativeText = """
+        現在のショートカット ⌥⌘V は \(name) で別の機能 (典型的にはクリップボード貼付関連) に割り当てられていることが多いです。
+
+        Koe を \(name) で使うと、貼付操作と録音操作が混線する可能性があります。
+        Settings → General からショートカットを変更するか、Fn キー単独タップ (アクセシビリティ権限が必要) をお試しください。
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Settings を開く")
+        alert.addButton(withTitle: "このまま使う")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            openSettings()
+        }
+    }
+
     /// メイン・翻訳・⌃K・⌥⌘M・⌃⌥R のホットキー本体だけを登録。
     /// イベントハンドラは別途インストール済みであることを前提とする。
     private func registerCarbonHotKeyRefs(settings: AppSettings) {
@@ -755,13 +880,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return m
         }
 
+        // P4 指摘: status != noErr の register 失敗を UI に出さないと衝突に気付けない
+        var failedHotkeys: [String] = []
+
         // メインホットキー登録（既存があれば事前に解除してリーク防止）
         if let ref = carbonHotKeyRef { UnregisterEventHotKey(ref); carbonHotKeyRef = nil }
-        let mainMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers))
-        var mainID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 1) // "Koe\0"
-        let mainStatus = RegisterEventHotKey(UInt32(settings.shortcutKeyCode), mainMods,
-                                              mainID, GetApplicationEventTarget(), 0, &carbonHotKeyRef)
-        klog("Carbon hotkey main: status=\(mainStatus)")
+        // .function を含むショートカットは Carbon で扱えない (修飾子なしで暴発するため登録しない)
+        // → FnKeyMonitor (CGEventTap) 側で発火する
+        if !settings.shortcutUsesFn {
+            let mainMods = carbonMods(NSEvent.ModifierFlags(rawValue: settings.shortcutModifiers))
+            var mainID = EventHotKeyID(signature: OSType(0x4B6F6500), id: 1) // "Koe\0"
+            let mainStatus = RegisterEventHotKey(UInt32(settings.shortcutKeyCode), mainMods,
+                                                  mainID, GetApplicationEventTarget(), 0, &carbonHotKeyRef)
+            klog("Carbon hotkey main: status=\(mainStatus)")
+            if mainStatus != noErr { failedHotkeys.append("\(settings.shortcutDisplayString) (録音)") }
+        } else {
+            klog("Carbon hotkey main: skipped (uses Fn — handled by FnKeyMonitor)")
+        }
 
         // 翻訳ホットキー登録（同上）
         if let ref = carbonTranslateHotKeyRef { UnregisterEventHotKey(ref); carbonTranslateHotKeyRef = nil }
@@ -770,6 +905,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let transStatus = RegisterEventHotKey(UInt32(settings.translateHotkeyCode), transMods,
                                                transID, GetApplicationEventTarget(), 0, &carbonTranslateHotKeyRef)
         klog("Carbon hotkey translate: status=\(transStatus)")
+        if transStatus != noErr { failedHotkeys.append("⌥⌘T (翻訳)") }
 
         // ⌃K ショートカット（追加のクイック起動キー）
         if let ref = carbonCmdKHotKeyRef {
@@ -780,6 +916,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let ctrlKStatus = RegisterEventHotKey(UInt32(kVK_ANSI_K), UInt32(controlKey),
                                                ctrlKID, GetApplicationEventTarget(), 0, &carbonCmdKHotKeyRef)
         klog("Carbon hotkey ⌃K: status=\(ctrlKStatus)")
+        if ctrlKStatus != noErr { failedHotkeys.append("⌃K") }
 
         // ⌥⌘M 議事録トグル
         if let ref = carbonMeetingHotKeyRef {
@@ -791,6 +928,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                                  UInt32(cmdKey | optionKey),
                                                  meetingID, GetApplicationEventTarget(), 0, &carbonMeetingHotKeyRef)
         klog("Carbon hotkey ⌥⌘M: status=\(meetingStatus)")
+        if meetingStatus != noErr { failedHotkeys.append("⌥⌘M (議事録)") }
 
         // ⌃⌥R 直前の認識をやり直す
         if let ref = carbonRerecognizeHotKeyRef {
@@ -802,6 +940,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                                                UInt32(controlKey | optionKey),
                                                rerecID, GetApplicationEventTarget(), 0, &carbonRerecognizeHotKeyRef)
         klog("Carbon hotkey ⌃⌥R: status=\(rerecStatus)")
+        if rerecStatus != noErr { failedHotkeys.append("⌃⌥R (再認識)") }
+
+        // 起動後初回の register で失敗があれば NSAlert で通知（reregisterHotkey 経由の再登録時は alert 出さず log のみ）
+        if !failedHotkeys.isEmpty && !didShowFirstHotkeyAlert {
+            didShowFirstHotkeyAlert = true
+            DispatchQueue.main.async { [weak self] in
+                self?.showHotkeyFailureAlert(failed: failedHotkeys)
+            }
+        }
+    }
+
+    /// Carbon hotkey 登録失敗を NSAlert でユーザーに通知。
+    /// 他アプリと衝突した場合、Settings → General からショートカットを変更する導線を提示する。
+    private func showHotkeyFailureAlert(failed: [String]) {
+        let alert = NSAlert()
+        alert.messageText = "ホットキー登録に失敗しました"
+        alert.informativeText = """
+        以下のショートカットを登録できませんでした:
+        \(failed.map { "• \($0)" }.joined(separator: "\n"))
+
+        他のアプリと衝突している可能性があります。Settings → General からショートカットを変更してください。
+
+        ヒント: 衝突を避けたい場合は Fn キー単独タップ (Settings → General → Fn キーで録音) や ⌃⇧Space を試してください。
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Settings を開く")
+        alert.addButton(withTitle: "閉じる")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            openSettings()
+        }
     }
 
     /// 録音中のみ有効な Space/ESC ホットキーを登録
@@ -879,6 +1048,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard event.keyCode == targetCode, !event.isARepeat else { return }
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags == targetMods else { return }
+            // .function 入りショートカットは FnKeyMonitor で発火するため、ここでは無視 (二重発火防止)
+            if targetMods.contains(.function) { return }
             if isToggle {
                 DispatchQueue.main.async { self.isRecording ? self.stopAndRecognize() : self.startRecording() }
             } else {
@@ -1879,7 +2050,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Volume Ducking (録音中の音量ダッキング)
 
     /// 録音開始時にシステム音量を設定値まで下げる（非同期 — 録音開始をブロックしない）
+    /// duckingMode に応じて動作を切り替える:
+    ///   - "off"    : 何もしない
+    ///   - "manual" : 従来通り duckingVolume まで常にダッキング
+    ///   - "auto"   : 現在の出力音量が 0 より大きい時のみダッキング（音が出ていないなら触らない）
     private func duckSystemVolume() {
+        let mode = AppSettings.shared.duckingMode
+        guard mode != "off" else { return }
         let targetVol = AppSettings.shared.duckingVolume
         guard targetVol > 0 else { return }  // 0 = ダッキングOFF
 
@@ -1896,13 +2073,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let data = pipe.fileHandleForReading.readDataToEndOfFile()
             guard let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   let vol = Int(str), vol > targetVol else { return }
+            // auto モード: 出力音量が 0（実質ミュート）の時はそもそも音が鳴っていないので何もしない
+            if mode == "auto", vol <= 0 {
+                klog("Volume duck skipped (auto mode, output volume = \(vol))")
+                return
+            }
             DispatchQueue.main.async { self.savedVolume = vol }
             let setScript = "set volume output volume \(targetVol)"
             let setTask = Process()
             setTask.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
             setTask.arguments = ["-e", setScript]
             try? setTask.run()
-            klog("Volume ducked: \(vol) → \(targetVol)")
+            klog("Volume ducked (\(mode)): \(vol) → \(targetVol)")
         }
     }
 
@@ -1963,6 +2145,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func reloadSpeechEngine() {
         speech = SpeechEngine()
         rebuildMenu()
+        // オフラインモード等の状態をステータスバーアイコンに反映
+        setIcon(recording: isRecording)
 
         // 言語変更時にモデルを自動切替
         let rawLang = AppSettings.shared.language

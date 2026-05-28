@@ -8,14 +8,22 @@ enum OverlayState {
 
 class OverlayWindow: NSPanel {
     private var stateModel = OverlayStateModel()
+    /// ⌥ キー押下中だけ drag を許可するため flagsChanged をリッスン
+    private var flagsMonitor: Any?
 
     init() {
-        let w: CGFloat = 300, h: CGFloat = 56
+        let isLarge = AppSettings.shared.overlayLargeTextMode
+        let w: CGFloat = isLarge ? 600 : 300
+        let h: CGFloat = isLarge ? 120 : 56
         // ヘッドレス / Screen Sharing 切断時に NSScreen.screens が空になり得るので
         // どちらも nil なら 0,0 origin にフォールバック（直後の show() で再配置される）
         let screen = NSScreen.main ?? NSScreen.screens.first
         let rect: CGRect
-        if let screen = screen {
+        // 保存されたユーザー位置があれば優先
+        let settings = AppSettings.shared
+        if settings.overlayHasCustomOrigin {
+            rect = CGRect(x: settings.overlayOriginX, y: settings.overlayOriginY, width: w, height: h)
+        } else if let screen = screen {
             rect = CGRect(
                 x: screen.frame.midX - w / 2,
                 y: screen.visibleFrame.minY + 32,
@@ -33,11 +41,50 @@ class OverlayWindow: NSPanel {
         isOpaque = false
         hasShadow = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // デフォルトは clickthrough。⌥ 押下中だけ drag のため flagsChanged で切替
         ignoresMouseEvents = true
+        isMovable = false  // ⌥ で許可するまで動かせない
+        stateModel.isLargeTextMode = isLarge
         let hosting = NSHostingView(rootView: OverlayView(model: stateModel))
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = CGColor.clear
         contentView = hosting
+
+        // ⌥ で drag enable / 離して disable
+        flagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged]) { [weak self] event in
+            guard let self = self else { return }
+            let optDown = event.modifierFlags.contains(.option)
+            DispatchQueue.main.async {
+                self.ignoresMouseEvents = !optDown
+                self.isMovable = optDown
+                self.isMovableByWindowBackground = optDown
+            }
+        }
+    }
+
+    deinit {
+        if let m = flagsMonitor { NSEvent.removeMonitor(m); flagsMonitor = nil }
+    }
+
+    /// drag で動かしたあと位置を AppSettings に保存
+    override func setFrameOrigin(_ point: NSPoint) {
+        super.setFrameOrigin(point)
+        if isMovable {
+            // ユーザーが意図的に動かした (⌥ 押下中) ときだけ保存
+            let s = AppSettings.shared
+            s.overlayOriginX = Double(point.x)
+            s.overlayOriginY = Double(point.y)
+            s.overlayHasCustomOrigin = true
+        }
+    }
+
+    /// 配信モード / 通常モード切替時に位置情報をリセット
+    func resetCustomOrigin() {
+        AppSettings.shared.overlayHasCustomOrigin = false
+        if let screen = NSScreen.main ?? NSScreen.screens.first {
+            let w = frame.width
+            setFrameOrigin(NSPoint(x: screen.frame.midX - w / 2, y: screen.visibleFrame.minY + 32))
+        }
     }
 
     func setTranslateMode(_ on: Bool) {
@@ -114,6 +161,14 @@ class OverlayWindow: NSPanel {
             let avg = stateModel.levelHistory.suffix(20).reduce(0, +) / 20
             stateModel.noiseLevel = avg > 0.06 ? .poor : avg > 0.03 ? .fair : .good
         }
+
+        // P5 R4 medium: クリッピング警告。peak が連続フレームで 0.95 超なら hint で通知
+        if level > 0.95 && stateModel.state == .recording {
+            // hint がまだクリッピング系でない場合のみ表示（毎フレーム上書きは避ける）
+            if !stateModel.hint.contains("歪") {
+                showHint("⚠️ 音量が歪んでいます — マイクから離れるか入力ゲインを下げてください")
+            }
+        }
     }
 
     func showHint(_ text: String) {
@@ -171,6 +226,8 @@ class OverlayStateModel: ObservableObject {
     @Published var noiseLevel: NoiseQuality = .good
     @Published var levelHistory: [Float] = Array(repeating: 0, count: 36)
     @Published var isSeamless: Bool = false
+    /// 配信用大文字モード: OBS source 化想定で waveform を隠し、text を 22pt に拡大
+    @Published var isLargeTextMode: Bool = false
     var engineBadge: String { AppSettings.shared.recognitionEngine.badgeText }
 
     enum NoiseQuality { case good, fair, poor }
@@ -256,8 +313,21 @@ struct OverlayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(.opacity)
         } else if model.state == .recording {
-            WaveformView(levels: model.levelHistory, accentColor: model.isTranslateMode ? blueAcc : recRed)
-                .frame(maxWidth: .infinity, maxHeight: 28)
+            // 配信モード時は waveform を隠す (P3 指摘: OBS 配信ソースとして "うるさい")
+            if !model.isLargeTextMode {
+                WaveformView(levels: model.levelHistory, accentColor: model.isTranslateMode ? blueAcc : recRed)
+                    .frame(maxWidth: .infinity, maxHeight: 28)
+            } else {
+                // large mode は単純な録音中インジケータだけにする
+                HStack(spacing: 8) {
+                    Circle().fill(recRed).frame(width: 10, height: 10)
+                    Text("録音中")
+                        .font(.system(size: 16, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                    Spacer()
+                }
+                .padding(.leading, 24)
+            }
         } else {
             // Recognizing: show "認識中" label — streaming text appears in streamingRow below
             HStack(spacing: 6) {
@@ -295,15 +365,17 @@ struct OverlayView: View {
     // MARK: Streaming text row
 
     private var streamingRow: some View {
-        Text(model.streamingText)
-            .font(.system(size: 11, weight: .regular, design: .rounded))
-            .foregroundColor(.white.opacity(0.55))
-            .lineLimit(2)
+        // P3/P5 指摘: 配信モード時は 22pt まで拡大 + 行数を 3 行に
+        let isLarge = model.isLargeTextMode
+        return Text(model.streamingText)
+            .font(.system(size: isLarge ? 22 : 11, weight: isLarge ? .bold : .regular, design: .rounded))
+            .foregroundColor(.white.opacity(isLarge ? 0.95 : 0.55))
+            .lineLimit(isLarge ? 3 : 2)
             .truncationMode(.head)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 10)
+            .padding(.horizontal, isLarge ? 24 : 16)
+            .padding(.bottom, isLarge ? 18 : 10)
             .transition(.opacity.combined(with: .move(edge: .top)))
     }
 

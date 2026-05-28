@@ -32,6 +32,12 @@
 | 🔤 **テキスト展開** | 「メアド」→ 「yuki@example.com」などの辞書 |
 | 🎛️ **アプリ別プロファイル** | VS Code ではコード、ターミナルではコマンドに最適化 |
 | 🔄 **オートアップデート** | GitHub Releases から自動更新 |
+| 🔐 **オフラインモード** | Toggle で全クラウド送信を一括 block (macOS) — Slack/Notion/AutoUpdater/cloud LLM 等すべて gate |
+| 🎤 **マイク選択** | システムデフォルトに加え、USB I/F や外部マイクを直接指定 (macOS) |
+| 🎚 **録音中音量 (auto-duck)** | OFF / 手動 / 自動 (音が鳴ってる時だけ) の 3 mode (macOS) |
+| 💾 **音声アーカイブ** | 明示的 opt-in + GB/日数 上限 + auto-prune の WAV 蓄積 (macOS) |
+| 🎹 **Fn キー対応** | Fn 単独タップで録音トグル or 押している間だけ録音 (macOS) |
+| 📚 **技術用語辞書** | `あしんく あう` → `async/await` 等の音声誤認識を自動復元 (macOS) |
 
 ## インストール
 

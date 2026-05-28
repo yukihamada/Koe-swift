@@ -36,34 +36,117 @@ private enum Lux {
     static let charcoal  = Color(red: 0.10, green: 0.09, blue: 0.08)
 }
 
+/// Settings tab 列挙: SettingsRootView でカスタムタブバーに使う。
+/// 順番・ラベル・アイコンは旧 TabView と完全一致 (構成変更なし、UI のみ刷新)。
+private enum KoeSettingsTab: String, CaseIterable, Identifiable {
+    case general, voice, ai, automation, stats, history
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .general:    return L10n.tabGeneral
+        case .voice:      return L10n.tabVoice
+        case .ai:         return L10n.tabAI
+        case .automation: return L10n.tabAutomation
+        case .stats:      return L10n.tabStats
+        case .history:    return L10n.tabHistory
+        }
+    }
+    var systemImage: String {
+        switch self {
+        case .general:    return "gear"
+        case .voice:      return "waveform"
+        case .ai:         return "brain.head.profile"
+        case .automation: return "bolt.fill"
+        case .stats:      return "chart.bar.fill"
+        case .history:    return "clock.arrow.circlepath"
+        }
+    }
+}
+
 struct SettingsRootView: View {
     @State private var selectedPersona: Persona?
+    @State private var selectedTab: KoeSettingsTab = .general
 
     var body: some View {
         VStack(spacing: 0) {
             // Persona quick-select bar
             PersonaBar(selectedPersona: $selectedPersona)
 
-            TabView {
-                GeneralTab()
-                    .tabItem { Label(L10n.tabGeneral, systemImage: "gear") }
-                VoiceTab()
-                    .tabItem { Label(L10n.tabVoice, systemImage: "waveform") }
-                AITab()
-                    .tabItem { Label(L10n.tabAI, systemImage: "brain.head.profile") }
-                AutomationTab()
-                    .tabItem { Label(L10n.tabAutomation, systemImage: "bolt.fill") }
-                StatsTab()
-                    .tabItem { Label(L10n.tabStats, systemImage: "chart.bar.fill") }
-                HistoryTab()
-                    .tabItem { Label(L10n.tabHistory, systemImage: "clock.arrow.circlepath") }
+            // P1/P4 指摘 (Settings IA): >> 隠しポップアップを廃止し、6 タブを常時表示の
+            // 水平タブストリップに置換。順番・ラベル・アイコンは旧 TabView と同じ。
+            HStack(spacing: 4) {
+                ForEach(KoeSettingsTab.allCases) { tab in
+                    SettingsTabButton(
+                        tab: tab,
+                        isSelected: selectedTab == tab,
+                        action: { selectedTab = tab }
+                    )
+                }
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.55))
+            )
+            .padding(.horizontal, 4)
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+
+            // タブ内容: 旧 TabView と同じ 6 View をそのまま差し替え (構成不変)
+            Group {
+                switch selectedTab {
+                case .general:    GeneralTab()
+                case .voice:      VoiceTab()
+                case .ai:         AITab()
+                case .automation: AutomationTab()
+                case .stats:      StatsTab()
+                case .history:    HistoryTab()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(16)
-        .frame(width: 580, height: 580)
+        .frame(width: 720, height: 640)  // タブ常時表示で横幅を少し広げ、6 タブが余裕で並ぶ
         .sheet(item: $selectedPersona) { persona in
             PersonaDetailView(persona: persona) { selectedPersona = nil }
         }
+    }
+}
+
+/// 1 タブボタン: アイコン上 + ラベル下、選択中は gold ハイライト。
+/// accessibilityLabel 必須 (P4 critical 対策)。
+private struct SettingsTabButton: View {
+    let tab: KoeSettingsTab
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: tab.systemImage)
+                    .font(.system(size: 16, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? Lux.gold : .secondary)
+                Text(tab.label)
+                    .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? .primary : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Lux.gold.opacity(0.18) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Lux.gold.opacity(0.4) : Color.clear, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(tab.label))
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
     }
 }
 

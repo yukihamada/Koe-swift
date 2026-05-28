@@ -72,6 +72,12 @@ class LLMProcessor {
     /// VLM（Vision Language Model）: 画像 + テキストプロンプトで処理
     /// スクリーンショットを直接VLMに送って画面の内容を理解させる
     func processWithVision(image: CGImage, prompt: String, completion: @escaping (String) -> Void) {
+        // P2 critical: Offline Mode 中は VLM (cloud) を完全ブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("LLM(VLM): blocked by Offline Mode")
+            completion("")
+            return
+        }
         let s = AppSettings.shared
 
         // 画像をJPEG Base64に変換（品質70%でサイズ削減）
@@ -148,6 +154,12 @@ class LLMProcessor {
     /// 画面コンテキスト専用: llmEnabled/llmModeに関係なく、利用可能なLLMで処理
     func processScreenContext(prompt: String, completion: @escaping (String) -> Void) {
         guard !prompt.isEmpty else { completion(""); return }
+        // P2 critical: Offline Mode 中は cloud LLM への画面コンテキスト送信を完全ブロック
+        if AppSettings.shared.offlineModeEnabled {
+            klog("LLM(screen): blocked by Offline Mode")
+            completion("")
+            return
+        }
         let s = AppSettings.shared
 
         // UTF-8文字化けをサニタイズするラッパー

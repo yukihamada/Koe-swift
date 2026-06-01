@@ -11,11 +11,21 @@ class AutoUpdater {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
     }()
 
+    /// 自動更新の無効化フラグ（`defaults write com.yuki.koe disableAutoUpdate -bool YES`）
+    /// 手動チェック（silent=false）は無効化フラグに関わらず実行する
+    static var isAutoUpdateDisabled: Bool {
+        UserDefaults.standard.bool(forKey: "disableAutoUpdate")
+    }
+
     /// 起動時に呼ぶ（バックグラウンドでチェック）
     func checkForUpdates(silent: Bool = true) {
         // P2 critical: Offline Mode 中は GitHub Releases 問合せもブロック
         if AppSettings.shared.offlineModeEnabled {
             klog("AutoUpdater: skipped (Offline Mode)")
+            return
+        }
+        if silent && AutoUpdater.isAutoUpdateDisabled {
+            klog("AutoUpdater: skipped (disableAutoUpdate=YES)")
             return
         }
         DispatchQueue.global(qos: .utility).async {

@@ -8,7 +8,11 @@ cd "$(dirname "$0")"
 APP="build-macos/Koe.app"
 
 echo "Building Koe..."
-# Build into build-macos/ (not project root) to keep workspace clean
+# Build into build-macos/ (not project root) to keep workspace clean.
+# 前回ビルドの dylib (特に versioned な libggml-*.0.dylib) が残ると、libwhisper が
+# soname 経由で古い/非互換な ggml を掴み「backends=0 / GGML_ASSERT(device)」で
+# 起動時クラッシュする。毎回クリーンビルドして stale dylib の混入を断つ。
+rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 mkdir -p "$APP/Contents/Resources"
 cp Info.plist "$APP/Contents/"
@@ -52,6 +56,17 @@ if [ -f "$WHISPER_COREML_BUILD/src/libwhisper.dylib" ] && [ -f "$WHISPER_COREML_
     GGML_BLAS_LIB="$WHISPER_COREML_BUILD/ggml/src/ggml-blas"
     GGML_CPU_LIB="$WHISPER_COREML_BUILD/ggml/src"
     USE_SOURCE_GGML=1
+elif [ -f "lib-macos/prebuilt-dylibs/libwhisper.dylib" ] && [ -f "lib-macos/prebuilt-dylibs/libggml.dylib" ]; then
+    # /tmp は OS 再起動で消える。動作実績のある dylib 一式をリポ内に退避してあり、
+    # brew (ggml 0.9.11 非互換 → 起動クラッシュ) より先にこちらを使う。
+    echo "Using repo prebuilt dylibs (lib-macos/prebuilt-dylibs)"
+    USE_COREML=0
+    USE_SOURCE_GGML=1
+    WHISPER_LIB="$(pwd)/lib-macos/prebuilt-dylibs"
+    GGML_LIB="$WHISPER_LIB"
+    GGML_METAL_LIB="$WHISPER_LIB"
+    GGML_BLAS_LIB="$WHISPER_LIB"
+    GGML_CPU_LIB="$WHISPER_LIB"
 else
     USE_SOURCE_GGML=0
     WHISPER_LIB="$BREW_PREFIX/opt/whisper-cpp/libinternal"
@@ -108,7 +123,11 @@ fi
 # If /tmp/llama.cpp/build exists, use it.
 LLAMA_SOURCE_BUILD="/tmp/llama.cpp/build"
 # cmake puts the shared library under build/bin (not build/src) when BUILD_SHARED_LIBS=ON
-if [ -f "$LLAMA_SOURCE_BUILD/bin/libllama.dylib" ]; then
+if [ -f "lib-macos/prebuilt-dylibs/libllama.dylib" ] && [ ! -f "$LLAMA_SOURCE_BUILD/bin/libllama.dylib" ] && [ ! -f "$LLAMA_SOURCE_BUILD/src/libllama.dylib" ]; then
+    echo "Using repo prebuilt libllama (lib-macos/prebuilt-dylibs)"
+    LLAMA_LIB="$(pwd)/lib-macos/prebuilt-dylibs"
+    USE_SOURCE_LLAMA=1
+elif [ -f "$LLAMA_SOURCE_BUILD/bin/libllama.dylib" ]; then
     echo "Using source-built llama.cpp ($LLAMA_SOURCE_BUILD/bin)"
     LLAMA_LIB="$LLAMA_SOURCE_BUILD/bin"
     USE_SOURCE_LLAMA=1
@@ -413,7 +432,8 @@ if [ "$1" = "--no-launch" ] || [ -n "$CI" ]; then
 fi
 
 echo "→ Installing to /Applications and launching..."
-pkill -9 Koe 2>/dev/null
+# set -e 下で「Koe 未起動 = pkill exit 1」だと install 全体が中断するため || true で吸収
+pkill -9 Koe 2>/dev/null || true
 sleep 0.5
 
 # Notarize only if staple ticket not already present (skip for fast dev iteration)

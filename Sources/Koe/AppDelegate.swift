@@ -450,20 +450,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(langItem)
         menu.addItem(.separator())
 
-        // シームレスモード ON/OFF
+        // 入力モード: シームレス + ウェイクワードを 1 サブメニューに集約 (トップ階層のボタン削減)
+        let inputModeMenu = NSMenu()
         let seamlessTitle = seamlessModeActive ? "∞ シームレス: ON" : "∞ シームレス: OFF"
         let seamlessItem = NSMenuItem(title: seamlessTitle, action: #selector(toggleSeamlessModeMenu), keyEquivalent: "")
         seamlessItem.state = seamlessModeActive ? .on : .off
-        menu.addItem(seamlessItem)
-
-        // ウェイクワード ON/OFF
+        inputModeMenu.addItem(seamlessItem)
         let wakeTitle = s.wakeWordEnabled ? "🎙 ウェイクワード: ON" : "🔇 ウェイクワード: OFF"
         let wakeItem = NSMenuItem(title: wakeTitle, action: #selector(toggleWakeWordMenu), keyEquivalent: "")
         wakeItem.state = s.wakeWordEnabled ? .on : .off
-        menu.addItem(wakeItem)
+        inputModeMenu.addItem(wakeItem)
+        let anyInputModeOn = seamlessModeActive || s.wakeWordEnabled
+        let inputModeItem = NSMenuItem(title: anyInputModeOn ? "⚙︎ 入力モード ●" : "⚙︎ 入力モード", action: nil, keyEquivalent: "")
+        inputModeItem.submenu = inputModeMenu
+        menu.addItem(inputModeItem)
         menu.addItem(.separator())
 
-        // LLMモード
+        // LLMモード (翻訳ショートカットは設定で確認できるため、動作しないラベルは廃止)
         let modeMenu = NSMenu()
         for mode in LLMMode.allCases {
             let item = NSMenuItem(title: mode.displayName, action: #selector(selectLLMMode(_:)), keyEquivalent: "")
@@ -475,10 +478,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let modeItem = NSMenuItem(title: modeLabel, action: nil, keyEquivalent: "")
         modeItem.submenu = modeMenu
         menu.addItem(modeItem)
-
-        let transItem = NSMenuItem(title: "\(L10n.menuTranslation) \(s.translateShortcutDisplayString)", action: nil, keyEquivalent: "")
-        transItem.isEnabled = false
-        menu.addItem(transItem)
         menu.addItem(.separator())
 
         // ツール
@@ -487,6 +486,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             : L10n.menuMeetingStart
         menu.addItem(withTitle: meetingTitle, action: #selector(toggleMeetingMode), keyEquivalent: "m")
         menu.addItem(withTitle: L10n.menuFileTranscription, action: #selector(openFileTranscription), keyEquivalent: "t")
+        // 声を送る: テキスト→クローン声→相手へメール（mcp.koe.live send_voice）。
+        // 直前の音声入力が本文にプリフィルされる=「しゃべって、そのまま送る」。
+        menu.addItem(withTitle: "🔊 声を送る…", action: #selector(openVoiceMessage), keyEquivalent: "")
         menu.addItem(.separator())
 
         // 最近の認識結果（クリックでコピー）
@@ -509,8 +511,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(.separator())
         }
 
-        menu.addItem(withTitle: "📱 iPhone版を入手 (TestFlight)", action: #selector(openTestFlight), keyEquivalent: "")
-        menu.addItem(withTitle: "❓ サポート", action: #selector(openSupport), keyEquivalent: "")
+        // ヘルプ: サポート + iPhone版案内をサブメニューに集約 (トップ階層の宣伝ノイズを除去)
+        let helpMenu = NSMenu()
+        helpMenu.addItem(withTitle: "❓ サポート", action: #selector(openSupport), keyEquivalent: "")
+        helpMenu.addItem(withTitle: "📱 iPhone版を入手 (TestFlight)", action: #selector(openTestFlight), keyEquivalent: "")
+        let helpItem = NSMenuItem(title: "ℹ︎ ヘルプ", action: nil, keyEquivalent: "")
+        helpItem.submenu = helpMenu
+        menu.addItem(helpItem)
         menu.addItem(.separator())
         menu.addItem(withTitle: L10n.menuSettings, action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: L10n.menuQuit, action: #selector(quit), keyEquivalent: "q")
@@ -2349,6 +2356,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AppSettings.shared.agentModeEnabled.toggle()
         klog("Agent mode: \(AppSettings.shared.agentModeEnabled ? "ON" : "OFF")")
         rebuildMenu()
+    }
+
+    /// 🔊 声を送る — テキスト→クローン声→相手へメール（VoiceMessageWindow）。
+    @objc private func openVoiceMessage() {
+        VoiceMessageWindow.shared.show()
     }
 
     @objc private func openFileTranscription() {

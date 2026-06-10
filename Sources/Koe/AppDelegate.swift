@@ -114,6 +114,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
+        trackEvent("app_launch")
         setupMenu()
         reregisterHotkey()
 
@@ -2275,6 +2276,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         task.arguments = ["-e", script]
         try? task.run()
         klog("Volume restored: → \(vol)")
+    }
+
+    // MARK: - Analytics (atsm-pulse)
+
+    /// 起動回数など最小限のイベントのみ送信する。プロジェクト名とイベント名だけを送り、
+    /// 音声・認識結果・個人データは一切送らない（Koe のローカル完結原則を維持）。
+    private func trackEvent(_ event: String) {
+        guard let url = URL(string: "https://atsm-pulse.fly.dev/e") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["project": "koe", "event": event])
+        req.timeoutInterval = 3
+        URLSession.shared.dataTask(with: req).resume()
     }
 
     // MARK: - Notification

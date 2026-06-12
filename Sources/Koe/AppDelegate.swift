@@ -2283,6 +2283,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// 起動回数など最小限のイベントのみ送信する。プロジェクト名とイベント名だけを送り、
     /// 音声・認識結果・個人データは一切送らない（Koe のローカル完結原則を維持）。
     private func trackEvent(_ event: String) {
+        // オフラインモード中は ping すら外に出さない（「全 cloud 通信 block」の約束を守る）
+        guard !AppSettings.shared.offlineModeEnabled else { return }
         guard let url = URL(string: "https://atsm-pulse.fly.dev/e") else { return }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"

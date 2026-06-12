@@ -158,7 +158,9 @@ bash build-pkg.sh
 
 echo ""
 echo "--- DMG ビルド ---"
-hdiutil info 2>/dev/null | grep "Volumes/Koe" | awk '{print $NF}' | while read v; do
+# `|| true` 必須: Koe ボリューム未マウント時に grep が exit 1 を返し、
+# set -euo pipefail がスクリプトごと殺す (2026-06-12 に実際に発生)
+(hdiutil info 2>/dev/null | grep "Volumes/Koe" | awk '{print $NF}' || true) | while read v; do
     hdiutil detach "$v" -force 2>/dev/null || true
 done
 rm -f Koe-Installer-rw.dmg Koe-Installer.dmg

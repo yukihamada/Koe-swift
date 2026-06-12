@@ -60,9 +60,53 @@ class HistoryStore: ObservableObject {
         let entry = HistoryEntry(text: text, date: Date(), audioFileID: audioFileID,
                                   recognitionTime: recognitionTime, modelName: modelName)
         DispatchQueue.main.async {
-            self.entries.insert(entry, at: 0)
-            if self.entries.count > self.maxEntries { self.entries.removeLast(self.entries.count - self.maxEntries) }
-            self.debouncedSave()
+            self.insertAndTrim(entry)
+            // 認識結果は貴重なデータ — デバウンスせず即時保存（クラッシュしても失わない）
+            self.saveNow()
+        }
+    }
+
+    /// 同期版 add: 起動時のクラッシュ復旧用。挿入後のエントリIDを返す（後から再認識でupdateText可能）。
+    /// メインスレッドから呼ぶこと。
+    @discardableResult
+    func addSync(_ text: String, audioFileID: String? = nil,
+                 modelName: String? = nil, date: Date = Date()) -> UUID {
+        let entry = HistoryEntry(text: text, date: date, audioFileID: audioFileID,
+                                  recognitionTime: nil, modelName: modelName)
+        insertAndTrim(entry)
+        saveNow()
+        return entry.id
+    }
+
+    /// 先頭に挿入し、上限超過分は履歴アーカイブ (jsonl) へ退避してから削る。
+    /// 「絶対にデータを失わない」: 2000件を超えた古いエントリも消さずに残す。
+    private func insertAndTrim(_ entry: HistoryEntry) {
+        entries.insert(entry, at: 0)
+        if entries.count > maxEntries {
+            let overflow = Array(entries.suffix(entries.count - maxEntries))
+            archiveOverflow(overflow)
+            entries.removeLast(overflow.count)
+        }
+    }
+
+    /// 上限超過で履歴から外れるエントリを history_archive.jsonl に追記保存（append-only）
+    private func archiveOverflow(_ overflow: [HistoryEntry]) {
+        let url = fileURL.deletingLastPathComponent().appendingPathComponent("history_archive.jsonl")
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var lines = Data()
+        for e in overflow {
+            guard let d = try? encoder.encode(e) else { continue }
+            lines.append(d)
+            lines.append(0x0A)
+        }
+        guard !lines.isEmpty else { return }
+        if let fh = try? FileHandle(forWritingTo: url) {
+            defer { try? fh.close() }
+            _ = try? fh.seekToEnd()
+            try? fh.write(contentsOf: lines)
+        } else {
+            try? lines.write(to: url)
         }
     }
 
@@ -151,9 +195,16 @@ class HistoryStore: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([HistoryEntry].self, from: data)
-        else { return }
+        guard let data = try? Data(contentsOf: fileURL) else { return }
+        guard let decoded = try? JSONDecoder().decode([HistoryEntry].self, from: data) else {
+            // 破損した history.json を黙って空配列で上書きすると全履歴が消える。
+            // 復旧調査用にバックアップしてから空で開始する。
+            let backup = fileURL.deletingLastPathComponent()
+                .appendingPathComponent("history.json.corrupt-\(Int(Date().timeIntervalSince1970))")
+            try? FileManager.default.copyItem(at: fileURL, to: backup)
+            klog("HistoryStore: history.json corrupt — backed up to \(backup.lastPathComponent)")
+            return
+        }
         entries = decoded
     }
 
@@ -167,9 +218,12 @@ class HistoryStore: ObservableObject {
     private func saveNow() {
         saveTimer?.invalidate()
         saveTimer = nil
+        // エンコードはスナップショットに対して行う（バックグラウンド書込中の配列変更レースを防ぐ）
+        let snapshot = entries
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self, let data = try? JSONEncoder().encode(self.entries) else { return }
-            try? data.write(to: self.fileURL)
+            guard let self, let data = try? JSONEncoder().encode(snapshot) else { return }
+            // .atomic: 書込中クラッシュで既存ファイルが壊れない
+            try? data.write(to: self.fileURL, options: .atomic)
         }
     }
 
@@ -177,6 +231,6 @@ class HistoryStore: ObservableObject {
         saveTimer?.invalidate()
         saveTimer = nil
         guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: fileURL)
+        try? data.write(to: fileURL, options: .atomic)
     }
 }

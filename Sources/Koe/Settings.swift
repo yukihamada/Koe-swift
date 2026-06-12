@@ -455,6 +455,10 @@ class AppSettings: ObservableObject {
     @Published var audioArchiveMaxDays: Int { didSet { ud.set(audioArchiveMaxDays, forKey: "audioArchiveMaxDays") } }
     @Published var audioArchiveAutoPrune: Bool { didSet { ud.set(audioArchiveAutoPrune, forKey: "audioArchiveAutoPrune") } }
 
+    // 常時録音: ホットキー録音以外の時間もマイク音声をバックグラウンドで録り続ける
+    // (10分チャンクでアーカイブへ・完全ローカル・本人指示 2026-06-12)。プライバシー配慮でデフォルト OFF
+    @Published var alwaysOnRecordingEnabled: Bool { didSet { ud.set(alwaysOnRecordingEnabled, forKey: "alwaysOnRecordingEnabled") } }
+
     // Fn キー対応: 単独タップ / 押している間だけ録音
     @Published var fnKeyEnabled: Bool { didSet { ud.set(fnKeyEnabled, forKey: "fnKeyEnabled") } }
     @Published var fnKeyMode: String  { didSet { ud.set(fnKeyMode, forKey: "fnKeyMode") } }
@@ -659,12 +663,15 @@ class AppSettings: ObservableObject {
         duckingMode = ud.string(forKey: "duckingMode") ?? "off"  // デフォルト off（共有スピーカー MTG での誤検知防止 / R1 privacy）
         offlineModeEnabled = ud.object(forKey: "offlineModeEnabled") as? Bool ?? true  // デフォルトON（プライバシーファースト / R1 privacy）
         audioInputDeviceUID = ud.string(forKey: "audioInputDeviceUID") ?? ""  // 空 = システムデフォルト
-        // 音声アーカイブ系（プライバシー配慮でデフォルト OFF）
+        // 音声アーカイブ系（プライバシー配慮で opt-in。同意モーダルあり — PR #13 P2/P3 対応）
+        // v2.11〜: opt-in 後の既定は「失わない」方向に変更 — 日数 prune 無効 (0=無期限)、
+        // サイズ上限 50GB のみディスク保護の安全弁として残す。
         audioArchiveEnabled  = ud.object(forKey: "audioArchiveEnabled") as? Bool ?? false
         audioArchivePath     = ud.string(forKey: "audioArchivePath") ?? ""
-        audioArchiveMaxGB    = ud.object(forKey: "audioArchiveMaxGB") as? Double ?? 10.0
-        audioArchiveMaxDays  = ud.object(forKey: "audioArchiveMaxDays") as? Int ?? 30
+        audioArchiveMaxGB    = ud.object(forKey: "audioArchiveMaxGB") as? Double ?? 50.0
+        audioArchiveMaxDays  = ud.object(forKey: "audioArchiveMaxDays") as? Int ?? 0
         audioArchiveAutoPrune = ud.object(forKey: "audioArchiveAutoPrune") as? Bool ?? true
+        alwaysOnRecordingEnabled = ud.object(forKey: "alwaysOnRecordingEnabled") as? Bool ?? false
         // Fn キー設定（デフォルトOFF / tap_toggle）
         fnKeyEnabled = ud.object(forKey: "fnKeyEnabled") as? Bool ?? false
         fnKeyMode    = ud.string(forKey: "fnKeyMode") ?? "tap_toggle"

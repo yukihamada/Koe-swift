@@ -83,7 +83,8 @@ class WhisperServer {
         req.httpMethod = "POST"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
-        req.timeoutInterval = 30
+        // 録音時間無制限対応: 音声長に応じてタイムアウトを伸ばす
+        req.timeoutInterval = max(120, Double(body.count) / 32_000.0 * 2)
 
         URLSession.shared.dataTask(with: req) { data, _, error in
             if let error {

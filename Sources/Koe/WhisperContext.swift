@@ -417,10 +417,11 @@ final class WhisperContext {
 
     /// 16kHz mono 16bit WAV → [Float] (-1.0 ~ 1.0)、前後の無音をトリミング
     static func loadWAV(url: URL) -> [Float]? {
-        // AVAudioFile で確実に Float32 PCM 16kHz mono を読む
-        guard let audioFile = try? AVAudioFile(forReading: url) else {
-            klog("WhisperContext: failed to open audio file")
-            return nil
+        // AVAudioFile で確実に Float32 PCM 16kHz mono を読む。
+        // 録音中のWAVはヘッダーのサイズフィールドが未確定(0)のため length=0 で読めない →
+        // 自前の生PCMパースにフォールバック（投機実行=停止前の先行認識に必須）。
+        guard let audioFile = try? AVAudioFile(forReading: url), audioFile.length > 0 else {
+            return loadWAVRaw(url: url)
         }
 
         let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
@@ -433,12 +434,36 @@ final class WhisperContext {
         do {
             try audioFile.read(into: buffer)
         } catch {
-            klog("WhisperContext: failed to read audio: \(error)")
-            return nil
+            klog("WhisperContext: AVAudioFile read failed (\(error.localizedDescription)) — raw fallback")
+            return loadWAVRaw(url: url)
         }
 
         guard let floatData = buffer.floatChannelData else { return nil }
         let samples = Array(UnsafeBufferPointer(start: floatData[0], count: Int(buffer.frameLength)))
+        return samples
+    }
+
+    /// 自前WAVパース: data チャンクを探して 16bit LE PCM を直接読む。
+    /// アプリ自身の録音 (16kHz/mono/16bit) 前提。ヘッダー未確定の録音中ファイルも読める。
+    private static func loadWAVRaw(url: URL) -> [Float]? {
+        guard let data = try? Data(contentsOf: url), data.count > 44 else {
+            klog("WhisperContext: raw WAV fallback failed (too small)")
+            return nil
+        }
+        let off = findDataChunk(in: data)
+        guard off > 0, off < data.count else { return nil }
+        let payload = data.count - off
+        let sampleCount = (payload - payload % 2) / 2
+        guard sampleCount > 0 else { return nil }
+        var samples = [Float](repeating: 0, count: sampleCount)
+        data.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress?.advanced(by: off) else { return }
+            for i in 0..<sampleCount {
+                var v: Int16 = 0
+                memcpy(&v, base.advanced(by: i * 2), 2)   // 2バイト境界非保証のため memcpy
+                samples[i] = Float(v) / 32768.0
+            }
+        }
         return samples
     }
 

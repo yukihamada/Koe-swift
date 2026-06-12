@@ -240,7 +240,8 @@ class SpeechEngine {
         request.setValue("local", forHTTPHeaderField: "X-Api-Key")
         request.setValue(routingMode, forHTTPHeaderField: "X-NOU-Whisper-Mode")
         request.httpBody = body
-        request.timeoutInterval = 60
+        // 録音時間無制限対応: 音声長 (16kHz/16bit mono ≈ 32KB/s) に応じてタイムアウトを伸ばす
+        request.timeoutInterval = max(120, Double(audioData.count) / 32_000.0 * 2)
 
         URLSession.shared.dataTask(with: request) { data, _, error in
             if let error { klog("NOU Whisper error: \(error.localizedDescription)"); onDone(""); return }
@@ -310,6 +311,8 @@ class SpeechEngine {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
+        // 録音時間無制限対応: 音声長に応じてタイムアウトを伸ばす（デフォルト60sだと長尺で必ず失敗）
+        request.timeoutInterval = max(120, Double(audioData.count) / 32_000.0 * 2)
 
         URLSession.shared.dataTask(with: request) { data, _, error in
             if let error {

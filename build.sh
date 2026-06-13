@@ -265,6 +265,24 @@ if [ "$USE_SOURCE_GGML" = "1" ] && [ "$USE_SOURCE_LLAMA" != "1" ] && [ -f "$HB_G
     install_name_tool -change "$HB_GGML/libggml-base.0.dylib" "@rpath/libggml-base-hb.dylib" "$FRAMEWORKS/libggml-base-hb.dylib" 2>/dev/null || true
 fi
 
+# Consistency gate: every ggml symbol llama needs must be provided by some
+# bundled ggml (incl. the -hb shim above). Catches whisper/llama built against
+# mismatched ggml versions — the exact failure mode that shipped a broken
+# release (ggml_abort at backend registration). Runs after the -hb shim so the
+# Homebrew ggml that llama may require is already in place.
+if [ -f "$FRAMEWORKS/libllama.dylib" ]; then
+    BUNDLED_GGML_SYMS=$(nm -gjU "$FRAMEWORKS"/libggml*.dylib 2>/dev/null | grep '^_ggml' | sort -u)
+    LLAMA_NEEDS=$(nm -u "$FRAMEWORKS/libllama.dylib" 2>/dev/null | grep -oE '_ggml[A-Za-z0-9_]*' | sort -u)
+    MISSING_SYMS=$(comm -23 <(echo "$LLAMA_NEEDS") <(echo "$BUNDLED_GGML_SYMS"))
+    if [ -n "$MISSING_SYMS" ]; then
+        echo "✗ libllama requires ggml symbols absent from the bundled ggml:"
+        echo "$MISSING_SYMS" | sed 's/^/    /'
+        echo "  llama.cpp and whisper.cpp were built against different ggml versions."
+        echo "  Rebuild both against the same ggml. Aborting to avoid a broken release."
+        exit 1
+    fi
+fi
+
 # Fix dylib rpaths so the app finds embedded libraries
 install_name_tool -add_rpath @executable_path/../Frameworks "$APP/Contents/MacOS/Koe" 2>/dev/null || true
 

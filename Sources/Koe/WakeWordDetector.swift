@@ -32,13 +32,20 @@ class WakeWordDetector {
 
         switch AppSettings.shared.wakeWordEngineType {
         case .openWakeWord:
-            let engine = OWWEngine.shared
-            engine.onDetected = { [weak self] in self?.onDetected?() }
-            engine.start()
-            isRunning = engine.isRunning
-            if !engine.isRunning {
-                klog("WakeWordDetector: OWWEngine 起動失敗 — \(engine.lastError)")
+            // OWW 環境が ready でない、または起動に失敗した場合は
+            // MFCC テンプレートがあれば自動フォールバックする（Python 環境破損で無反応にしない）。
+            if OWWSetupManager.shared.state == .ready {
+                let engine = OWWEngine.shared
+                engine.onDetected = { [weak self] in self?.onDetected?() }
+                engine.start()
+                isRunning = engine.isRunning
+                if engine.isRunning { return }
+                klog("WakeWordDetector: OWWEngine 起動失敗 — \(engine.lastError) → MFCC へフォールバック")
+            } else {
+                klog("WakeWordDetector: OWW 未準備 (state=\(OWWSetupManager.shared.state)) → MFCC へフォールバック")
             }
+            OWWEngine.shared.stop()
+            startMFCCFallback()
 
         case .mfccDTW:
             let engine = WakeWordEngine.shared
@@ -50,6 +57,20 @@ class WakeWordDetector {
             engine.start()
             isRunning = true
         }
+    }
+
+    /// OWW が使えない時の MFCC への自動フォールバック起動。
+    private func startMFCCFallback() {
+        let engine = WakeWordEngine.shared
+        guard engine.isReady else {
+            klog("WakeWordDetector: MFCC フォールバック不可（テンプレート不足 have \(engine.templates.count)）— wake 無効")
+            isRunning = false
+            return
+        }
+        engine.onDetected = { [weak self] in self?.onDetected?() }
+        engine.start()
+        isRunning = true
+        klog("WakeWordDetector: MFCC フォールバックで起動")
     }
 
     func stop() {

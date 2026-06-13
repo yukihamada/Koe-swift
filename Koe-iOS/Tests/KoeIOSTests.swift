@@ -342,6 +342,76 @@ final class MacBridgeMessageFormatTests: XCTestCase {
     }
 }
 
+// MARK: - Language Migration & Wake Word Locale Tests
+
+final class KoeLanguageMigrationTests: XCTestCase {
+
+    private let migratedFlagKey = "koe_language_migrated_v2_10_1"
+    private let key = "koe_language"
+
+    override func setUp() {
+        super.setUp()
+        UserDefaults.koeShared.removeObject(forKey: migratedFlagKey)
+        UserDefaults.koeShared.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: key)
+    }
+
+    override func tearDown() {
+        UserDefaults.koeShared.removeObject(forKey: migratedFlagKey)
+        UserDefaults.koeShared.removeObject(forKey: key)
+        UserDefaults.standard.removeObject(forKey: key)
+        super.tearDown()
+    }
+
+    func testLegacyLanguageMigratesToSharedDefaults() {
+        UserDefaults.standard.set("en-US", forKey: key)
+
+        migrateKoeLanguageIfNeeded()
+
+        XCTAssertEqual(UserDefaults.koeShared.string(forKey: key), "en-US")
+        XCTAssertTrue(UserDefaults.koeShared.bool(forKey: migratedFlagKey))
+
+        // Second call must be a no-op even if legacy value changes.
+        UserDefaults.koeShared.set("ja-JP", forKey: key)
+        UserDefaults.standard.set("zh-CN", forKey: key)
+        migrateKoeLanguageIfNeeded()
+        XCTAssertEqual(UserDefaults.koeShared.string(forKey: key), "ja-JP",
+                       "2回目の呼び出しで上書きされてはいけない")
+    }
+
+    func testMigrationDoesNotOverwriteExistingSharedValue() {
+        UserDefaults.standard.set("en-US", forKey: key)
+        UserDefaults.koeShared.set("ko-KR", forKey: key)
+
+        migrateKoeLanguageIfNeeded()
+
+        XCTAssertEqual(UserDefaults.koeShared.string(forKey: key), "ko-KR")
+    }
+}
+
+@MainActor
+final class WakeWordDetectorLocaleTests: XCTestCase {
+
+    private let key = "koe_language"
+
+    override func tearDown() {
+        UserDefaults.koeShared.removeObject(forKey: key)
+        super.tearDown()
+    }
+
+    func testWakeWordDetectorUpdatesLocaleOnLanguageChange() {
+        UserDefaults.koeShared.set("en-US", forKey: key)
+        let detector = WakeWordDetector()
+        XCTAssertEqual(detector.currentRecognizerLocaleIdentifier, "en-US")
+
+        UserDefaults.koeShared.set("ja-JP", forKey: key)
+        NotificationCenter.default.post(name: .koeLanguageDidChange, object: nil)
+
+        // handleLanguageChange is synchronous on MainActor — no async wait needed.
+        XCTAssertEqual(detector.currentRecognizerLocaleIdentifier, "ja-JP")
+    }
+}
+
 // MARK: - HistoryItem Tests
 
 final class HistoryItemTests: XCTestCase {

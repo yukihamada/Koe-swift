@@ -33,6 +33,9 @@ struct SettingsView: View {
                             Text(name).tag(code)
                         }
                     }
+                    .onChange(of: language) { _, _ in
+                        NotificationCenter.default.post(name: .koeLanguageDidChange, object: nil)
+                    }
                 }
 
                 // MARK: - AI Processing

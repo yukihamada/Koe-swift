@@ -10,10 +10,40 @@ class WakeWordDetector: ObservableObject {
 
     @Published var isListening = false
 
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "ja-JP"))
+    private var speechRecognizer: SFSpeechRecognizer?
+    private var currentLocaleIdentifier: String = "ja-JP"
     private var audioEngine = AVAudioEngine()
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
+
+    /// Exposed for tests: identifier of the locale currently driving the recognizer.
+    var currentRecognizerLocaleIdentifier: String {
+        speechRecognizer?.locale.identifier ?? currentLocaleIdentifier
+    }
+
+    init() {
+        rebuildRecognizerIfLanguageChanged()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleLanguageChange),
+            name: .koeLanguageDidChange,
+            object: nil
+        )
+    }
+
+    @objc private func handleLanguageChange() {
+        let wasListening = isListening
+        if wasListening { stop() }
+        rebuildRecognizerIfLanguageChanged()
+        if wasListening { start() }
+    }
+
+    private func rebuildRecognizerIfLanguageChanged() {
+        let identifier = UserDefaults.koeShared.string(forKey: "koe_language") ?? "ja-JP"
+        if speechRecognizer != nil && identifier == currentLocaleIdentifier { return }
+        currentLocaleIdentifier = identifier
+        speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: identifier))
+    }
 
     /// ウェイクワード検出時に呼ばれるコールバック
     var onWakeWordDetected: (() -> Void)?
@@ -33,6 +63,7 @@ class WakeWordDetector: ObservableObject {
     func start() {
         guard !isListening else { return }
 
+        rebuildRecognizerIfLanguageChanged()
         SFSpeechRecognizer.requestAuthorization { [weak self] status in
             DispatchQueue.main.async {
                 guard let self else { return }

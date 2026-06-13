@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 54;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -24,6 +24,7 @@
 		460E173BEF0748D1E94AA405 /* PhraseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48001AE57171E79F51953DAA /* PhraseManager.swift */; };
 		494339B2D85E4EC36B6C42CB /* AudioToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A4369D20092F5F94274C8FC /* AudioToolsView.swift */; };
 		4B9065CE589277EE6FF1C616 /* FeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 888FCE405888897014971A12 /* FeedbackView.swift */; };
+		4CA50130FF8B3DC1042241D1 /* KoeIOSTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF5EC303568F739A71A49585 /* KoeIOSTests.swift */; };
 		4EA8C039A4386E504C52B8B7 /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AF7EFAE2F809A9329BD672 /* WaveformView.swift */; };
 		5511CA77E4F78B715DF5BBD7 /* MeetingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ABC6E7D02151EBF78768F6C /* MeetingManager.swift */; };
 		558EC4F9ECF68FA8EF5AA828 /* SoundMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ECAD894C47D1D9072A46C5D /* SoundMemory.swift */; };
@@ -45,6 +46,8 @@
 		B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2E4A00EF6AE47584C718C989 /* Assets.xcassets */; };
 		C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E264AF883E006A40D11232 /* ContentView.swift */; };
 		C0FF94CE637A67DCE63CC491 /* BLEAudioBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5432797E704450F805B66F45 /* BLEAudioBridge.swift */; };
+		C2341077EA179E2118AA8C34 /* AudioSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF16A32B380CE3F4BF8EAEE4 /* AudioSessionCoordinator.swift */; };
+		C51A5337AF203D8F45294082 /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB88FFA052E68612708020B /* SharedDefaults.swift */; };
 		C6948BE97F400EB52CD4C7FE /* KoeShareExt.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C990C2009ADC27D8D638034F /* DeviceSetupView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E5FE6B87FBBBDB56F573885 /* DeviceSetupView.swift */; };
 		CC8504AB8D4C5597B0221A90 /* KoeWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A69F04C5457550E57FB55CD5 /* KoeWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -80,6 +83,13 @@
 			remoteGlobalIDString = F94FB96A04856D5C697A03E9;
 			remoteInfo = KoeKeyboard;
 		};
+		D5CD8FFB7EE96E84296D7061 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 147F84EDE1426B6A609CE119 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3BAF886740CB96D509EC9EC3;
+			remoteInfo = Koe;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -99,6 +109,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		06A03F17B9BFCC686814DDDD /* KoeKeyboard.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KoeKeyboard.entitlements; sourceTree = "<group>"; };
 		06AF7EFAE2F809A9329BD672 /* WaveformView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveformView.swift; sourceTree = "<group>"; };
 		15ECBF7536F71D44433AD11D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		1D06EA3315419A9F5688BF90 /* MacScreenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacScreenView.swift; sourceTree = "<group>"; };
@@ -134,16 +145,21 @@
 		888FCE405888897014971A12 /* FeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackView.swift; sourceTree = "<group>"; };
 		8E5FE6B87FBBBDB56F573885 /* DeviceSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSetupView.swift; sourceTree = "<group>"; };
 		9A3D60AF110C816648C690D3 /* MoreView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoreView.swift; sourceTree = "<group>"; };
+		9AB88FFA052E68612708020B /* SharedDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDefaults.swift; sourceTree = "<group>"; };
+		9CDB05361DC88273472006C8 /* KoeWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KoeWidget.entitlements; sourceTree = "<group>"; };
 		A69F04C5457550E57FB55CD5 /* KoeWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KoeWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AC84C5A1752EC621A7C1A395 /* ModelManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelManager.swift; sourceTree = "<group>"; };
 		B1D392A1252DF53DE14EC5C6 /* CallTranscriber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallTranscriber.swift; sourceTree = "<group>"; };
+		BA5B39CE4A6A697EA6F3E338 /* KoeShareExt.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = KoeShareExt.entitlements; sourceTree = "<group>"; };
 		BBABA4170B00FF5E9DF8C60E /* L10n.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = L10n.swift; sourceTree = "<group>"; };
 		BDAFCAEA0BD98C7F3E002895 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		C194774FEE4B3F96B1408C88 /* PitchDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PitchDetector.swift; sourceTree = "<group>"; };
 		C2A73684254A1D01F5A6C9EB /* web_embedded.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = web_embedded.h; sourceTree = "<group>"; };
 		C561D031968A2013DF3C5F30 /* KoeWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeWidget.swift; sourceTree = "<group>"; };
 		CA0E33A6CE2FA104AAD2F65B /* WhisperContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisperContext.swift; sourceTree = "<group>"; };
+		CF16A32B380CE3F4BF8EAEE4 /* AudioSessionCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSessionCoordinator.swift; sourceTree = "<group>"; };
 		D0721A07D8532CB3CED06F01 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		D4B536E7F2D256C53B9734C0 /* KoeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = KoeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D870877BC7095FD7A070BF96 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingManager.swift; sourceTree = "<group>"; };
 		E2070A47D1A13E7273BCC061 /* MacBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBridge.swift; sourceTree = "<group>"; };
@@ -155,6 +171,7 @@
 		FB1A39FCF6B7C3BD815013F9 /* AudioInputManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioInputManager.swift; sourceTree = "<group>"; };
 		FD4D5F6DA042AA84A1B8A015 /* TextExpansionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextExpansionStore.swift; sourceTree = "<group>"; };
 		FE3703FE0EBAAD03B6F8EC75 /* SoundMemoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoundMemoryView.swift; sourceTree = "<group>"; };
+		FF5EC303568F739A71A49585 /* KoeIOSTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeIOSTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -165,6 +182,7 @@
 				FB1A39FCF6B7C3BD815013F9 /* AudioInputManager.swift */,
 				286EEA2A3E06F232AEB574B1 /* AudioReceiverBridge.h */,
 				6D216B15D27DE4BD2245606F /* AudioReceiverBridge.mm */,
+				CF16A32B380CE3F4BF8EAEE4 /* AudioSessionCoordinator.swift */,
 				2A4369D20092F5F94274C8FC /* AudioToolsView.swift */,
 				5432797E704450F805B66F45 /* BLEAudioBridge.swift */,
 				B1D392A1252DF53DE14EC5C6 /* CallTranscriber.swift */,
@@ -193,6 +211,7 @@
 				C194774FEE4B3F96B1408C88 /* PitchDetector.swift */,
 				DA61A7B2FBC8E4DE83E9AEFE /* RecordingManager.swift */,
 				4383DC38247B4FA6EBA7FA39 /* SettingsView.swift */,
+				9AB88FFA052E68612708020B /* SharedDefaults.swift */,
 				8534C73DDAE014A2EAC680CE /* SolunaManager.swift */,
 				1F348DF825FD08F1710BBC6F /* SolunaSDKPlayer.swift */,
 				3D1F80021671885AD05063B6 /* SolunaView.swift */,
@@ -215,6 +234,7 @@
 			children = (
 				D0721A07D8532CB3CED06F01 /* Info.plist */,
 				53E63620C74D2B0550DA79AB /* KeyboardViewController.swift */,
+				06A03F17B9BFCC686814DDDD /* KoeKeyboard.entitlements */,
 			);
 			path = KoeKeyboard;
 			sourceTree = "<group>";
@@ -223,6 +243,7 @@
 			isa = PBXGroup;
 			children = (
 				15ECBF7536F71D44433AD11D /* Info.plist */,
+				BA5B39CE4A6A697EA6F3E338 /* KoeShareExt.entitlements */,
 				5C51A3984455E5BB24AD147E /* ShareViewController.swift */,
 			);
 			path = KoeShareExt;
@@ -232,6 +253,7 @@
 			isa = PBXGroup;
 			children = (
 				D870877BC7095FD7A070BF96 /* Info.plist */,
+				9CDB05361DC88273472006C8 /* KoeWidget.entitlements */,
 				C561D031968A2013DF3C5F30 /* KoeWidget.swift */,
 			);
 			path = KoeWidget;
@@ -245,8 +267,17 @@
 				2A73ED5F60ADF95293C716A2 /* KoeShareExt */,
 				7D257171FDF77D1B913FDB98 /* KoeWidget */,
 				09D835E73F82C8647D08F5D7 /* Sources */,
+				D81CB7C2DAEEDFD16CA2F064 /* Tests */,
 				DCAED6271EA27370B344D452 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		D81CB7C2DAEEDFD16CA2F064 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				FF5EC303568F739A71A49585 /* KoeIOSTests.swift */,
+			);
+			path = Tests;
 			sourceTree = "<group>";
 		};
 		DCAED6271EA27370B344D452 /* Products */ = {
@@ -255,6 +286,7 @@
 				4B4DAB2B36C306843ED46D8B /* Koe.app */,
 				5A20A9347634DF7CE7EBAAC1 /* KoeKeyboard.appex */,
 				5F3B63CFC756FBEF8759A00B /* KoeShareExt.appex */,
+				D4B536E7F2D256C53B9734C0 /* KoeTests.xctest */,
 				A69F04C5457550E57FB55CD5 /* KoeWidget.appex */,
 			);
 			name = Products;
@@ -288,6 +320,24 @@
 			productName = KoeWidget;
 			productReference = A69F04C5457550E57FB55CD5 /* KoeWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		1902BA795BF5FBC0AC693212 /* KoeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E7ABDC59FB355A7A3D27F873 /* Build configuration list for PBXNativeTarget "KoeTests" */;
+			buildPhases = (
+				81D4D1E2A2BDE8B3E5E961C1 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				07F42B03FE30B5FACFB0B2F6 /* PBXTargetDependency */,
+			);
+			name = KoeTests;
+			packageProductDependencies = (
+			);
+			productName = KoeTests;
+			productReference = D4B536E7F2D256C53B9734C0 /* KoeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		3BAF886740CB96D509EC9EC3 /* Koe */ = {
 			isa = PBXNativeTarget;
@@ -358,6 +408,10 @@
 						DevelopmentTeam = 5BV85JW8US;
 						ProvisioningStyle = Automatic;
 					};
+					1902BA795BF5FBC0AC693212 = {
+						DevelopmentTeam = 5BV85JW8US;
+						ProvisioningStyle = Automatic;
+					};
 					3BAF886740CB96D509EC9EC3 = {
 						DevelopmentTeam = 5BV85JW8US;
 						ProvisioningStyle = Automatic;
@@ -373,7 +427,6 @@
 				};
 			};
 			buildConfigurationList = 1B06E32D5428516BCDA73115 /* Build configuration list for PBXProject "Koe" */;
-			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -382,13 +435,15 @@
 			);
 			mainGroup = BCB5D93540A2093763BEE9A1;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 54;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = DCAED6271EA27370B344D452 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				3BAF886740CB96D509EC9EC3 /* Koe */,
 				F94FB96A04856D5C697A03E9 /* KoeKeyboard */,
 				880DFEA185D7FBA5AB58B19A /* KoeShareExt */,
+				1902BA795BF5FBC0AC693212 /* KoeTests */,
 				16D8F6C1B60378156F400E07 /* KoeWidget */,
 			);
 		};
@@ -415,6 +470,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		81D4D1E2A2BDE8B3E5E961C1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4CA50130FF8B3DC1042241D1 /* KoeIOSTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8BCA411DC88FDC89D6763591 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -429,6 +492,7 @@
 			files = (
 				AB734E1FD2422F3FB227A959 /* AudioInputManager.swift in Sources */,
 				84CBFF0FD85540E62A1DF5B1 /* AudioReceiverBridge.mm in Sources */,
+				C2341077EA179E2118AA8C34 /* AudioSessionCoordinator.swift in Sources */,
 				494339B2D85E4EC36B6C42CB /* AudioToolsView.swift in Sources */,
 				C0FF94CE637A67DCE63CC491 /* BLEAudioBridge.swift in Sources */,
 				03154D932B8AEA50E759FD43 /* CallTranscriber.swift in Sources */,
@@ -455,6 +519,7 @@
 				14582E3EA50773F09872262C /* PitchDetector.swift in Sources */,
 				F0FBBD063E22B911B51FA246 /* RecordingManager.swift in Sources */,
 				0FA1E862F1AF05B85E253B84 /* SettingsView.swift in Sources */,
+				C51A5337AF203D8F45294082 /* SharedDefaults.swift in Sources */,
 				9A5E5EB5E04928B90A231E12 /* SolunaManager.swift in Sources */,
 				744756052E14148E875DD671 /* SolunaSDKPlayer.swift in Sources */,
 				810EEBB1DBDE9AD2F72BD278 /* SolunaView.swift in Sources */,
@@ -482,6 +547,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		07F42B03FE30B5FACFB0B2F6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3BAF886740CB96D509EC9EC3 /* Koe */;
+			targetProxy = D5CD8FFB7EE96E84296D7061 /* PBXContainerItemProxy */;
+		};
 		1E03D5883CA1D66935B0F72D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = F94FB96A04856D5C697A03E9 /* KoeKeyboard */;
@@ -500,9 +570,27 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0EEF27B91BCA2171E749550A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Koe.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Koe";
+			};
+			name = Release;
+		};
 		4012DDDE89ACD7C951B17387 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KoeWidget/KoeWidget.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeWidget/Info.plist;
@@ -511,7 +599,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -534,7 +622,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
 				OTHER_LDFLAGS = "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox -framework CallKit -framework EventKit";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;
@@ -549,6 +637,7 @@
 		4703FA69FEA5866FBE08BEC4 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KoeShareExt/KoeShareExt.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeShareExt/Info.plist;
@@ -557,10 +646,27 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		4947F0F57AE4FA496F0B65F1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Koe.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Koe";
 			};
 			name = Debug;
 		};
@@ -632,6 +738,7 @@
 		607DA4634470B79EE56B87A9 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KoeWidget/KoeWidget.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeWidget/Info.plist;
@@ -640,7 +747,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -650,6 +757,7 @@
 		6780441EEA05DDBE5F16CC3B /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KoeKeyboard/KoeKeyboard.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeKeyboard/Info.plist;
@@ -658,7 +766,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -668,6 +776,7 @@
 		792FA1C28CBF76AD9FE6BD99 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KoeKeyboard/KoeKeyboard.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeKeyboard/Info.plist;
@@ -676,7 +785,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -686,6 +795,7 @@
 		7B84BFAB69C6C79E034E08F2 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = KoeShareExt/KoeShareExt.entitlements;
 				CURRENT_PROJECT_VERSION = 2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = KoeShareExt/Info.plist;
@@ -694,7 +804,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -775,7 +885,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
-				MARKETING_VERSION = 1.3.0;
+				MARKETING_VERSION = 1.4.0;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
 				OTHER_LDFLAGS = "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox -framework CallKit -framework EventKit";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;
@@ -831,6 +941,15 @@
 			buildConfigurations = (
 				F38425A5D12BBFB155CE9CCA /* Debug */,
 				44B563D6CE433CCE0A83C46A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E7ABDC59FB355A7A3D27F873 /* Build configuration list for PBXNativeTarget "KoeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4947F0F57AE4FA496F0B65F1 /* Debug */,
+				0EEF27B91BCA2171E749550A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

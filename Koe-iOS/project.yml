@@ -48,6 +48,9 @@ targets:
         CLANG_CXX_LANGUAGE_STANDARD: "c++17"
     entitlements:
       path: Koe.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yuki.koe
     dependencies:
       - target: KoeKeyboard
         embed: true
@@ -71,6 +74,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:
       path: KoeKeyboard/KoeKeyboard.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yuki.koe
 
   KoeShareExt:
     type: app-extension
@@ -87,6 +93,9 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:
       path: KoeShareExt/KoeShareExt.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yuki.koe
 
   KoeWidget:
     type: app-extension
@@ -103,3 +112,30 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:
       path: KoeWidget/KoeWidget.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.yuki.koe
+
+  KoeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Koe.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Koe"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+    dependencies:
+      - target: Koe
+
+schemes:
+  Koe:
+    build:
+      targets:
+        Koe: all
+    test:
+      targets:
+        - KoeTests
+      gatherCoverageData: false

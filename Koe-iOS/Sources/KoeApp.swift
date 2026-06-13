@@ -14,6 +14,9 @@ struct KoeApp: App {
     init() {
         // APIキーをUserDefaultsからKeychainに移行（初回のみ）
         KeychainHelper.migrateFromUserDefaults(key: "koe_api_key")
+        // koe_language を UserDefaults.standard から App Group .koeShared へ移行
+        // (v2.10.0 で AppStorage の store を変更したため、既存ユーザーの選択が消える退行を修正)
+        migrateKoeLanguageIfNeeded()
     }
 
     var body: some Scene {

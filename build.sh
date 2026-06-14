@@ -220,7 +220,7 @@ if [ "$USE_SOURCE_GGML" = "1" ]; then
         if [ -L "$src" ]; then src=$(readlink -f "$src"); fi
         if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
     done
-    for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB"; do
+    for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB" "libggml-rpc.dylib:$GGML_LIB"; do
         lib="${pair%%:*}"
         dir="${pair##*:}"
         src="$dir/$lib"
@@ -235,7 +235,7 @@ else
         if [ -f "$src" ]; then cp "$src" "$FRAMEWORKS/$lib"; fi
     done
     # Copy ggml dylibs from potentially different directories
-    for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB"; do
+    for pair in "libggml.dylib:$GGML_LIB" "libggml-base.dylib:$GGML_LIB" "libggml-cpu.dylib:$GGML_CPU_LIB" "libggml-blas.dylib:$GGML_BLAS_LIB" "libggml-metal.dylib:$GGML_METAL_LIB" "libggml-rpc.dylib:$GGML_LIB"; do
         lib="${pair%%:*}"
         dir="${pair##*:}"
         src="$dir/$lib"
@@ -314,7 +314,7 @@ for lib in "$FRAMEWORKS"/*.dylib; do
             done
         done
         # Handle versioned ggml .0 names
-        for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+        for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal libggml-rpc; do
             install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}.dylib" "$lib" 2>/dev/null || true
             for dir in $ALL_LIB_DIRS; do
                 install_name_tool -change "$dir/${glib}.0.dylib" "@rpath/${glib}.dylib" "$lib" 2>/dev/null || true
@@ -342,7 +342,7 @@ fi
 # Also fix versioned refs in the main binary
 install_name_tool -change "@rpath/libwhisper.1.dylib" "@rpath/libwhisper.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
 install_name_tool -change "@rpath/libllama.0.dylib" "@rpath/libllama.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
-for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal libggml-rpc; do
     install_name_tool -change "@rpath/${glib}.0.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
 done
 
@@ -354,14 +354,14 @@ for dir in $ALL_LIB_DIRS; do
     for versioned in libllama.0.dylib libllama.dylib; do
         install_name_tool -change "$dir/$versioned" "@rpath/libllama.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
     done
-    for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+    for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal libggml-rpc; do
         install_name_tool -change "$dir/${glib}.0.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
         install_name_tool -change "$dir/${glib}.dylib" "@rpath/${glib}.dylib" "$APP/Contents/MacOS/Koe" 2>/dev/null || true
     done
 done
 
 # Create versioned copies for ggml + llama (must be real files, not symlinks — symlinks break codesign --deep)
-for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal; do
+for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal libggml-rpc; do
     if [ -f "$FRAMEWORKS/${glib}.dylib" ] && [ ! -f "$FRAMEWORKS/${glib}.0.dylib" ]; then
         cp "$FRAMEWORKS/${glib}.dylib" "$FRAMEWORKS/${glib}.0.dylib"
     fi
@@ -379,7 +379,7 @@ for lib in "$FRAMEWORKS"/*.dylib; do
     strip -x "$lib" 2>/dev/null || true
 done
 # Sync stripped content to .0.dylib copies (use cp -f to overwrite without error on identical)
-for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal libllama; do
+for glib in libggml libggml-base libggml-cpu libggml-blas libggml-metal libggml-rpc libllama; do
     if [ -f "$FRAMEWORKS/${glib}.dylib" ] && [ -f "$FRAMEWORKS/${glib}.0.dylib" ]; then
         cp -f "$FRAMEWORKS/${glib}.dylib" "$FRAMEWORKS/${glib}.0.dylib" 2>/dev/null || true
     fi

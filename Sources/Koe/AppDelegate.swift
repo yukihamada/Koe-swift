@@ -1333,8 +1333,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if peakLevel < 0.04 {
             klog("stopAndRecognize: peak level too low (\(String(format:"%.3f", peakLevel))), skipping")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
-            overlay?.showHint("マイクの音量が小さすぎます")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
+            // 継続会話セッションの空ターンでは警告を出さない（喋っていないだけ）
+            if !ConversationSession.shared.isActive {
+                overlay?.showHint("マイクの音量が小さすぎます")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
+            }
             rearmAfterTurn()
             postRecognitionCleanup()
             return
@@ -1345,8 +1348,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
            !AudioDSP.hasVoice(wavSamples, threshold: 0.005, minVoiceFrames: 4) {
             klog("stopAndRecognize: no voice detected, skipping recognition")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
-            overlay?.showHint("音声が検出されませんでした")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
+            // 継続会話セッションの空ターンでは警告を出さない
+            if !ConversationSession.shared.isActive {
+                overlay?.showHint("音声が検出されませんでした")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
+            }
             // 議事録モード中は無音でも自動録音ループを継続
             if MeetingMode.shared.isActive {
                 postRecognitionCleanup()

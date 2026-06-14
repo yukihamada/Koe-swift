@@ -1333,9 +1333,22 @@ struct AutomationTab: View {
                     }
                     .pickerStyle(.segmented)
 
-                    if s.wakeWordEngineType == .mfccDTW {
+                    switch s.wakeWordEngineType {
+                    case .appleSpeech:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Apple のオンデバイス音声認識を常時走らせ、合言葉を検出します。話者非依存・雑音に強く、録音は不要。音声は端末外に出ません。")
+                                .font(.caption).foregroundColor(.secondary)
+                            HStack {
+                                Text("合言葉").font(.caption)
+                                TextField("ヘイこえ", text: Binding(
+                                    get: { s.wakeWords.first ?? "" },
+                                    set: { s.wakeWords = [$0] + s.wakeWords.dropFirst() }
+                                ))
+                            }
+                        }
+                    case .mfccDTW:
                         WakeWordTemplateView()
-                    } else {
+                    case .openWakeWord:
                         OWWSettingsView()
                     }
                     #endif

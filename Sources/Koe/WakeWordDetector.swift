@@ -26,11 +26,18 @@ class WakeWordDetector {
     func start() {
         guard AppSettings.shared.wakeWordEnabled, !isRunning else { return }
 
-        // 切り替え時に両エンジンを確実に停止してから起動
+        // 切り替え時に全エンジンを確実に停止してから起動
         WakeWordEngine.shared.stop()
         OWWEngine.shared.stop()
+        AppleSpeechWakeEngine.shared.stop()
 
         switch AppSettings.shared.wakeWordEngineType {
+        case .appleSpeech:
+            let engine = AppleSpeechWakeEngine.shared
+            engine.onDetected = { [weak self] in self?.onDetected?() }
+            engine.start()
+            isRunning = true
+
         case .openWakeWord:
             // OWW 環境が ready でない、または起動に失敗した場合は
             // MFCC テンプレートがあれば自動フォールバックする（Python 環境破損で無反応にしない）。
@@ -76,6 +83,7 @@ class WakeWordDetector {
     func stop() {
         WakeWordEngine.shared.stop()
         OWWEngine.shared.stop()
+        AppleSpeechWakeEngine.shared.stop()
         isRunning = false
     }
 #endif

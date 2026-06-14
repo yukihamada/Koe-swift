@@ -32,6 +32,8 @@ final class ConversationSession {
             return
         }
         if isActive { return }
+        // 常時 wake 検出器を止めてマイクを解放（各ターンは startRecording の実績ある経路を使う）
+        WakeWordDetector.shared.stop()
         isActive = true
         nextTurnScheduled = false
         pendingConfirmation = nil
@@ -41,6 +43,7 @@ final class ConversationSession {
         startTimeoutWatch()
         if AppSettings.shared.numberOverlayAlwaysOn { NumberOverlayController.shared.show() }
         if AppSettings.shared.gestureEnabled { GestureEngine.shared.start() }
+        AppDelegate.shared?.showSessionHud("🎙 音声モード — 話してください（「おわり」で終了）")
         klog("ConversationSession: started")
         AppDelegate.shared?.beginSessionTurn()
     }

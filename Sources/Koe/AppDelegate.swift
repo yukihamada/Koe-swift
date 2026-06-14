@@ -781,6 +781,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if hotKeyID.id == 1 || hotKeyID.id == 5 {
                 // メインホットキー or ⌘K pressed
                 DispatchQueue.main.async {
+                    // 継続会話セッション: conversationMode 時はホットキーで音声モードに出入りする。
+                    // wake の常時マイクが VPIO と競合して使えないため、確実な入口として提供。
+                    // 各ターンは startRecording（実績ある録音経路）を使うので確実に動く。
+                    if AppSettings.shared.conversationModeEnabled {
+                        if ConversationSession.shared.isActive {
+                            ConversationSession.shared.endSession(reason: "hotkey")
+                        } else {
+                            ConversationSession.shared.handleWakeDetected()
+                        }
+                        return
+                    }
                     // 議事録自動録音中にホットキー → 自動録音を中断して手動録音に切替
                     if delegate.isRecording && delegate.isMeetingAutoRecording && MeetingMode.shared.isActive {
                         delegate.cancelRecording()
@@ -2348,6 +2359,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     var isRecordingPublic: Bool { isRecording }
 
+    /// 継続会話セッションの状態を画面に出す（earcon だけだと何が起きているか見えないため）。
+    func showSessionHud(_ text: String) {
+        overlay?.show(state: .recognizing)
+        overlay?.showHint(text)
+    }
+
     /// 空ターン（無音/低音量）後の再アーム: セッション中は次ターン、そうでなければ wake 待受。
     private func rearmAfterTurn() {
         if ConversationSession.shared.isActive {
@@ -2388,13 +2405,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AgentMode.shared.execute(command) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.overlay?.hide()
+                self.overlay?.showHint("✓ \(result)")   // 画面に結果を出す
                 HistoryStore.shared.add("[\(command.description)] \(result)")
                 if AppSettings.shared.conversationTTSResponses {
                     TTSService.shared.speakResult(result)
                 } else {
                     self.sendNotification(text: result)
                 }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.overlay?.hide() }
                 self.postRecognitionCleanup()
             }
         }

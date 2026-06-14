@@ -200,10 +200,12 @@ enum RecordingMode: String, CaseIterable {
 }
 
 enum WakeWordEngineType: String, CaseIterable {
+    case appleSpeech = "apple_speech"
     case mfccDTW     = "mfcc_dtw"
     case openWakeWord = "open_wake_word"
     var displayName: String {
         switch self {
+        case .appleSpeech:  return "Apple音声（常時オン・話者非依存・推奨）"
         case .mfccDTW:      return "MFCC+DTW（内蔵・テンプレート学習）"
         case .openWakeWord: return "openWakeWord（Python・高精度）"
         }
@@ -693,7 +695,7 @@ class AppSettings: ObservableObject {
         menuBarIconVisible = ud.object(forKey: "menuBarIconVisible") as? Bool ?? true  // デフォルトON
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
-        wakeWordEngineType = WakeWordEngineType(rawValue: ud.string(forKey: "wakeWordEngineType") ?? "") ?? .mfccDTW
+        wakeWordEngineType = WakeWordEngineType(rawValue: ud.string(forKey: "wakeWordEngineType") ?? "") ?? .appleSpeech
         owwModelName       = ud.string(forKey: "owwModelName") ?? "hey_jarvis"
         owwCustomModelPath = ud.string(forKey: "owwCustomModelPath") ?? ""
         owwThreshold       = ud.object(forKey: "owwThreshold") as? Float ?? 0.5

@@ -119,7 +119,9 @@ class AgentMode {
 
     /// 高速文字列マッチ（既存ロジック）
     private func detectCommandFast(_ text: String) -> AgentCommand? {
+        // Apple 音声認識は句読点を付ける（「番号出して。」）ので前後の句読点を落として一致させる。
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "。、．，.!?！？　 "))
         guard !t.isEmpty else { return nil }
 
         // スクリーンショット
@@ -810,12 +812,47 @@ class AgentMode {
         }
     }
 
+    /// Accessibility 要素の中から、ラベルが description に一致するものを探す（完全一致優先→部分一致）。
+    private func findElementByLabel(_ description: String) -> ScannedElement? {
+        let target = description.lowercased().replacingOccurrences(of: " ", with: "")
+        guard !target.isEmpty else { return nil }
+        let elements = AXElementScanner.shared.scanAccessibility()
+        var best: ScannedElement?
+        var bestScore = 0
+        for el in elements {
+            guard let label = el.label?.lowercased().replacingOccurrences(of: " ", with: ""), !label.isEmpty else { continue }
+            let score: Int
+            if label == target { score = 1000 }
+            else if label.contains(target) { score = 500 }
+            else if target.contains(label) { score = 200 }
+            else { score = 0 }
+            if score > bestScore { bestScore = score; best = el }
+        }
+        return bestScore > 0 ? best : nil
+    }
+
     private func executeClickElement(description: String, completion: @escaping (String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+
+            // まず Accessibility のラベルで直接探す（番号オーバーレイ不要・OCR不要で確実）。
+            // 「送信押して」→ ラベルに「送信」を含むボタンをクリック。
+            if let target = self.findElementByLabel(description) {
+                var pressed = false
+                if let el = target.axElement,
+                   AXUIElementPerformAction(el, kAXPressAction as CFString) == .success {
+                    pressed = true
+                }
+                if !pressed { ClickSynthesizer.click(at: target.center) }
+                klog("Agent: clickElement(a11y) '\(target.label ?? description)' pressed=\(pressed)")
+                DispatchQueue.main.async { completion("「\(target.label ?? description)」をクリックしました") }
+                return
+            }
+
+            // a11y で見つからなければ OCR フォールバック
             guard let image = self.captureScreen() else {
                 klog("Agent: clickElement - screen capture failed")
-                DispatchQueue.main.async { completion("画面のキャプチャに失敗しました") }
+                DispatchQueue.main.async { completion("「\(description)」が見つかりませんでした") }
                 return
             }
 

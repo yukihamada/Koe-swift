@@ -84,8 +84,9 @@ final class AXElementScanner {
 
         let role = stringAttr(element, kAXRoleAttribute as CFString)
 
-        // 非表示はスキップ
+        // 非表示・パスワード入力欄はスキップ（機密保護）
         if boolAttr(element, "AXHidden" as CFString) == true { return }
+        if role == "AXSecureTextField" { return }
 
         if let role, isActionable(element, role: role),
            let frame = frameAttr(element), frame.width >= minSize, frame.height >= minSize,
@@ -144,6 +145,8 @@ final class AXElementScanner {
               AXUIElementCopyAttributeValue(el, kAXSizeAttribute as CFString, &sizeValue) == .success
         else { return nil }
 
+        guard CFGetTypeID(posValue!) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue!) == AXValueGetTypeID() else { return nil }
         var point = CGPoint.zero
         var size = CGSize.zero
         guard AXValueGetValue(posValue as! AXValue, .cgPoint, &point),
@@ -152,9 +155,10 @@ final class AXElementScanner {
         return CGRect(origin: point, size: size)
     }
 
-    /// 表示用ラベル（title → description → value の優先順）。
+    /// 表示用ラベル（title → description のみ）。
+    /// kAXValue はテキスト入力欄の中身＝機密になり得るので使わない。
     private func bestLabel(_ el: AXUIElement) -> String? {
-        for attr in [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute] {
+        for attr in [kAXTitleAttribute, kAXDescriptionAttribute] {
             if let s = stringAttr(el, attr as CFString),
                !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return String(s.prefix(40))

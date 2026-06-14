@@ -84,6 +84,8 @@ final class NumberOverlayController {
 
     private var windows: [NumberOverlayWindow] = []   // NSScreen.screens と同順
     private(set) var targets: [Int: OverlayTarget] = [:]
+    /// スキャン時の前面アプリ PID（座標クリックの stale 判定用）
+    private var scannedPID: pid_t = 0
     private(set) var isVisible = false
     private var autoHideTimer: Timer?
 
@@ -124,6 +126,7 @@ final class NumberOverlayController {
     private func present(_ merged: [OverlayTarget]) {
         rebuildWindowsIfNeeded()
         targets = Dictionary(uniqueKeysWithValues: merged.map { ($0.number, $0) })
+        scannedPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0
 
         // スクリーンごとにバッジを振り分け
         let screens = NSScreen.screens
@@ -182,6 +185,13 @@ final class NumberOverlayController {
             }
         }
         if !pressed {
+            // 座標クリックは前面アプリがスキャン時と同じ時だけ（アプリ切替後の誤クリック防止）
+            let nowPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
+            if scannedPID != 0 && nowPID != scannedPID {
+                klog("NumberOverlay: #\(number) 座標クリック中止（前面アプリが変わった）")
+                hide()
+                return false
+            }
             ClickSynthesizer.click(at: target.center)
             klog("NumberOverlay: #\(number) click at (\(Int(target.center.x)),\(Int(target.center.y)))")
         }

@@ -2,13 +2,18 @@ import AppKit
 
 /// マウスクリックの CGEvent 送出を一元化（AgentMode に散在していた重複を集約）。
 enum ClickSynthesizer {
+    /// 物理的に押されている修飾キーが合成イベントに漏れないよう、専用の private ソースを使う。
+    private static let source = CGEventSource(stateID: .privateState)
+
     /// グローバル画面座標（top-left origin・points）を左クリック。
     static func click(at point: CGPoint) {
-        guard let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown,
+        guard let down = CGEvent(mouseEventSource: source, mouseType: .leftMouseDown,
                                  mouseCursorPosition: point, mouseButton: .left),
-              let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp,
+              let up = CGEvent(mouseEventSource: source, mouseType: .leftMouseUp,
                                mouseCursorPosition: point, mouseButton: .left)
         else { return }
+        down.flags = []
+        up.flags = []
         down.post(tap: .cghidEventTap)
         usleep(50_000)
         up.post(tap: .cghidEventTap)

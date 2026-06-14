@@ -86,17 +86,14 @@ final class ConversationSession {
 
     // MARK: ジェスチャー入口（GestureEngine から）
 
-    /// 👍: 確認待ちがあれば承認、なければ送信(Return)。
+    /// 👍: 確認待ちがあれば承認。無ければ何もしない（カメラ誤検出で勝手に送信しない）。
     func gestureAffirm() {
         noteActivity()
+        guard let action = pendingConfirmation else { return }
+        pendingConfirmation = nil
         productive = true
-        if let action = pendingConfirmation {
-            pendingConfirmation = nil
-            SoundFeedback.shared.play(.turnEnd)
-            action()
-        } else {
-            AutoTyper().postReturn()
-        }
+        SoundFeedback.shared.play(.turnEnd)
+        action()
     }
 
     /// 👎: 確認待ちを却下。
@@ -174,14 +171,21 @@ final class ConversationSession {
     // MARK: 判定ヘルパー
 
     func isStopWord(_ text: String) -> Bool {
-        let words = AppSettings.shared.conversationStopWords
-        return words.contains { !$0.isEmpty && (text == $0 || text.hasPrefix($0) || text.hasSuffix($0)) }
+        // 句読点を落とした「丸ごと一致」のみ（「もういいかな」等で誤終了しない）
+        let t = Self.stripPunct(text)
+        return AppSettings.shared.conversationStopWords.contains { !$0.isEmpty && t == Self.stripPunct($0) }
     }
 
     private func isAffirmative(_ text: String) -> Bool {
-        let yes = ["はい", "うん", "イエス", "yes", "ok", "オーケー", "おっけー", "お願い", "いいよ", "やって", "実行"]
-        let lower = text.lowercased()
-        return yes.contains { lower.contains($0.lowercased()) }
+        let yes = ["はい", "うん", "イエス", "yes", "ok", "オーケー", "おっけー", "お願いします", "お願い", "いいよ", "やって"]
+        let t = Self.stripPunct(text).lowercased()
+        // 発話全体が承認語そのものの時だけ承認（「OKだけど違う」等を弾く）
+        return yes.contains { t == $0.lowercased() }
+    }
+
+    private static func stripPunct(_ s: String) -> String {
+        s.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "。、．，.!?！？　 "))
     }
 
     private func isDestructive(_ command: AgentCommand) -> Bool {

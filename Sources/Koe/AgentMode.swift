@@ -130,8 +130,9 @@ class AgentMode {
         }
 
         // Screen-aware + system control commands (guarded by voiceControlEnabled)
-        // 継続会話セッション中は voiceControl 未設定でもコックピット操作を有効にする。
-        if AppSettings.shared.voiceControlEnabled || ConversationSession.shared.isActive {
+        // 入力注入（クリック/キー送出）は必ず voiceControlEnabled の明示 opt-in が必要。
+        // セッション中であっても勝手に解禁しない（誤爆で送信/クリックされる事故を防ぐ）。
+        if AppSettings.shared.voiceControlEnabled {
             // --- Cockpit: 番号オーバーレイ & 決定論 UI 操作（最優先・即時）---
             // 番号表示/消去
             if t == "番号出して" || t == "番号表示" || t == "ナンバー" || t == "番号" || t == "ナンバー出して" {
@@ -210,10 +211,8 @@ class AgentMode {
 
     /// Execute the detected command
     func execute(_ command: AgentCommand, completion: @escaping (String) -> Void) {
-        // Guard system control commands behind voiceControlEnabled
-        // （継続会話セッション中は許可）
-        if command.requiresVoiceControl && !AppSettings.shared.voiceControlEnabled
-            && !ConversationSession.shared.isActive {
+        // Guard system control / input-synthesis commands behind explicit voiceControlEnabled
+        if command.requiresVoiceControl && !AppSettings.shared.voiceControlEnabled {
             klog("Agent: voice control command blocked (voiceControlEnabled=false)")
             completion("音声コントロールが無効です。設定で有効にしてください。")
             return
@@ -700,12 +699,12 @@ class AgentMode {
         guard let range = text.range(of: "番") else { return nil }
         let head = String(text[text.startIndex..<range.lowerBound])
         guard let n = digitsOnly(head), n > 0 else { return nil }
-        // 「番」の後ろが空 or クリック/押して/タップ系なら採用
+        // 「番」の後ろが空 or クリック/押して/タップ系の時だけ採用（無関係な末尾は弾く）
         let tail = String(text[range.upperBound...])
         if tail.isEmpty || tail == "クリック" || tail == "を押して" || tail == "押して" || tail == "タップ" || tail == "をクリック" {
             return n
         }
-        return n
+        return nil
     }
 
     /// スクロール方向を判定。

@@ -223,6 +223,105 @@ async fn robots_txt() -> impl IntoResponse {
     )
 }
 
+// ── SEO: Koe ユースケース別 LP (/use-cases, /use-cases/:slug) ──────────────────
+// すべて index.html に実在する機能に基づく(会議文字起こし/音声操作/ローカル/議事録/リアルタイム)。
+// (slug, 見出し, リード, 機能ポイント "|" 区切り)
+const USE_CASES: &[(&str, &str, &str, &str)] = &[
+    ("mac-transcription", "Macで会議を文字起こし", "Zoom や Teams の音声をそのまま取り込み、Mac の上で文字起こし。話者を分け、終わったら AI が要約します。", "Zoom / Teams の音声を直接キャプチャ|話者分離（誰が話したか）|リアルタイム文字起こし|AI 要約と TODO 抽出|文字起こしと AI チャット"),
+    ("voice-control-mac", "声でMacを操作する", "「声で、Mac を操る」。話しかけるだけで、Mac が画面を見て操作する Screen AI Agent。", "音声によるシステム操作|画面を理解する Screen AI Agent|0.5 秒の高速認識|常時リッスン＋リアルタイムプレビュー|iPhone をリモコンに"),
+    ("offline-transcription", "ローカルで完結する文字起こし", "音声は Mac の中だけで処理。クラウドに送らない、完全プライバシーの文字起こし。", "完全ローカル処理（クラウド送信なし）|オフラインでも動作|Whisper ベースの高精度認識|プライバシー重視の設計"),
+    ("meeting-minutes", "議事録を自動で作る", "会議が終わると、文字起こしから AI が要約と TODO を自動生成。Slack / Notion / カレンダーへ。", "AI 要約と TODO 自動抽出|文字起こしと AI チャット|Slack / Notion / カレンダー連携|話者分離つき議事録"),
+    ("realtime-transcription", "リアルタイム文字起こし", "話した先から、その場で文字に。リアルタイムプレビューで会話を止めない。", "リアルタイム文字起こし|リアルタイムプレビュー|0.5 秒の高速認識|Zoom / Teams 音声キャプチャ"),
+];
+
+fn uc_shell(title: &str, desc: &str, canonical: &str, jsonld: &str, body: &str) -> String {
+    format!(r##"<!doctype html><html lang=ja><head><meta charset=utf-8>
+<title>{title}</title>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<meta name=description content="{desc}">
+<link rel=canonical href="{canonical}">
+<meta property="og:title" content="{title}"><meta property="og:description" content="{desc}">
+<meta property="og:type" content="website"><meta property="og:url" content="{canonical}">
+<meta property="og:image" content="https://koe.live/og.png">
+<meta name=theme-color content="#0a0a0a">
+{jsonld}
+<script defer src="https://enabler-analytics.fly.dev/t.js"></script>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{background:#0a0a0a;color:#e8e8ea;font-family:-apple-system,'Hiragino Sans','Yu Gothic',sans-serif;line-height:1.8}}
+.wrap{{max-width:760px;margin:0 auto;padding:40px 20px 80px}}
+.bc{{font-size:12px;color:#888;margin:0 0 18px}}.bc a{{color:#8ad;text-decoration:none}}
+.eyebrow{{font-size:11px;letter-spacing:.3em;color:#8ad;margin-bottom:12px}}
+h1{{font-size:clamp(26px,5vw,40px);font-weight:700;line-height:1.3;margin:0 0 16px}}
+.lead{{font-size:16px;color:#bcbcc4;margin:0 0 26px}}
+ul.feat{{list-style:none;margin:0 0 28px}}ul.feat li{{padding:10px 0 10px 26px;border-bottom:1px solid #1c1c22;position:relative}}
+ul.feat li::before{{content:"✓";position:absolute;left:0;color:#5c9}}
+.cta{{display:inline-block;background:#5c9;color:#0a0a0a;padding:14px 28px;font-weight:700;text-decoration:none;border-radius:8px;font-size:15px}}
+.cta.alt{{background:transparent;color:#8ad;border:1px solid #46c}}
+.chips{{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}}
+.chip{{font-size:12px;color:#cde;border:1px solid #234;background:#0e1620;padding:5px 10px;border-radius:99px;text-decoration:none}}
+h2.sec{{font-size:18px;color:#8ad;margin:36px 0 14px}}
+.note{{font-size:12px;color:#888;margin:30px 0 0;border-top:1px solid #1c1c22;padding-top:14px}}
+</style></head><body><div class=wrap>{body}
+<p class=note>Koe は Mac 上で動く音声 AI エージェントです。<a href="/">トップ</a> ／ <a href="/pricing">料金</a> ／ <a href="/support">サポート</a></p>
+</div></body></html>"##)
+}
+
+async fn use_cases_index() -> Html<String> {
+    let canonical = "https://koe.live/use-cases";
+    let ld = r#"<script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","name":"Koe の使い方・ユースケース","url":"https://koe.live/use-cases"}</script>"#;
+    let mut cards = String::new();
+    for (slug, label, lead, _f) in USE_CASES.iter() {
+        cards.push_str(&format!("<a class=chip href=\"/use-cases/{slug}\">{label}</a>"));
+        let _ = lead;
+    }
+    let mut sections = String::new();
+    for (slug, label, lead, _f) in USE_CASES.iter() {
+        sections.push_str(&format!("<h2 class=sec><a href=\"/use-cases/{slug}\" style=\"color:inherit;text-decoration:none\">{label} →</a></h2><p class=lead>{lead}</p>"));
+    }
+    let body = format!(r##"<nav class=bc><a href="/">Koe</a> ／ 使い方</nav>
+<div class=eyebrow>USE CASES</div>
+<h1>Koe でできること</h1>
+<p class=lead>「声で、Mac を操る」音声 AI エージェント Koe の使い方を、目的別にまとめました。会議の文字起こしから、声での Mac 操作まで。</p>
+<a class=cta href="/">Mac に入れる →</a>
+<a class="cta alt" href="/pricing" style="margin-left:8px">料金を見る</a>
+{sections}"##);
+    Html(uc_shell(
+        "Koe の使い方・ユースケース｜Mac の音声文字起こし・声で操作",
+        "声で Mac を操る音声 AI エージェント Koe の使い方を目的別に。会議文字起こし(Zoom/Teams・話者分離・AI要約)、声での Mac 操作、ローカル処理、議事録自動化、リアルタイム文字起こし。",
+        canonical, ld, &body))
+}
+
+async fn use_case_page(axum::extract::Path(slug): axum::extract::Path<String>) -> axum::response::Response {
+    let item = USE_CASES.iter().find(|(s, ..)| *s == slug.as_str());
+    let (slug, label, lead, feats) = match item {
+        Some(e) => *e,
+        None => return axum::response::Redirect::permanent("/use-cases").into_response(),
+    };
+    let canonical = format!("https://koe.live/use-cases/{slug}");
+    let feat_li: String = feats.split('|').map(|f| format!("<li>{f}</li>")).collect();
+    let mut siblings = String::new();
+    for (s, l, _, _) in USE_CASES.iter() {
+        if *s == slug { continue; }
+        siblings.push_str(&format!("<a class=chip href=\"/use-cases/{s}\">{l}</a>"));
+    }
+    let faq = format!(r#"<script type="application/ld+json">{{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{{"@type":"Question","name":"{label}は無料で使えますか？","acceptedAnswer":{{"@type":"Answer","text":"Koe は Mac にインストールして使う音声 AI エージェントです。無料で試せます。詳しくは料金ページをご覧ください。"}}}}]}}</script>
+<script type="application/ld+json">{{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{{"@type":"ListItem","position":1,"name":"使い方","item":"https://koe.live/use-cases"}},{{"@type":"ListItem","position":2,"name":"{label}","item":"{canonical}"}}]}}</script>"#);
+    let body = format!(r##"<nav class=bc><a href="/use-cases">使い方</a> ／ {label}</nav>
+<div class=eyebrow>USE CASE</div>
+<h1>{label}</h1>
+<p class=lead>{lead}</p>
+<ul class=feat>{feat_li}</ul>
+<a class=cta href="/">Mac に入れて試す →</a>
+<a class="cta alt" href="/pricing" style="margin-left:8px">料金を見る</a>
+<h2 class=sec>ほかの使い方</h2>
+<div class=chips>{siblings}</div>"##);
+    Html(uc_shell(
+        &format!("{label}｜Koe — 声で動く Mac の音声 AI"),
+        &format!("{lead} Koe は Mac 上で動く音声 AI エージェント。", ),
+        &canonical, &faq, &body)).into_response()
+}
+
 async fn sitemap_xml() -> impl IntoResponse {
     (
         [("content-type", "application/xml; charset=utf-8"), ("cache-control", "public, max-age=3600")],
@@ -416,6 +515,8 @@ async fn main() {
         .route("/vs-notta", get(|| async { Html(VS_NOTTA) }))
         .route("/pricing", get(|| async { Html(PRICING) }))
         .route("/support", get(|| async { Html(SUPPORT) }))
+        .route("/use-cases", get(use_cases_index))
+        .route("/use-cases/:slug", get(use_case_page))
         .route("/api/checkout", get(stripe_checkout))
         .route("/api/license", get(verify_license))
         .route("/og.svg", get(og_image_svg))

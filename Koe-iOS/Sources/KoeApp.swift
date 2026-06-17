@@ -68,6 +68,13 @@ struct MainTabView: View {
             }
             .tag(3)
 
+            WebAppScreen()
+                .tabItem {
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                    Text("メッセージ")
+                }
+                .tag(4)
+
             MoreView()
                 .tabItem {
                     Image(systemName: "ellipsis.circle")

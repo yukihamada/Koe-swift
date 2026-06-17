@@ -522,6 +522,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 声を送る: テキスト→クローン声→相手へメール（mcp.koe.live send_voice）。
         // 直前の音声入力が本文にプリフィルされる=「しゃべって、そのまま送る」。
         menu.addItem(withTitle: "🔊 声を送る…", action: #selector(openVoiceMessage), keyEquivalent: "")
+        // メッセージ(Web): koe.live/app（統合Webアプリ＝受信箱/焚き火/設定BYOK/通話）をウィンドウで開く
+        menu.addItem(withTitle: "💬 メッセージ (Web)", action: #selector(openKoeWebApp), keyEquivalent: "")
+        // 自分の声で読み上げ: 選択テキスト(なければクリップボード/直近の認識結果)を
+        // m5 の Qwen3-TTS 本人声クローンで合成して再生（クラウド不使用）
+        menu.addItem(withTitle: "🗣 自分の声で読み上げ", action: #selector(speakWithMyVoice), keyEquivalent: "r")
         menu.addItem(.separator())
 
         // 最近の認識結果（クリックでコピー）
@@ -2426,6 +2431,48 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
+    /// 🗣 自分の声で読み上げ: 選択テキスト → クリップボード → 直近の認識結果 の順で対象を決め、
+    /// koe-mcp (https://mcp.koe.live/mcp) の `speak` ツールへ HTTP(JSON-RPC) で本人声クローン合成を依頼して再生する。
+    /// (旧 SSH 経由 `ssh m5 → koe_say.py` は廃止済み。実装は MyVoiceTTS.shared.speak)
+    @objc func speakWithMyVoice() {
+        var text = ""
+        // 1. アクセシビリティで選択テキスト
+        if AXIsProcessTrusted() {
+            let systemWide = AXUIElementCreateSystemWide()
+            var focused: AnyObject?
+            AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focused)
+            if let el = focused {
+                var sel: AnyObject?
+                AXUIElementCopyAttributeValue(el as! AXUIElement, kAXSelectedTextAttribute as CFString, &sel)
+                text = (sel as? String) ?? ""
+            }
+        }
+        // 2. クリップボード
+        if text.isEmpty {
+            text = NSPasteboard.general.string(forType: .string) ?? ""
+        }
+        // 3. 直近の認識結果
+        if text.isEmpty {
+            text = HistoryStore.shared.entries.first?.text ?? ""
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            sendNotification(text: "読み上げるテキストがありません（選択 / コピーしてから実行）")
+            return
+        }
+        // 長文ガード: Qwen3-TTS は長文で品質が落ちるため 800 文字で切る
+        let target = String(trimmed.prefix(800))
+        if overlay == nil { overlay = OverlayWindow() }
+        overlay?.show(state: .recognizing)
+        overlay?.showHint("🗣 自分の声で生成中…")
+        MyVoiceTTS.shared.speak(target) { [weak self] ok, message in
+            self?.overlay?.hide()
+            if !ok {
+                self?.sendNotification(text: message)
+            }
+        }
+    }
+
     @objc func toggleAlwaysOnRecording() {
         let s = AppSettings.shared
         s.alwaysOnRecordingEnabled.toggle()
@@ -2557,6 +2604,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildMenu()
     }
 
+    /// 💬 メッセージ (Web) — koe.live/app（統合Webアプリ）をウィンドウで開く。
+    @objc private func openKoeWebApp() {
+        KoeWebWindow.shared.show()
+    }
+
     /// 🔊 声を送る — テキスト→クローン声→相手へメール（VoiceMessageWindow）。
     @objc private func openVoiceMessage() {
         VoiceMessageWindow.shared.show()
@@ -2664,6 +2716,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlay?.setTranslateMode(true)
                 klog("URL scheme: translate mode ON")
                 self.startRecording()
+            }
+        case "speak":
+            // koe://speak?text=... — 自分の声で読み上げ (text 省略時は選択/クリップボード/直近認識)
+            let q = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first(where: { $0.name == "text" })?.value ?? ""
+            DispatchQueue.main.async {
+                if q.isEmpty {
+                    self.speakWithMyVoice()
+                } else {
+                    MyVoiceTTS.shared.speak(String(q.prefix(800))) { [weak self] ok, message in
+                        if !ok { self?.sendNotification(text: message) }
+                    }
+                }
             }
         default:
             klog("URL scheme: unknown host '\(url.host ?? "")'")

@@ -48,3 +48,4 @@ Koe-windows/target/
 *.p12
 *.cer
 lib-macos/prebuilt-dylibs/
+Koe-iOS/Sources/Secrets.swift

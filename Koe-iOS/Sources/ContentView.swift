@@ -26,6 +26,10 @@ struct ContentView: View {
     @AppStorage("koe_always_listening") private var alwaysListening = false
     @ObservedObject private var phraseManager = PhraseManager.shared
     @StateObject private var wakeDetector = WakeWordDetector.shared
+    @StateObject private var tts = KoeTTS.shared
+    @AppStorage("koe_handsfree") private var handsFree = false
+    @AppStorage("koe_handsfree_speakback") private var handsFreeSpeakback = false
+    @State private var speakWork: DispatchWorkItem?
 
     var body: some View {
         NavigationStack {
@@ -56,7 +60,19 @@ struct ContentView: View {
                     .padding(.top, 8)
                 }
 
+                // ハンズフリー状態インジケータ（聞いてます/考え中/返答中）
+                if handsFree {
+                    handsFreeIndicator
+                        .padding(.top, 6)
+                }
+
                 Spacer()
+
+                // Idle hero — modern wordmark on the empty home screen
+                if recorder.recognizedText.isEmpty && !recorder.isRecording && !handsFree {
+                    idleHero
+                        .padding(.bottom, 8)
+                }
 
                 // Result — the only thing that matters
                 if !recorder.recognizedText.isEmpty {
@@ -127,6 +143,7 @@ struct ContentView: View {
                 }
                 .padding(.bottom, 32)
             }
+            .background(ambientBackground)
             .contentShape(Rectangle())
             .gesture(
                 // Hold 0.8s → haptic → drag to move mouse
@@ -207,6 +224,14 @@ struct ContentView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView(recorder: recorder)
             }
+            .alert("本人声", isPresented: Binding(
+                get: { if case .error = tts.state { return true } else { return false } },
+                set: { if !$0 { tts.state = .idle } }
+            )) {
+                Button("閉じる", role: .cancel) {}
+            } message: {
+                if case let .error(msg) = tts.state { Text(msg) }
+            }
             .onChange(of: appState.shouldStartRecording) { _, shouldStart in
                 if shouldStart && !recorder.isRecording {
                     recorder.startRecording()
@@ -226,8 +251,35 @@ struct ContentView: View {
                     guard let recorder, !recorder.isRecording else { return }
                     recorder.startRecording()
                 }
-                if alwaysListening && !recorder.isRecording {
+                if alwaysListening && !handsFree && !recorder.isRecording {
                     wakeDetector.start()
+                }
+
+                // ハンズフリー: 開いたらすぐ聴き取り開始（録音→無音で区切り→自動再開）
+                if handsFree && !recorder.isRecording {
+                    startHandsFree()
+                }
+            }
+            .onChange(of: handsFree) { _, on in
+                if on {
+                    startHandsFree()
+                } else {
+                    recorder.continuousMode = false
+                    if recorder.isRecording { recorder.stopRecording() }
+                }
+            }
+            .onChange(of: handsFreeSpeakback) { _, _ in
+                // 読み返しON/OFFで自動再開の担当が変わる（素=continuous / 読み返し=自前ループ）
+                if handsFree { recorder.continuousMode = !handsFreeSpeakback }
+            }
+            .onChange(of: tts.state) { _, st in
+                // ハンズフリー＋読み返し: 再生が終わったら録音を再開
+                if handsFree, handsFreeSpeakback, st == .idle, !recorder.isRecording {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        if handsFree && handsFreeSpeakback && !recorder.isRecording && tts.state == .idle {
+                            recorder.startRecording()
+                        }
+                    }
                 }
             }
             .onChange(of: alwaysListening) { _, enabled in
@@ -237,13 +289,34 @@ struct ContentView: View {
                     wakeDetector.stop()
                 }
             }
+            .onChange(of: recorder.recognizedText) { _, text in
+                // 文字化は録音停止より後に非同期(partial→final)で来る。最終結果が落ち着くまで
+                // デバウンスしてから本人声で読み返す（途中結果で喋らない）。
+                let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if handsFree, handsFreeSpeakback, !t.isEmpty, !recorder.isRecording, tts.state == .idle {
+                    speakWork?.cancel()
+                    let work = DispatchWorkItem {
+                        let cur = recorder.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if handsFree, handsFreeSpeakback, !cur.isEmpty, !recorder.isRecording, tts.state == .idle {
+                            Task { await tts.speakInMyVoice(cur) }
+                        }
+                    }
+                    speakWork = work
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: work)
+                }
+            }
             .onChange(of: recorder.isRecording) { _, isRecording in
-                // Stop wake word detector when recording starts,
-                // restart when recording finishes (if always-listening is on)
                 if isRecording {
                     wakeDetector.stop()
+                } else if handsFree && handsFreeSpeakback {
+                    // 安全網: 無音で結果が来なかった時だけ少し後に再開（結果が来れば読み返し→tts idleで再開）
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                        let empty = recorder.recognizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        if handsFree && handsFreeSpeakback && !recorder.isRecording && tts.state == .idle && empty {
+                            recorder.startRecording()
+                        }
+                    }
                 } else if alwaysListening {
-                    // Short delay to allow audio session to settle
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                         if alwaysListening && !recorder.isRecording {
                             wakeDetector.start()
@@ -269,6 +342,106 @@ struct ContentView: View {
                 Text(L10n.pinPrompt)
             }
         }
+    }
+
+    private func speak(lang: String) {
+        switch tts.state {
+        case .loading, .playing: break
+        default: Task { await tts.speakInMyVoice(recorder.recognizedText, lang: lang) }
+        }
+    }
+
+    // ハンズフリー時、自動停止が無効なら無音1.5秒で止まるようにする
+    private func ensureSilenceAutoStop() {
+        let cur = UserDefaults.koeShared.object(forKey: "koe_silence_duration") as? Double ?? 0
+        if cur == 0 {
+            UserDefaults.koeShared.set(1.5, forKey: "koe_silence_duration")
+        }
+    }
+
+    /// ハンズフリー開始：無音停止を確保し、素モードはcontinuousで自動再開、読み返しモードは自前ループ。
+    private func startHandsFree() {
+        ensureSilenceAutoStop()
+        wakeDetector.stop()
+        recorder.continuousMode = !handsFreeSpeakback
+        if !recorder.isRecording { recorder.startRecording() }
+    }
+
+    // MARK: - Ambient Background
+
+    private var ambientBackground: some View {
+        ZStack {
+            Color(.systemBackground)
+            // Warm glow drifting from the record button area
+            RadialGradient(
+                colors: [Color.orange.opacity(recorder.isRecording ? 0.0 : 0.22), .clear],
+                center: .bottom, startRadius: 40, endRadius: 460
+            )
+            RadialGradient(
+                colors: [Color.red.opacity(recorder.isRecording ? 0.22 : 0.0), .clear],
+                center: .bottom, startRadius: 40, endRadius: 500
+            )
+            .animation(.easeInOut(duration: 0.4), value: recorder.isRecording)
+            // Cool tint at top for depth
+            RadialGradient(
+                colors: [Color.blue.opacity(0.10), .clear],
+                center: .topTrailing, startRadius: 20, endRadius: 420
+            )
+            RadialGradient(
+                colors: [Color.purple.opacity(0.07), .clear],
+                center: .topLeading, startRadius: 20, endRadius: 360
+            )
+        }
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Hands-free status indicator
+
+    private var handsFreeIndicator: some View {
+        let (icon, label, color): (String, String, Color) = {
+            if tts.state == .playing { return ("speaker.wave.2.fill", "本人声で返答中…", .pink) }
+            if tts.state == .loading { return ("ellipsis", "考え中…", .blue) }
+            if recorder.isRecording { return ("waveform", "聞いています…話してください", .orange) }
+            return ("hand.wave.fill", "話しかけてください", .secondary)
+        }()
+        return HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(color)
+                .symbolEffect(.variableColor.iterative, options: .repeating, isActive: recorder.isRecording || tts.state == .playing)
+            Text(label)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.primary)
+            if recorder.isRecording {
+                // 簡易レベルメーター
+                Capsule()
+                    .fill(Color.orange)
+                    .frame(width: 4 + CGFloat(recorder.audioLevel) * 40, height: 4)
+                    .animation(.easeOut(duration: 0.1), value: recorder.audioLevel)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(color.opacity(0.25), lineWidth: 1))
+    }
+
+    // MARK: - Idle Hero (shown on the home screen when there's no result)
+
+    private var idleHero: some View {
+        VStack(spacing: 10) {
+            Text("Koe")
+                .font(.system(size: 44, weight: .bold, design: .rounded))
+                .foregroundStyle(
+                    LinearGradient(colors: [.orange, Color(red: 1.0, green: 0.42, blue: 0.22)],
+                                   startPoint: .leading, endPoint: .trailing)
+                )
+            Text("話すだけで、文字になる。")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.top, 8)
+        .transition(.opacity)
     }
 
     // MARK: - Result Card
@@ -315,6 +488,38 @@ struct ContentView: View {
                     Image(systemName: copiedFeedback ? "checkmark.circle.fill" : "doc.on.doc")
                         .font(.system(size: 18))
                         .foregroundStyle(copiedFeedback ? .green : .secondary)
+                }
+
+                // 本人の声で再生（話す→本人クローン声で読み上げ）
+                Button {
+                    switch tts.state {
+                    case .loading, .playing:
+                        break
+                    default:
+                        Task { await tts.speakInMyVoice(recorder.recognizedText) }
+                    }
+                } label: {
+                    Group {
+                        switch tts.state {
+                        case .loading:
+                            ProgressView().controlSize(.small)
+                        case .playing:
+                            Image(systemName: "waveform.circle.fill")
+                                .symbolEffect(.variableColor.iterative, options: .repeating)
+                        default:
+                            Image(systemName: "person.wave.2.fill")
+                        }
+                    }
+                    .font(.system(size: 18))
+                    .foregroundStyle(.orange)
+                }
+                .contextMenu {
+                    Section("翻訳して本人声で") {
+                        Button { speak(lang: "en") } label: { Label("English", systemImage: "globe") }
+                        Button { speak(lang: "zh") } label: { Label("中文", systemImage: "globe") }
+                        Button { speak(lang: "es") } label: { Label("Español", systemImage: "globe") }
+                        Button { speak(lang: "ko") } label: { Label("한국어", systemImage: "globe") }
+                    }
                 }
 
                 // Backspace (delete last on Mac)
@@ -831,47 +1036,76 @@ struct RecordButton: View {
     let level: Float
     let action: () -> Void
 
+    @State private var breathe = false
+
+    private var accent: Color { isRecording ? .red : .orange }
+
     var body: some View {
         Button(action: action) {
             ZStack {
-                // Pulse ring
+                // Audio-reactive halo (recording)
                 if isRecording {
                     Circle()
-                        .fill(Color.red.opacity(0.08))
-                        .frame(width: 100 + CGFloat(level) * 50,
-                               height: 100 + CGFloat(level) * 50)
-                        .animation(.easeOut(duration: 0.08), value: level)
+                        .fill(
+                            RadialGradient(colors: [Color.red.opacity(0.30), .clear],
+                                           center: .center, startRadius: 10, endRadius: 90)
+                        )
+                        .frame(width: 150 + CGFloat(level) * 90,
+                               height: 150 + CGFloat(level) * 90)
+                        .animation(.easeOut(duration: 0.10), value: level)
                 }
+
+                // Ambient glow (idle breathing)
+                Circle()
+                    .fill(
+                        RadialGradient(colors: [accent.opacity(0.22), .clear],
+                                       center: .center, startRadius: 5, endRadius: 70)
+                    )
+                    .frame(width: 130, height: 130)
+                    .scaleEffect(breathe ? 1.08 : 0.94)
+                    .opacity(isRecording ? 0 : 1)
 
                 // Outer ring
                 Circle()
-                    .stroke(isRecording ? Color.red.opacity(0.4) : Color.orange.opacity(0.3), lineWidth: 2)
-                    .frame(width: 80, height: 80)
+                    .stroke(
+                        AngularGradient(colors: [accent.opacity(0.5), accent.opacity(0.15), accent.opacity(0.5)],
+                                        center: .center),
+                        lineWidth: 2.5
+                    )
+                    .frame(width: 86, height: 86)
 
-                // Inner circle
-                if isRecording {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.red)
-                        .frame(width: 30, height: 30)
-                } else {
+                // Core
+                ZStack {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [Color.orange, Color.orange.opacity(0.8)],
-                                startPoint: .top,
-                                endPoint: .bottom
+                                colors: isRecording
+                                    ? [Color(red: 1.0, green: 0.30, blue: 0.30), Color(red: 0.85, green: 0.12, blue: 0.18)]
+                                    : [Color.orange, Color(red: 1.0, green: 0.42, blue: 0.22)],
+                                startPoint: .topLeading, endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 64, height: 64)
-                        .overlay {
-                            Image(systemName: "mic.fill")
-                                .font(.system(size: 26, weight: .medium))
-                                .foregroundStyle(.white)
-                        }
+                        .frame(width: 70, height: 70)
+                        .shadow(color: accent.opacity(0.45), radius: 12, y: 5)
+
+                    if isRecording {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(.white)
+                            .frame(width: 26, height: 26)
+                    } else {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 27, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
                 }
             }
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.impact, trigger: isRecording)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                breathe = true
+            }
+        }
     }
 }

@@ -251,7 +251,10 @@ final class RecordingManager: ObservableObject {
 
     /// Apple Speech認識セッションを開始（60秒制限対策: isFinalで自動リスタート）
     private func startAppleSpeechSession() {
-        guard let speechRecognizer, speechRecognizer.isAvailable else { return }
+        guard let speechRecognizer, speechRecognizer.isAvailable else {
+            statusText = "音声認識が使えません（設定で許可が必要）"
+            return
+        }
 
         recognitionTask?.cancel()
         recognitionTask = nil
@@ -288,7 +291,9 @@ final class RecordingManager: ObservableObject {
             }
 
             audioEngine.prepare()
-            do { try audioEngine.start() } catch {
+            do {
+                try audioEngine.start()
+            } catch {
                 statusText = "録音開始エラー"
                 return
             }

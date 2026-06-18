@@ -49,7 +49,16 @@ class LLMProcessor {
 
         klog("LLM: mode=\(s.llmMode.rawValue) useLocal=\(s.llmUseLocal) provider=\(s.llmProvider.rawValue) instruction=\(systemPrompt.prefix(60))")
 
-        // ローカルLLM
+        // NOU ローカルノード (in-process MLX-Swift, OpenAI 互換 :4001) を最優先。
+        // 推論は自分のノード(127.0.0.1/LAN)で完結しクラウドに出ないため、
+        // Offline Mode・llmUseLocal の設定に関係なく remote(OpenAI互換) 経路で叩く。
+        // processRemote の host 許可 (https || 127.0.0.1 || localhost) で 127.0.0.1 は通過する。
+        if s.llmProvider.isLocalInference {
+            processRemote(text: text, instruction: systemPrompt, completion: completion)
+            return
+        }
+
+        // ローカルLLM (アプリ内蔵 llama.cpp)
         if s.llmUseLocal {
             processLocalOnDemand(text: text, instruction: systemPrompt, completion: completion)
             return
@@ -311,11 +320,22 @@ class LLMProcessor {
 
     private func processRemote(text: String, instruction: String, completion: @escaping (String) -> Void) {
         let s = AppSettings.shared
-        if s.offlineModeEnabled {
+        // nou-local は推論が自分のノード(127.0.0.1/LAN)で完結しクラウドに出ないため、
+        // Offline Mode 中でもブロックしない。それ以外のクラウドプロバイダは従来どおりブロック。
+        if s.offlineModeEnabled && !s.llmProvider.isLocalInference {
             klog("LLM(cloud): blocked by Offline Mode (\(s.llmProvider.rawValue))")
             completion(text); return
         }
-        let baseURL = s.llmProvider == .custom ? s.llmBaseURL : s.llmProvider.baseURL
+        // nou-local は永続化ミラー(llmBaseURL)を使わず nouPort から loopback を直接組み立てる。
+        // llmBaseURL にクラウドhostが残っていても Offline ガードを素通りして漏れないようにするため。
+        let baseURL: String
+        if s.llmProvider.isLocalInference {
+            baseURL = s.llmProvider.baseURL(nouPort: s.nouPort)
+        } else if s.llmProvider == .custom {
+            baseURL = s.llmBaseURL
+        } else {
+            baseURL = s.llmProvider.baseURL
+        }
         let model   = s.llmModel
 
         let body: [String: Any] = [

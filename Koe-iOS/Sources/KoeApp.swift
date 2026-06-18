@@ -14,6 +14,7 @@ struct KoeApp: App {
     init() {
         // APIキーをUserDefaultsからKeychainに移行（初回のみ）
         KeychainHelper.migrateFromUserDefaults(key: "koe_api_key")
+        // ハンズフリーは既定OFF（常時録音を避ける）。使う時だけ More でON。
     }
 
     var body: some Scene {

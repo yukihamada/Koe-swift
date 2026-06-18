@@ -144,6 +144,7 @@ enum LLMMode: String, CaseIterable, Codable {
 }
 
 enum LLMProvider: String, CaseIterable {
+    case nouLocal  = "nou-local"   // NOU local node (in-process MLX-Swift, OpenAI 互換 :4001)
     case chatweb   = "chatweb"     // chatweb.ai (default, free)
     case openai    = "openai"      // OpenAI
     case anthropic = "anthropic"   // Anthropic Claude
@@ -152,6 +153,7 @@ enum LLMProvider: String, CaseIterable {
 
     var displayName: String {
         switch self {
+        case .nouLocal:  return "NOU (ローカル・本機/LAN)"
         case .chatweb:   return "chatweb.ai (無料)"
         case .openai:    return "OpenAI"
         case .anthropic: return "Anthropic Claude"
@@ -162,6 +164,8 @@ enum LLMProvider: String, CaseIterable {
 
     var baseURL: String {
         switch self {
+        // NOU ローカルプロキシ (OpenAI 互換)。loopback なので NOU 側は無認証で通る。
+        case .nouLocal:  return "http://127.0.0.1:4001"
         case .chatweb:   return "https://api.chatweb.ai"
         case .openai:    return "https://api.openai.com"
         case .anthropic: return "https://api.anthropic.com"
@@ -170,8 +174,20 @@ enum LLMProvider: String, CaseIterable {
         }
     }
 
+    /// nou-local 用に nouPort を反映した baseURL。
+    /// 永続化ミラー(llmBaseURL)に依存せず常に loopback を組み立てるので、
+    /// llmBaseURL にクラウドhostが残っていてもクラウドへ漏れない。
+    func baseURL(nouPort: Int) -> String {
+        switch self {
+        case .nouLocal:  return "http://127.0.0.1:\(nouPort > 0 ? nouPort : 4001)"
+        default:         return baseURL
+        }
+    }
+
     var defaultModel: String {
         switch self {
+        // モデルIDはエイリアス禁止だが "auto" は NOU SmartRouter が slot を自動選択する正規の指定。
+        case .nouLocal:  return "auto"
         case .chatweb:   return "nemotron"
         case .openai:    return "gpt-4o-mini"
         case .anthropic: return "claude-haiku-4-5-20251001"
@@ -182,9 +198,15 @@ enum LLMProvider: String, CaseIterable {
 
     var requiresAPIKey: Bool {
         switch self {
-        case .chatweb: return false
-        default:       return true
+        case .chatweb, .nouLocal: return false
+        default:                  return true
         }
+    }
+
+    /// 推論が端末内/LAN 内で完結し、クラウドに送られないプロバイダかどうか。
+    /// Offline Mode 中でもこれらは許可する（NOU ローカル = 自分のノードのみに送る）。
+    var isLocalInference: Bool {
+        self == .nouLocal
     }
 }
 
@@ -698,8 +720,10 @@ class AppSettings: ObservableObject {
             let hasWhisperCpp = !whisperCppBinaryPath.isEmpty || !whisperCppModelPath.isEmpty
             recognitionEngine = hasWhisperCpp ? .whisperCpp : .appleOnDevice
         }
-        // LLM がクラウドプロバイダ経由ならローカル LLM 推論に固定
-        if llmEnabled && !llmUseLocal {
+        // LLM がクラウドプロバイダ経由ならローカル LLM 推論に固定。
+        // ただし nou-local は推論が自分のノード(127.0.0.1/LAN)で完結しクラウドに出ないため、
+        // Offline Mode 中でもそのまま remote 経路(NOU :4001)を使ってよい。
+        if llmEnabled && !llmUseLocal && !llmProvider.isLocalInference {
             llmUseLocal = true
         }
     }

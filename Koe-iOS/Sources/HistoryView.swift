@@ -3,6 +3,7 @@ import SwiftUI
 struct HistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var recorder: RecordingManager
+    @ObservedObject private var tts = KoeTTS.shared
     @State private var searchText = ""
 
     private var filteredHistory: [HistoryItem] {
@@ -20,17 +21,41 @@ struct HistoryView: View {
                     )
                 } else {
                     List(filteredHistory) { item in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.text)
-                                .font(.body)
-                            Text(item.date, style: .relative)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(item.text)
+                                    .font(.body)
+                                Text(item.date, style: .relative)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            // 本人声で再生
+                            Button {
+                                Task { await tts.speakInMyVoice(item.text) }
+                            } label: {
+                                Image(systemName: "person.wave.2.fill")
+                                    .font(.system(size: 17))
+                                    .foregroundStyle(.orange)
+                            }
+                            .buttonStyle(.borderless)
                         }
                         .padding(.vertical, 4)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             UIPasteboard.general.string = item.text
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                Task { await tts.speakInMyVoice(item.text) }
+                            } label: { Label("本人声", systemImage: "person.wave.2.fill") }
+                            .tint(.orange)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button {
+                                UIPasteboard.general.string = item.text
+                            } label: { Label("コピー", systemImage: "doc.on.doc") }
+                            .tint(.blue)
                         }
                     }
                     .searchable(text: $searchText, prompt: L10n.searchHistory)

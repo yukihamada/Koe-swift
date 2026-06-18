@@ -37,7 +37,7 @@ struct KoeShortcuts: AppShortcutsProvider {
                 "Start voice input with \(.applicationName)",
                 "\(.applicationName)で音声入力",
                 "\(.applicationName)を起動",
-                "声でメモ"
+                "\(.applicationName)で声でメモ"
             ],
             shortTitle: "音声入力を開始",
             systemImageName: "mic.fill"

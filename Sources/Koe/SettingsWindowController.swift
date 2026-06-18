@@ -1245,6 +1245,8 @@ struct AITab: View {
 
                         Group {
                             switch s.llmProvider {
+                            case .nouLocal:
+                                Text("NOU: 本機/LAN のローカルノード(:4001)で推論。クラウドに送らずオフラインでも使える。NOU.app が起動している必要あり")
                             case .chatweb:
                                 Text("chatweb.ai: APIキー不要・無料で利用可能")
                             case .openai:

@@ -33,6 +33,8 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>© 2026 Koe</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ハンズフリー操作のジェスチャー認識にカメラを使用します（映像は端末外に出ません）</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>音声入力のためにマイクを使用します</string>
 	<key>NSPrincipalClass</key>

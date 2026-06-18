@@ -200,10 +200,12 @@ enum RecordingMode: String, CaseIterable {
 }
 
 enum WakeWordEngineType: String, CaseIterable {
+    case appleSpeech = "apple_speech"
     case mfccDTW     = "mfcc_dtw"
     case openWakeWord = "open_wake_word"
     var displayName: String {
         switch self {
+        case .appleSpeech:  return "Apple音声（常時オン・話者非依存・推奨）"
         case .mfccDTW:      return "MFCC+DTW（内蔵・テンプレート学習）"
         case .openWakeWord: return "openWakeWord（Python・高精度）"
         }
@@ -415,6 +417,51 @@ class AppSettings: ObservableObject {
     @Published var owwThreshold: Float      { didSet { ud.set(owwThreshold,       forKey: "owwThreshold") } }
     /// カスタムウェイクワード学習サーバー URL（koe-wake-train）。空文字なら学習機能は無効。
     @Published var wakeTrainEndpoint: String { didSet { ud.set(wakeTrainEndpoint,  forKey: "wakeTrainEndpoint") } }
+    /// MFCC+DTW のマッチ距離しきい値（小さいほど厳しい）。従来は 4.5 ハードコードだったのを設定化。
+    @Published var mfccDistThreshold: Float { didSet { ud.set(mfccDistThreshold, forKey: "mfccDistThreshold") } }
+
+    // MARK: - Voice Cockpit（ハンズフリー継続操作）
+    // ※ コックピット系（継続セッション・番号オーバーレイ・ジェスチャー・コマンド実行）は
+    //    CGEvent / Accessibility に依存するため Mac App Store 版では機能しない（GitHub 版前提）。
+
+    /// 継続会話セッション: wake で一度起こしたら、沈黙でターン確定→自動実行を繰り返す。
+    @Published var conversationModeEnabled: Bool { didSet { ud.set(conversationModeEnabled, forKey: "conversationModeEnabled") } }
+    /// ターン確定とみなす無音長（ミリ秒）。セッション中は silenceAutoStop の代わりにこれを使う。
+    @Published var conversationTurnSilenceMs: Double { didSet { ud.set(conversationTurnSilenceMs, forKey: "conversationTurnSilenceMs") } }
+    /// セッションを終了させる停止語。
+    @Published var conversationStopWords: [String] { didSet { saveJSON(conversationStopWords, key: "conversationStopWords") } }
+    /// 無活動でセッションを自動終了する秒数。
+    @Published var conversationSessionTimeoutSec: Double { didSet { ud.set(conversationSessionTimeoutSec, forKey: "conversationSessionTimeoutSec") } }
+    /// 検出/確定/終了時に短い効果音（earcon）を鳴らす。
+    @Published var conversationEarconEnabled: Bool { didSet { ud.set(conversationEarconEnabled, forKey: "conversationEarconEnabled") } }
+    /// 非コマンド発話をフォーカス先へ口述挿入する（OFF なら無視＝誤挿入回避）。
+    @Published var conversationDictationFallback: Bool { didSet { ud.set(conversationDictationFallback, forKey: "conversationDictationFallback") } }
+    /// コマンド実行結果を TTS で読み上げる。
+    @Published var conversationTTSResponses: Bool { didSet { ud.set(conversationTTSResponses, forKey: "conversationTTSResponses") } }
+
+    /// 番号オーバーレイ（声でクリック対象を指す）を有効にする。
+    @Published var numberOverlayEnabled: Bool { didSet { ud.set(numberOverlayEnabled, forKey: "numberOverlayEnabled") } }
+    /// セッション中は番号オーバーレイを常時表示する。
+    @Published var numberOverlayAlwaysOn: Bool { didSet { ud.set(numberOverlayAlwaysOn, forKey: "numberOverlayAlwaysOn") } }
+    /// N番クリック後に番号オーバーレイを自動で消す。
+    @Published var numberOverlayAutoHideAfterClick: Bool { didSet { ud.set(numberOverlayAutoHideAfterClick, forKey: "numberOverlayAutoHideAfterClick") } }
+    /// 要素列挙方式: "a11yFirst" | "ocrFirst" | "a11yOnly"
+    @Published var elementScanMode: String { didSet { ud.set(elementScanMode, forKey: "elementScanMode") } }
+
+    /// TTS バックエンド: "say" | "elevenLabs"
+    @Published var ttsBackend: String { didSet { ud.set(ttsBackend, forKey: "ttsBackend") } }
+    /// TTS 詳細度: "completionOnly" | "completionPlusSummary" | "full"
+    @Published var ttsVerbosity: String { didSet { ud.set(ttsVerbosity, forKey: "ttsVerbosity") } }
+    /// ElevenLabs API キー（機密 → Keychain）。
+    @Published var elevenLabsAPIKey: String { didSet {
+        if elevenLabsAPIKey.isEmpty { KeychainHelper.delete("elevenLabsAPIKey") }
+        else { KeychainHelper.set(elevenLabsAPIKey, for: "elevenLabsAPIKey") }
+    }}
+    /// ElevenLabs voice ID。
+    @Published var elevenLabsVoiceID: String { didSet { ud.set(elevenLabsVoiceID, forKey: "elevenLabsVoiceID") } }
+
+    /// カメラ・ジェスチャー（音声を補完する無声操作）を有効にする。
+    @Published var gestureEnabled: Bool { didSet { ud.set(gestureEnabled, forKey: "gestureEnabled") } }
 
     // App profiles & text expansions
     @Published var appProfiles: [AppProfile]    { didSet { saveJSON(appProfiles,    key: "appProfiles") } }
@@ -648,11 +695,29 @@ class AppSettings: ObservableObject {
         menuBarIconVisible = ud.object(forKey: "menuBarIconVisible") as? Bool ?? true  // デフォルトON
         wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
-        wakeWordEngineType = WakeWordEngineType(rawValue: ud.string(forKey: "wakeWordEngineType") ?? "") ?? .mfccDTW
+        wakeWordEngineType = WakeWordEngineType(rawValue: ud.string(forKey: "wakeWordEngineType") ?? "") ?? .appleSpeech
         owwModelName       = ud.string(forKey: "owwModelName") ?? "hey_jarvis"
         owwCustomModelPath = ud.string(forKey: "owwCustomModelPath") ?? ""
         owwThreshold       = ud.object(forKey: "owwThreshold") as? Float ?? 0.5
         wakeTrainEndpoint  = ud.string(forKey: "wakeTrainEndpoint") ?? "https://koe-wake-train.fly.dev"
+        mfccDistThreshold  = ud.object(forKey: "mfccDistThreshold") as? Float ?? 4.5
+        // Voice Cockpit
+        conversationModeEnabled       = ud.object(forKey: "conversationModeEnabled") as? Bool ?? false
+        conversationTurnSilenceMs     = ud.object(forKey: "conversationTurnSilenceMs") as? Double ?? 700
+        conversationStopWords         = (ud.data(forKey: "conversationStopWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["おわり", "終わり", "ストップ", "だまって", "黙って", "もういい"]
+        conversationSessionTimeoutSec = ud.object(forKey: "conversationSessionTimeoutSec") as? Double ?? 20
+        conversationEarconEnabled     = ud.object(forKey: "conversationEarconEnabled") as? Bool ?? true
+        conversationDictationFallback = ud.object(forKey: "conversationDictationFallback") as? Bool ?? false
+        conversationTTSResponses      = ud.object(forKey: "conversationTTSResponses") as? Bool ?? true
+        numberOverlayEnabled            = ud.object(forKey: "numberOverlayEnabled") as? Bool ?? true
+        numberOverlayAlwaysOn           = ud.object(forKey: "numberOverlayAlwaysOn") as? Bool ?? false
+        numberOverlayAutoHideAfterClick = ud.object(forKey: "numberOverlayAutoHideAfterClick") as? Bool ?? true
+        elementScanMode  = ud.string(forKey: "elementScanMode") ?? "a11yFirst"
+        ttsBackend       = ud.string(forKey: "ttsBackend") ?? "say"
+        ttsVerbosity     = ud.string(forKey: "ttsVerbosity") ?? "completionPlusSummary"
+        elevenLabsAPIKey  = AppSettings.migrateSecret(ud: ud, key: "elevenLabsAPIKey")
+        elevenLabsVoiceID = ud.string(forKey: "elevenLabsVoiceID") ?? ""
+        gestureEnabled   = ud.object(forKey: "gestureEnabled") as? Bool ?? false
         textExpansions = (ud.data(forKey: "textExpansions").flatMap { try? JSONDecoder().decode([TextExpansion].self, from: $0) }) ?? []
         appProfiles = (ud.data(forKey: "appProfiles").flatMap { try? JSONDecoder().decode([AppProfile].self, from: $0) }) ?? AppSettings.defaultProfiles()
         fillerRemovalEnabled = ud.object(forKey: "fillerRemovalEnabled") as? Bool ?? true  // デフォルトON

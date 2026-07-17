@@ -91,8 +91,18 @@ class WakeWordEngine {
     func extractMFCC(from samples: [Float]) -> [[Float]] {
         guard samples.count >= frameLen else { return [] }
 
-        // Pre-emphasis
+        // RMS 正規化: 声量に依らず一定の音圧へ揃える（話者・距離・マイク差を緩和）。
+        // テンプレート録音側と検出クエリ側の両方を同じ基準に正規化することで、
+        // 「小声で録ったテンプレ」「離れて喋ったクエリ」のミスマッチを減らす。
         var s = samples
+        var rms: Float = 0
+        vDSP_rmsqv(s, 1, &rms, vDSP_Length(s.count))
+        if rms > 1e-5 {
+            var gain = 0.05 / rms   // 目標 RMS ≈ 0.05
+            vDSP_vsmul(s, 1, &gain, &s, 1, vDSP_Length(s.count))
+        }
+
+        // Pre-emphasis
         for i in stride(from: s.count - 1, through: 1, by: -1) { s[i] -= preEmph * s[i - 1] }
 
         var frames: [[Float]] = []
@@ -193,6 +203,8 @@ class WakeWordEngine {
             klog("WakeWordEngine: need \(Self.minTemplates) templates (have \(templates.count))")
             return
         }
+        // 設定からしきい値を反映（従来 4.5 ハードコードを設定化）
+        distThreshold = AppSettings.shared.mfccDistThreshold
         isRunning = true
         audioBuf = []
         lastCheck = Date()

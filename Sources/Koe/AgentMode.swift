@@ -28,6 +28,17 @@ enum AgentCommand {
     case prevTrack
     case sleep
     case lockScreen
+    // Cockpit: number overlay & deterministic UI control (require voiceControlEnabled)
+    case showNumbers
+    case hideNumbers
+    case clickNumber(Int)
+    case submit                          // Return
+    case scroll(ScrollSynthesizer.Direction)
+    case goBack                          // ⌘[
+    case goForward                       // ⌘]
+    case switchTab(next: Bool)           // ⌃Tab / ⌃⇧Tab
+    case copy                            // ⌘C
+    case paste                           // ⌘V
 
     var description: String {
         switch self {
@@ -50,6 +61,16 @@ enum AgentCommand {
         case .prevTrack:             return "前のトラック"
         case .sleep:                 return "スリープ"
         case .lockScreen:            return "画面ロック"
+        case .showNumbers:           return "番号オーバーレイ表示"
+        case .hideNumbers:           return "番号オーバーレイ消去"
+        case .clickNumber(let n):    return "番号 \(n) をクリック"
+        case .submit:                return "送信 (Return)"
+        case .scroll(let d):         return "スクロール: \(d)"
+        case .goBack:                return "戻る"
+        case .goForward:             return "進む"
+        case .switchTab(let next):   return next ? "次のタブ" : "前のタブ"
+        case .copy:                  return "コピー"
+        case .paste:                 return "ペースト"
         }
     }
 
@@ -60,7 +81,9 @@ enum AgentCommand {
              .volumeUp, .volumeDown, .mute,
              .brightnessUp, .brightnessDown,
              .playPause, .nextTrack, .prevTrack,
-             .sleep, .lockScreen:
+             .sleep, .lockScreen,
+             .showNumbers, .hideNumbers, .clickNumber, .submit, .scroll,
+             .goBack, .goForward, .switchTab, .copy, .paste:
             return true
         default:
             return false
@@ -96,7 +119,9 @@ class AgentMode {
 
     /// 高速文字列マッチ（既存ロジック）
     private func detectCommandFast(_ text: String) -> AgentCommand? {
+        // Apple 音声認識は句読点を付ける（「番号出して。」）ので前後の句読点を落として一致させる。
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "。、．，.!?！？　 "))
         guard !t.isEmpty else { return nil }
 
         // スクリーンショット
@@ -105,7 +130,40 @@ class AgentMode {
         }
 
         // Screen-aware + system control commands (guarded by voiceControlEnabled)
+        // 入力注入（クリック/キー送出）は必ず voiceControlEnabled の明示 opt-in が必要。
+        // セッション中であっても勝手に解禁しない（誤爆で送信/クリックされる事故を防ぐ）。
         if AppSettings.shared.voiceControlEnabled {
+            // --- Cockpit: 番号オーバーレイ & 決定論 UI 操作（最優先・即時）---
+            // 番号表示/消去
+            if t == "番号出して" || t == "番号表示" || t == "ナンバー" || t == "番号" || t == "ナンバー出して" {
+                return .showNumbers
+            }
+            if t == "番号消して" || t == "番号閉じて" || t == "閉じる" || t == "ナンバー消して" {
+                return .hideNumbers
+            }
+            // N番（クリック）: 全角・漢数字を正規化。番号表示中は「数字のみ」も昇格。
+            if let n = matchClickNumber(t) {
+                return .clickNumber(n)
+            }
+            if NumberOverlayController.shared.isVisible, let n = digitsOnly(t) {
+                return .clickNumber(n)
+            }
+            // 送信 / 実行
+            if t == "送信" || t == "送って" || t == "実行" || t == "確定" || t == "エンター" || t == "改行送信" {
+                return .submit
+            }
+            // スクロール
+            if let dir = matchScroll(t) { return .scroll(dir) }
+            // 戻る / 進む
+            if t == "戻る" || t == "バック" { return .goBack }
+            if t == "進む" || t == "フォワード" { return .goForward }
+            // タブ切替
+            if t == "次のタブ" || t == "タブ次" { return .switchTab(next: true) }
+            if t == "前のタブ" || t == "タブ前" { return .switchTab(next: false) }
+            // コピー / ペースト
+            if t == "コピー" { return .copy }
+            if t == "ペースト" || t == "貼り付け" || t == "貼って" { return .paste }
+
             // 画面要素クリック
             if let desc = matchClickElement(t) {
                 return .clickElement(description: desc)
@@ -153,7 +211,7 @@ class AgentMode {
 
     /// Execute the detected command
     func execute(_ command: AgentCommand, completion: @escaping (String) -> Void) {
-        // Guard system control commands behind voiceControlEnabled
+        // Guard system control / input-synthesis commands behind explicit voiceControlEnabled
         if command.requiresVoiceControl && !AppSettings.shared.voiceControlEnabled {
             klog("Agent: voice control command blocked (voiceControlEnabled=false)")
             completion("音声コントロールが無効です。設定で有効にしてください。")
@@ -199,6 +257,37 @@ class AgentMode {
             executeSleep(completion: completion)
         case .lockScreen:
             executeLockScreen(completion: completion)
+        case .showNumbers:
+            NumberOverlayController.shared.show()
+            completion("番号を表示しました")
+        case .hideNumbers:
+            NumberOverlayController.shared.hide()
+            completion("番号を消しました")
+        case .clickNumber(let n):
+            let ok = NumberOverlayController.shared.click(number: n)
+            completion(ok ? "\(n)番をクリックしました" : "\(n)番は見つかりませんでした")
+        case .submit:
+            AutoTyper().postReturn()
+            completion("送信しました")
+        case .scroll(let dir):
+            ScrollSynthesizer.scroll(dir)
+            NumberOverlayController.shared.refreshIfVisible()
+            completion("スクロールしました")
+        case .goBack:
+            executeKeyCombo("⌘[")
+            completion("戻りました")
+        case .goForward:
+            executeKeyCombo("⌘]")
+            completion("進みました")
+        case .switchTab(let next):
+            executeKeyCombo(next ? "⌃Tab" : "⌃⇧Tab")
+            completion(next ? "次のタブへ" : "前のタブへ")
+        case .copy:
+            executeKeyCombo("⌘C")
+            completion("コピーしました")
+        case .paste:
+            executeKeyCombo("⌘V")
+            completion("ペーストしました")
         }
     }
 
@@ -226,6 +315,10 @@ class AgentMode {
         OPEN_APP:（アプリ名） — アプリを開く
         SEARCH:（検索語） — 検索する
         EXPLAIN — 画面の内容を説明する（「何これ」「わからない」等）
+        SHOW_NUMBERS — クリック対象に番号を振って表示（「番号」「どこ押せる」等）
+        SUBMIT — 送信/実行/エンター
+        SCROLL_DOWN / SCROLL_UP — スクロール
+        BACK / FORWARD — 戻る/進む
 
         ユーザー: \(text)
         コマンド:
@@ -260,6 +353,18 @@ class AgentMode {
                 command = .lockScreen
             } else if r == "SCREENSHOT" {
                 command = .screenshot
+            } else if r == "SHOW_NUMBERS" {
+                command = .showNumbers
+            } else if r == "SUBMIT" {
+                command = .submit
+            } else if r == "SCROLL_DOWN" {
+                command = .scroll(.down)
+            } else if r == "SCROLL_UP" {
+                command = .scroll(.up)
+            } else if r == "BACK" {
+                command = .goBack
+            } else if r == "FORWARD" {
+                command = .goForward
             } else if r == "EXPLAIN" {
                 command = .explainScreen(question: text)
             } else if r.hasPrefix("SCREEN_ACTION:") {
@@ -551,6 +656,67 @@ class AgentMode {
 
     // MARK: - Screen-Aware Pattern Matching
 
+    // MARK: - Cockpit command matching
+
+    /// 全角数字・漢数字を半角数字へ正規化した整数を返す（"２番"/"二番" → 2）。
+    private func digitsOnly(_ text: String) -> Int? {
+        let normalized = normalizeNumber(text)
+        let digits = normalized.unicodeScalars.filter { CharacterSet.decimalDigits.contains($0) }
+        guard !digits.isEmpty else { return nil }
+        return Int(String(digits))
+    }
+
+    /// 全角→半角、漢数字→算用数字（1〜99 程度）に正規化。
+    private func normalizeNumber(_ text: String) -> String {
+        var s = text
+        let zen = Array("０１２３４５６７８９")
+        for (i, z) in zen.enumerated() { s = s.replacingOccurrences(of: String(z), with: String(i)) }
+        // 単純な漢数字（十・二十一 等）
+        let kanjiUnits: [Character: Int] = ["〇":0,"零":0,"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9]
+        if s.contains("十") || kanjiUnits.keys.contains(where: { s.contains($0) }) {
+            if let v = parseKanji(s) { return String(v) }
+        }
+        return s
+    }
+
+    private func parseKanji(_ text: String) -> Int? {
+        let digit: [Character: Int] = ["〇":0,"零":0,"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9]
+        var total = 0
+        var hasValue = false
+        var current = 0
+        for ch in text {
+            if let d = digit[ch] { current = d; hasValue = true }
+            else if ch == "十" { total += (current == 0 ? 1 : current) * 10; current = 0; hasValue = true }
+        }
+        total += current
+        return hasValue ? total : nil
+    }
+
+    /// 「N番」「N番クリック」「N番押して」→ N。
+    private func matchClickNumber(_ text: String) -> Int? {
+        guard text.contains("番") else { return nil }
+        // 「番」より前の部分を数値化
+        guard let range = text.range(of: "番") else { return nil }
+        let head = String(text[text.startIndex..<range.lowerBound])
+        guard let n = digitsOnly(head), n > 0 else { return nil }
+        // 「番」の後ろが空 or クリック/押して/タップ系の時だけ採用（無関係な末尾は弾く）
+        let tail = String(text[range.upperBound...])
+        if tail.isEmpty || tail == "クリック" || tail == "を押して" || tail == "押して" || tail == "タップ" || tail == "をクリック" {
+            return n
+        }
+        return nil
+    }
+
+    /// スクロール方向を判定。
+    private func matchScroll(_ text: String) -> ScrollSynthesizer.Direction? {
+        guard text.contains("スクロール") || text.contains("もっと") || text.contains("ページ") else { return nil }
+        if text.contains("下") || text.contains("次のページ") || text.contains("つぎ") { return .down }
+        if text.contains("上") || text.contains("前のページ") || text.contains("もどっ") { return .up }
+        if text.contains("右") { return .right }
+        if text.contains("左") { return .left }
+        return nil
+    }
+
     private func matchClickElement(_ text: String) -> String? {
         // "〜を押して", "〜押して", "〜をクリックして", "〜クリックして", "〜をクリック", "〜ボタン押して", "〜ボタンをクリック"
         let suffixes = ["ボタンを押して", "ボタン押して", "をクリックして", "クリックして", "をクリック", "を押して", "押して"]
@@ -645,12 +811,47 @@ class AgentMode {
         }
     }
 
+    /// Accessibility 要素の中から、ラベルが description に一致するものを探す（完全一致優先→部分一致）。
+    private func findElementByLabel(_ description: String) -> ScannedElement? {
+        let target = description.lowercased().replacingOccurrences(of: " ", with: "")
+        guard !target.isEmpty else { return nil }
+        let elements = AXElementScanner.shared.scanAccessibility()
+        var best: ScannedElement?
+        var bestScore = 0
+        for el in elements {
+            guard let label = el.label?.lowercased().replacingOccurrences(of: " ", with: ""), !label.isEmpty else { continue }
+            let score: Int
+            if label == target { score = 1000 }
+            else if label.contains(target) { score = 500 }
+            else if target.contains(label) { score = 200 }
+            else { score = 0 }
+            if score > bestScore { bestScore = score; best = el }
+        }
+        return bestScore > 0 ? best : nil
+    }
+
     private func executeClickElement(description: String, completion: @escaping (String) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
+
+            // まず Accessibility のラベルで直接探す（番号オーバーレイ不要・OCR不要で確実）。
+            // 「送信押して」→ ラベルに「送信」を含むボタンをクリック。
+            if let target = self.findElementByLabel(description) {
+                var pressed = false
+                if let el = target.axElement,
+                   AXUIElementPerformAction(el, kAXPressAction as CFString) == .success {
+                    pressed = true
+                }
+                if !pressed { ClickSynthesizer.click(at: target.center) }
+                klog("Agent: clickElement(a11y) '\(target.label ?? description)' pressed=\(pressed)")
+                DispatchQueue.main.async { completion("「\(target.label ?? description)」をクリックしました") }
+                return
+            }
+
+            // a11y で見つからなければ OCR フォールバック
             guard let image = self.captureScreen() else {
                 klog("Agent: clickElement - screen capture failed")
-                DispatchQueue.main.async { completion("画面のキャプチャに失敗しました") }
+                DispatchQueue.main.async { completion("「\(description)」が見つかりませんでした") }
                 return
             }
 
@@ -710,10 +911,7 @@ class AgentMode {
                 klog("Agent: clickElement - clicking '\(matchedText)' at (\(Int(screenX)), \(Int(screenY)))")
 
                 // Post mouse click
-                let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left)
-                let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left)
-                mouseDown?.post(tap: .cghidEventTap)
-                mouseUp?.post(tap: .cghidEventTap)
+                ClickSynthesizer.click(at: point)
 
                 DispatchQueue.main.async { completion("「\(matchedText)」をクリックしました") }
             }
@@ -756,8 +954,7 @@ class AgentMode {
                     klog("Agent: explainScreen - answer: \(answer.prefix(100))")
 
                     // Speak the answer aloud
-                    let synthesizer = NSSpeechSynthesizer()
-                    synthesizer.startSpeaking(answer)
+                    TTSService.shared.speakResult(answer)
 
                     DispatchQueue.main.async { completion(answer) }
                 }
@@ -1044,12 +1241,7 @@ class AgentMode {
                 if parts.count == 2, let x = Double(parts[0]), let y = Double(parts[1]) {
                     // VLMが返すのは画像上のピクセル座標 → Retinaスケールで割る
                     let point = CGPoint(x: x / Double(scale), y: y / Double(scale))
-                    if let down = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
-                       let up = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) {
-                        down.post(tap: .cghidEventTap)
-                        usleep(50000)
-                        up.post(tap: .cghidEventTap)
-                    }
+                    ClickSynthesizer.click(at: point)
                     actions.append("クリック(\(Int(x/Double(scale))),\(Int(y/Double(scale))))")
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { next(i + 1) }
@@ -1060,7 +1252,7 @@ class AgentMode {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { next(i + 1) }
             } else if line.hasPrefix("SAY:") {
                 let text = String(line.dropFirst("SAY:".count)).trimmingCharacters(in: .whitespaces)
-                NSSpeechSynthesizer().startSpeaking(text)
+                TTSService.shared.speak(text)
                 actions.append("読上げ")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { next(i + 1) }
             } else if line.hasPrefix("WAIT:") {
@@ -1103,13 +1295,7 @@ class AgentMode {
                     let x = box.midX * screenW
                     let y = (1 - box.midY) * screenH
                     // CGEvent click
-                    let point = CGPoint(x: x, y: y)
-                    if let mouseDown = CGEvent(mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: point, mouseButton: .left),
-                       let mouseUp = CGEvent(mouseEventSource: nil, mouseType: .leftMouseUp, mouseCursorPosition: point, mouseButton: .left) {
-                        mouseDown.post(tap: .cghidEventTap)
-                        usleep(50000)
-                        mouseUp.post(tap: .cghidEventTap)
-                    }
+                    ClickSynthesizer.click(at: CGPoint(x: x, y: y))
                     actions.append("クリック「\(clickText.prefix(10))」")
                     klog("Agent(screen): clicked [\(idx)] '\(clickText)' at (\(Int(x)),\(Int(y)))")
                 }
@@ -1123,7 +1309,7 @@ class AgentMode {
 
             } else if line.hasPrefix("SAY:") {
                 let text = String(line.dropFirst("SAY:".count)).trimmingCharacters(in: .whitespaces)
-                NSSpeechSynthesizer().startSpeaking(text)
+                TTSService.shared.speak(text)
                 actions.append("読上げ")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { executeNext(index + 1) }
 
@@ -1171,6 +1357,8 @@ class AgentMode {
         case "SPACE": keyCode = 0x31
         case "DELETE", "BACKSPACE": keyCode = 0x33
         case "ESCAPE", "ESC": keyCode = 0x35
+        case "[": keyCode = 0x21
+        case "]": keyCode = 0x1E
         default: klog("Agent: unknown key '\(key)'"); return
         }
 

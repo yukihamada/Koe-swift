@@ -50,6 +50,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 長時間でも認識可能。無音自動停止 (silenceAutoStop) が通常の止め忘れを防ぐ。
     /// 無音閾値: 最初から設定値をそのまま使用（後半の言葉を拾い損ねない）
     private var silenceAutoStop: TimeInterval {
+        // 継続会話セッション中は短めのターン確定無音長を使う
+        if ConversationSession.shared.isActive {
+            return AppSettings.shared.conversationTurnSilenceMs / 1000.0
+        }
         return AppSettings.shared.silenceAutoStopSeconds
     }
     private var speechDetected = false
@@ -324,9 +328,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     name: app.localizedName ?? ""
                 )
             }
+            // 前面アプリが変わったら番号オーバーレイは作り直す（古い座標を残さない）
+            if NumberOverlayController.shared.isVisible {
+                NumberOverlayController.shared.hide()
+            }
         }
 
-        WakeWordDetector.shared.onDetected = { [weak self] in self?.startRecording() }
+        // ディスプレイ構成変更時に番号オーバーレイのウィンドウ群を作り直す
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
+            NumberOverlayController.shared.handleScreenChange()
+        }
+
+        WakeWordDetector.shared.onDetected = { [weak self] in
+            guard let self else { return }
+            if AppSettings.shared.conversationModeEnabled {
+                ConversationSession.shared.handleWakeDetected()
+            } else {
+                self.startRecording()
+            }
+        }
         if AppSettings.shared.wakeWordEnabled { WakeWordDetector.shared.start() }
         if AppSettings.shared.floatingButtonEnabled { FloatingButton.shared.show() }
 
@@ -698,10 +718,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard settings.fnKeyEnabled else { return }
             self.fnTriggerToggle()
         }
-        // hold_ptt: Fn 押下開始 → 録音開始
+        // hold_ptt: Fn 押下開始 → 録音開始。ただし会話モード時は「押した瞬間に
+        // コックピットへ出入り」を優先する（会話セッションは複数ターンを自前で管理する
+        // ので hold-to-talk の粒度と合わない。解放は onFnHoldEnd の isRecording ガードで
+        // 素通りするため何も起きない）。
         monitor.onFnHoldStart = { [weak self] in
             guard let self else { return }
-            guard settings.fnKeyEnabled, !self.isRecording else { return }
+            guard settings.fnKeyEnabled else { return }
+            if self.enterConversationCockpitIfEnabled(reason: "fnkey") { return }
+            guard !self.isRecording else { return }
             self.isMeetingAutoRecording = false
             self.mainKeyHeld = true
             self.startRecording()
@@ -721,8 +746,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         monitor.start()
     }
 
+    /// conversationMode が ON なら会話コックピット（PC 全体を声で操縦するモード）へ
+    /// 出入りし true を返す。Fn もメインホットキー ⌥⌘V も同じ1箇所を通すことで、
+    /// 入口ごとにトグルロジックが枝分かれしない。reason は endSession のログ用
+    /// （どの入口で閉じたか）。会話モードが OFF なら false を返し、呼び出し側は
+    /// 素の録音／ディクテーションへ進む。
+    @discardableResult
+    fileprivate func enterConversationCockpitIfEnabled(reason: String) -> Bool {
+        guard AppSettings.shared.conversationModeEnabled else { return false }
+        if ConversationSession.shared.isActive {
+            ConversationSession.shared.endSession(reason: reason)
+        } else {
+            ConversationSession.shared.handleWakeDetected()
+        }
+        return true
+    }
+
     /// Fn 経由で発火する録音トグル (Carbon ハンドラの main hotkey 分岐と同等の挙動)。
     fileprivate func fnTriggerToggle() {
+        if enterConversationCockpitIfEnabled(reason: "fnkey") { return }
         let settings = AppSettings.shared
         let isToggle = settings.recordingMode == .toggle
         if isRecording && isMeetingAutoRecording && MeetingMode.shared.isActive {
@@ -761,6 +803,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if hotKeyID.id == 1 || hotKeyID.id == 5 {
                 // メインホットキー or ⌘K pressed
                 DispatchQueue.main.async {
+                    // 継続会話セッション: conversationMode 時はホットキーで音声モードに出入りする。
+                    // wake の常時マイクが VPIO と競合して使えないため、確実な入口として提供。
+                    // 各ターンは startRecording（実績ある録音経路）を使うので確実に動く。
+                    // Fn キーと同じ1箇所を通す（トグルロジックを二重に持たない）。
+                    if delegate.enterConversationCockpitIfEnabled(reason: "hotkey") { return }
                     // 議事録自動録音中にホットキー → 自動録音を中断して手動録音に切替
                     if delegate.isRecording && delegate.isMeetingAutoRecording && MeetingMode.shared.isActive {
                         delegate.cancelRecording()
@@ -1293,9 +1340,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             klog("stopAndRecognize: recorder.stop() returned nil")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
             overlay?.hide()
-            if AppSettings.shared.wakeWordEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
-            }
+            rearmAfterTurn()
             return
         }
 
@@ -1304,11 +1349,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if peakLevel < 0.04 {
             klog("stopAndRecognize: peak level too low (\(String(format:"%.3f", peakLevel))), skipping")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
-            overlay?.showHint("マイクの音量が小さすぎます")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
-            if AppSettings.shared.wakeWordEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+            // 継続会話セッションの空ターンでは警告を出さない（喋っていないだけ）
+            if !ConversationSession.shared.isActive {
+                overlay?.showHint("マイクの音量が小さすぎます")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
             }
+            rearmAfterTurn()
             postRecognitionCleanup()
             return
         }
@@ -1318,20 +1364,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
            !AudioDSP.hasVoice(wavSamples, threshold: 0.005, minVoiceFrames: 4) {
             klog("stopAndRecognize: no voice detected, skipping recognition")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
-            overlay?.showHint("音声が検出されませんでした")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
+            // 継続会話セッションの空ターンでは警告を出さない
+            if !ConversationSession.shared.isActive {
+                overlay?.showHint("音声が検出されませんでした")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlay?.hide() }
+            }
             // 議事録モード中は無音でも自動録音ループを継続
             if MeetingMode.shared.isActive {
                 postRecognitionCleanup()
                 return
             }
-            if AppSettings.shared.wakeWordEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
-            }
+            rearmAfterTurn()
             return
         }
 
         lastAudioURL = audioURL
+        // 継続会話セッション中はターン確定の earcon を控えめに鳴らす
+        if ConversationSession.shared.isActive { SoundFeedback.shared.play(.turnEnd) }
         // 認識前に音声を永続保存（認識失敗しても音声は残る）
         lastArchiveID = AudioArchive.shared.save(tempURL: audioURL)
         if !isMeetingAutoRecording {
@@ -1537,6 +1586,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 句読点スタイル変換
         if let style = VoiceCommands.PunctuationStyle(rawValue: AppSettings.shared.punctuationStyle) {
             formatted = VoiceCommands.applyPunctuationStyle(formatted, style: style)
+        }
+
+        // 継続会話セッション: ターンを分類してルーティング（停止語/コマンド/雑談）。
+        // 消費されたら以降の通常処理はスキップ。パススルー（口述フォールバックON）のみ続行。
+        if ConversationSession.shared.isActive {
+            if ConversationSession.shared.handleTurn(formatted) {
+                return
+            }
         }
 
         // 議事録音声コマンド: 「ここ重要」等
@@ -1784,6 +1841,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         PartialTranscriptStore.shared.finish(id: recognitionPartialID)
         recognitionPartialID = nil
         rebuildMenu()
+        // 継続会話セッション中は wake を再開せず、次ターンをアームする（単一の再アーム点）
+        if ConversationSession.shared.isActive {
+            ConversationSession.shared.scheduleNextTurn()
+            return
+        }
         if seamlessModeActive {
             // 並行録音がすでに起動済みの場合はスキップ（重複防止）
             // 何らかの理由で起動できなかった場合のフォールバック
@@ -2194,6 +2256,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             speak("シームレスモード終了")
             rebuildMenu()
         }
+        // ESC で継続会話セッションも終了
+        if ConversationSession.shared.isActive {
+            ConversationSession.shared.endSession(reason: "esc")
+        }
         levelTimer?.invalidate(); levelTimer = nil
         streamingTimer?.invalidate(); streamingTimer = nil
         streamingRecognitionRequest?.endAudio()
@@ -2306,32 +2372,72 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - TTS Announcer
 
-    private let tts = NSSpeechSynthesizer()
-
-    /// Koe からユーザーへ音声で読み上げる
+    /// Koe からユーザーへ音声で読み上げる（中央化された TTSService へ委譲）
     func speak(_ text: String, language: String? = nil) {
-        let lang = language ?? AppSettings.shared.language
-        // ja-JP → Kyoko, en-US → Samantha 等
-        if let voice = preferredVoice(for: lang) {
-            tts.setVoice(voice)
-        }
-        tts.stopSpeaking()
-        tts.startSpeaking(text)
-        klog("TTS: \(text.prefix(60))")
+        TTSService.shared.speak(text, language: language)
     }
 
-    private func preferredVoice(for language: String) -> NSSpeechSynthesizer.VoiceName? {
-        let preferred: [String: String] = [
-            "ja": "com.apple.speech.synthesis.voice.kyoko",
-            "en": "com.apple.speech.synthesis.voice.samantha",
-            "zh": "com.apple.speech.synthesis.voice.sin-ji",
-            "ko": "com.apple.speech.synthesis.voice.yuna",
-        ]
-        let prefix = String(language.prefix(2))
-        guard let name = preferred[prefix] else { return nil }
-        let available = NSSpeechSynthesizer.availableVoices
-        let voiceName = NSSpeechSynthesizer.VoiceName(rawValue: name)
-        return available.contains(voiceName) ? voiceName : nil
+    // MARK: - Conversation Session hooks（ConversationSession から呼ばれる）
+
+    var isRecordingPublic: Bool { isRecording }
+
+    /// 継続会話セッションの状態を画面に出す（earcon だけだと何が起きているか見えないため）。
+    func showSessionHud(_ text: String) {
+        overlay?.show(state: .recognizing)
+        overlay?.showHint(text)
+    }
+
+    /// 空ターン（無音/低音量）後の再アーム: セッション中は次ターン、そうでなければ wake 待受。
+    private func rearmAfterTurn() {
+        if ConversationSession.shared.isActive {
+            ConversationSession.shared.scheduleNextTurn()
+            return
+        }
+        if AppSettings.shared.wakeWordEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+        }
+    }
+
+    /// セッションの1ターン分の録音を開始する。
+    func beginSessionTurn() {
+        guard !isRecording, !isRecognizing else { return }
+        startRecording()
+    }
+
+    /// セッション終了後、wake 待受へ復帰する。
+    func restartWakeAfterSession() {
+        if AppSettings.shared.wakeWordEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+        }
+    }
+
+    /// セッション中のターンを消費した（挿入せず次ターンへ）。
+    func sessionTurnConsumed() {
+        overlay?.hide()
+        postRecognitionCleanup()
+    }
+
+    func hideOverlayForSession() {
+        overlay?.hide()
+    }
+
+    /// セッション中にコマンドを実行し、結果を TTS で返してから次ターンをアームする。
+    func executeSessionCommand(_ command: AgentCommand) {
+        overlay?.show(state: .recognizing)
+        AgentMode.shared.execute(command) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.overlay?.showHint("✓ \(result)")   // 画面に結果を出す
+                HistoryStore.shared.add("[\(command.description)] \(result)")
+                if AppSettings.shared.conversationTTSResponses {
+                    TTSService.shared.speakResult(result)
+                } else {
+                    self.sendNotification(text: result)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.overlay?.hide() }
+                self.postRecognitionCleanup()
+            }
+        }
     }
 
     // MARK: - Speech engine reload (on language change)

@@ -1333,9 +1333,22 @@ struct AutomationTab: View {
                     }
                     .pickerStyle(.segmented)
 
-                    if s.wakeWordEngineType == .mfccDTW {
+                    switch s.wakeWordEngineType {
+                    case .appleSpeech:
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Apple のオンデバイス音声認識を常時走らせ、合言葉を検出します。話者非依存・雑音に強く、録音は不要。音声は端末外に出ません。")
+                                .font(.caption).foregroundColor(.secondary)
+                            HStack {
+                                Text("合言葉").font(.caption)
+                                TextField("ヘイこえ", text: Binding(
+                                    get: { s.wakeWords.first ?? "" },
+                                    set: { s.wakeWords = [$0] + s.wakeWords.dropFirst() }
+                                ))
+                            }
+                        }
+                    case .mfccDTW:
                         WakeWordTemplateView()
-                    } else {
+                    case .openWakeWord:
                         OWWSettingsView()
                     }
                     #endif
@@ -1365,6 +1378,82 @@ struct AutomationTab: View {
                 Label(L10n.sectionAgent, systemImage: "bolt.fill")
                     .foregroundColor(Lux.gold)
             }
+
+            // MARK: - Voice Cockpit（ハンズフリー操作）
+            #if !MAC_APP_STORE
+            Section {
+                Toggle("継続会話セッション", isOn: $s.conversationModeEnabled)
+                Text("ウェイクワードで一度起こすと会話モードに入り、沈黙でターン確定→自動実行を繰り返します。停止語（おわり等）で終了。")
+                    .font(.caption).foregroundColor(.secondary)
+                if s.conversationModeEnabled {
+                    Toggle("非コマンド発話も口述入力する", isOn: $s.conversationDictationFallback)
+                    Toggle("結果を音声で読み上げる", isOn: $s.conversationTTSResponses)
+                    Toggle("効果音（earcon）", isOn: $s.conversationEarconEnabled)
+                    HStack {
+                        Text("ターン確定の無音長").font(.caption)
+                        Slider(value: $s.conversationTurnSilenceMs, in: 300...2000, step: 100)
+                        Text("\(Int(s.conversationTurnSilenceMs))ms").font(.caption).monospacedDigit()
+                    }
+                }
+            } header: {
+                Label("継続会話セッション", systemImage: "bubble.left.and.bubble.right")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
+                Toggle("番号オーバーレイ（声でクリック）", isOn: $s.numberOverlayEnabled)
+                Text("「番号出して」で画面のボタン/リンクに番号を重ね、「2番」でクリックします。")
+                    .font(.caption).foregroundColor(.secondary)
+                if s.numberOverlayEnabled {
+                    Toggle("セッション中は常時表示", isOn: $s.numberOverlayAlwaysOn)
+                    Toggle("クリック後に自動で消す", isOn: $s.numberOverlayAutoHideAfterClick)
+                    Picker("要素列挙", selection: $s.elementScanMode) {
+                        Text("アクセシビリティ優先").tag("a11yFirst")
+                        Text("OCR優先").tag("ocrFirst")
+                        Text("アクセシビリティのみ").tag("a11yOnly")
+                    }
+                }
+            } header: {
+                Label("番号オーバーレイ", systemImage: "number.square")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
+                Toggle("カメラ・ジェスチャー", isOn: $s.gestureEnabled)
+                Text("セッション中のみカメラ ON。👍 OK / 👎 やめて / ✋ 停止 / ↑↓ スクロール / 指 N 本で番号 #N をクリック。映像は端末外に出ません。")
+                    .font(.caption).foregroundColor(.secondary)
+            } header: {
+                Label("カメラ・ジェスチャー", systemImage: "hand.raised")
+                    .foregroundColor(Lux.gold)
+            }
+
+            Section {
+                Picker("読み上げエンジン", selection: $s.ttsBackend) {
+                    Text("macOS（オフライン）").tag("say")
+                    Text("ElevenLabs").tag("elevenLabs")
+                }
+                Picker("読み上げ詳細度", selection: $s.ttsVerbosity) {
+                    Text("完了通知のみ").tag("completionOnly")
+                    Text("完了通知＋要約").tag("completionPlusSummary")
+                    Text("全文").tag("full")
+                }
+                if s.ttsBackend == "elevenLabs" {
+                    SecureField("ElevenLabs API キー", text: $s.elevenLabsAPIKey)
+                    TextField("Voice ID", text: $s.elevenLabsVoiceID)
+                }
+            } header: {
+                Label("読み上げ（TTS）", systemImage: "speaker.wave.2")
+                    .foregroundColor(Lux.gold)
+            }
+            #else
+            Section {
+                Text("ハンズフリー操作（継続会話セッション・番号オーバーレイ・カメラジェスチャー）は、システム制御の制約により GitHub 配布版でご利用いただけます。")
+                    .font(.caption).foregroundColor(.secondary)
+            } header: {
+                Label("ハンズフリー操作", systemImage: "hand.raised")
+                    .foregroundColor(Lux.gold)
+            }
+            #endif
 
             Section {
                 DisclosureGroup(L10n.appProfilesCount(s.appProfiles.count)) {

@@ -270,6 +270,10 @@ struct MoreView: View {
                             title: L10n.faceToFaceTranslation, subtitle: L10n.faceToFaceSubtitle) {
                         ConversationView()
                     }
+                    MenuRow(symbol: "globe", color: .green,
+                            title: "リアルタイム通訳", subtitle: "日本語⇄ポルトガル語など・話すだけで双方向") {
+                        InterpreterView()
+                    }
                     MenuRow(symbol: "waveform", color: .purple,
                             title: L10n.audioTools, subtitle: L10n.audioToolsSubtitle) {
                         AudioToolsView()

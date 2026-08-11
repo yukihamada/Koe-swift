@@ -33,7 +33,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios
         INFOPLIST_FILE: Info.plist
-        MARKETING_VERSION: "1.4.0"
+        MARKETING_VERSION: "3.0.0"
         CURRENT_PROJECT_VERSION: "3"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -68,7 +68,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios.keyboard
         INFOPLIST_FILE: KoeKeyboard/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "1.4.0"
+        MARKETING_VERSION: "3.0.0"
         CURRENT_PROJECT_VERSION: "3"
         TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:
@@ -84,7 +84,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios.shareext
         INFOPLIST_FILE: KoeShareExt/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "1.4.0"
+        MARKETING_VERSION: "3.0.0"
         CURRENT_PROJECT_VERSION: "3"
         TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:
@@ -100,7 +100,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.yuki.koe.ios.widget
         INFOPLIST_FILE: KoeWidget/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        MARKETING_VERSION: "1.4.0"
+        MARKETING_VERSION: "3.0.0"
         CURRENT_PROJECT_VERSION: "3"
         TARGETED_DEVICE_FAMILY: "1,2"
     entitlements:

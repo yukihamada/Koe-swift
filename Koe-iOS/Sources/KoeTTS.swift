@@ -140,6 +140,10 @@ final class KoeTTS: NSObject, ObservableObject {
         case "zh": return "zh-CN"
         case "es": return "es-ES"
         case "ko": return "ko-KR"
+        case "pt": return "pt-BR"
+        case "fr": return "fr-FR"
+        case "de": return "de-DE"
+        case "it": return "it-IT"
         default: return "ja-JP"
         }
     }

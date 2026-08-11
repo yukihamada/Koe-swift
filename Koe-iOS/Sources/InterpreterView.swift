@@ -59,6 +59,11 @@ final class InterpreterEngine: NSObject, ObservableObject {
     @Published var phase: Phase = .idle
     @Published var turns: [InterpreterTurn] = []
     @Published var target: InterpreterLang = InterpreterEngine.langs[0]
+    /// 読み上げ=自分の声(KOE/yuki・voice.koe.live合成)。OFFなら端末内TTS(最速)。
+    @Published var useOwnVoice: Bool = UserDefaults.standard.object(forKey: "koe_interp_own_voice") == nil
+        ? true : UserDefaults.standard.bool(forKey: "koe_interp_own_voice") {
+        didSet { UserDefaults.standard.set(useOwnVoice, forKey: "koe_interp_own_voice") }
+    }
 
     var isRunning: Bool { running }
 
@@ -268,7 +273,7 @@ final class InterpreterEngine: NSObject, ObservableObject {
             return
         }
         turns.insert(InterpreterTurn(original: text, translated: translated, isJa: isJa), at: 0)
-        speak(translated, bcp47: isJa ? target.bcp47 : "ja-JP")
+        speak(translated, code: isJa ? target.id : "ja", bcp47: isJa ? target.bcp47 : "ja-JP")
     }
 
     /// どちらの言語で話したかを決める。主signal=最終confidence、届かなければ文字数で代替。
@@ -299,12 +304,36 @@ final class InterpreterEngine: NSObject, ObservableObject {
         return tr
     }
 
-    private func speak(_ text: String, bcp47: String) {
+    private func speak(_ text: String, code: String, bcp47: String) {
         phase = .speaking
+        if useOwnVoice {
+            // 自分の声(KOE)。KoeTTSは再生時にAVAudioSessionを.playbackへ切り替えるので、
+            // 完了を見届けてから.playAndRecordへ戻し、止まったAVAudioEngineも立て直す。
+            Task { [weak self] in
+                await KoeTTS.shared.speakInMyVoice(text, lang: code)
+                let t0 = Date()
+                while KoeTTS.shared.state == .loading || KoeTTS.shared.state == .playing {
+                    if Date().timeIntervalSince(t0) > 60 { break }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                self?.resumeAfterOwnVoice()
+            }
+            return
+        }
         let u = AVSpeechUtterance(string: text)
         u.voice = AVSpeechSynthesisVoice(language: bcp47) ?? AVSpeechSynthesisVoice(language: "ja-JP")
         u.rate = AVSpeechUtteranceDefaultSpeechRate
         synth.speak(u)
+    }
+
+    private func resumeAfterOwnVoice() {
+        guard running else { return }
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playAndRecord, mode: .default,
+                                options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
+        try? session.setActive(true)
+        if !audioEngine.isRunning { try? audioEngine.start() }
+        startTurn()
     }
 
     fileprivate func speechFinished() {
@@ -379,6 +408,12 @@ struct InterpreterView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(minHeight: 20)
+
+            Toggle(isOn: $engine.useOwnVoice) {
+                Text("🎙 自分の声で話す(KOE)　— OFFで最速(端末の声)")
+                    .font(.caption)
+            }
+            .padding(.horizontal)
 
             List(engine.turns) { t in
                 VStack(alignment: .leading, spacing: 3) {

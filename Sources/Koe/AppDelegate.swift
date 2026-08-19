@@ -1519,6 +1519,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // atsm-pulse: 実際に内容のある文字起こしが完了した回数のみ計測（テキスト内容・音声は送らない）
+        trackEvent("transcription")
+
         // フィラーワード除去（えー、あの、えっと等）
         let defillered: String
         if AppSettings.shared.fillerRemovalEnabled {

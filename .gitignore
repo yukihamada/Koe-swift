@@ -1,3 +1,9 @@
+# third-party built sources (vendored, not our TODO debt)
+Sources/CWhisper/
+Sources/CLlama/
+Koe-iOS/Sources/CWhisper/
+Koe-iOS/Sources/ggml-metal.metal
+Sources/CKWhisper/
 ## Build artifacts
 *.o
 *.d

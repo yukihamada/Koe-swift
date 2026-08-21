@@ -19,7 +19,7 @@ jobs:
   build:
     runs-on: macos-14  # Apple Silicon runner
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c13fde9a37f38822b9f6492bc1b001
 
       - name: Install dependencies
         run: |

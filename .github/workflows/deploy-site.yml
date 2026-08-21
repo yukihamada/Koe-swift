@@ -21,7 +21,7 @@ jobs:
       run:
         working-directory: site
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@08c6903cd8c13fde9a37f38822b9f6492bc1b001
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy
         run: flyctl deploy --remote-only --app koe-live --wait-timeout=120 --yes

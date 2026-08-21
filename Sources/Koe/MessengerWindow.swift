@@ -173,6 +173,7 @@ final class MessengerModel: ObservableObject {
 
         var req = URLRequest(url: URL(string: "https://koe.live/api/speak")!)
         req.httpMethod = "POST"
+        req.timeoutInterval = 90  // 音声生成(ElevenLabs)が混んでいると 60s を超えることがある
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: [
             "text": speakText,

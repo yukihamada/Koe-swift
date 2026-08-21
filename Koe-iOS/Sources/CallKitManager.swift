@@ -16,11 +16,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, PKPushRegistryDelegate
     private var voipRegistry: PKPushRegistry?
     private let provider: CXProvider
     private let callController = CXCallController()
-
-    /// 個人ビルド専用のブートストラップ・トークン(サーバ側 PUSH_SEED_TOKEN と対)。
-    /// このアプリはYuki本人の実機にのみインストールされる前提で、push token登録専用の
-    /// 低リスクな認証に使う(課金・データ変更系のAPIは一切叩かない)。
-    static let pushSeedToken = "ba6ca391fc2c8ae8b99180b4d84244f14ff4ca1a4f71f0335c14dffbb9a1bfb4"
+    /// 個人ビルド専用のブートストラップ・トークン。
+    /// ⚠ ソースには埋め込まない(git にシークレットを平置きしない)。
+    /// 初回登録時に環境変数 PUSH_SEED_TOKEN を設定するか、plists から履歴削除後に
+    /// Info.plist にサーバ配布ワンタイムトークンを入れる(koe-edge側でローテ)。
+    static var pushSeedToken: String {
+        ProcessInfo.processInfo.environment["PUSH_SEED_TOKEN"] ?? (Bundle.main.object(forInfoDictionaryKey: "PUSH_SEED_TOKEN") as? String) ?? ""
+    }
     private static let apiBase = "https://koe.live"
 
     override init() {
@@ -104,13 +106,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate, PKPushRegistryDelegate
     private static var pendingRoomIDs: [UUID: String] = [:]
 
     private static func registerToken(_ hexToken: String, type: String?) {
+        let token = pushSeedToken
+        guard !token.isEmpty else { print("KoePush: PUSH_SEED_TOKEN 未設定のため登録をスキップ"); return }
         guard let url = URL(string: apiBase + "/api/push/register") else { return }
         var body: [String: Any] = ["device_token": hexToken, "platform": "ios", "bundle_id": Bundle.main.bundleIdentifier ?? "", "handle": "yuki"]
         if let type { body["type"] = type }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer " + pushSeedToken, forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         URLSession.shared.dataTask(with: req).resume()
     }

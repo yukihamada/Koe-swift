@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 /// 💬 メッセンジャー — takibi(焚き火)/LINE の届いた連絡を1つの窓で見る・返す。
 ///
@@ -23,7 +24,6 @@ struct MsgItem: Identifiable, Hashable {
 final class MessengerModel: ObservableObject {
     @Published var items: [MsgItem] = []
     @Published var error: String?
-    @Published var composing = ""
     @Published var sending = false
     @Published var unread = 0
 
@@ -87,8 +87,8 @@ final class MessengerModel: ObservableObject {
 
     func markRead() { unread = 0 }
 
-    func send(to item: MsgItem) {
-        let text = composing.trimmingCharacters(in: .whitespacesAndNewlines)
+    func send(to item: MsgItem, text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !sending, let key = KoeAccount.current else { return }
         sending = true
         let body: [String: Any] = [
@@ -107,7 +107,7 @@ final class MessengerModel: ObservableObject {
                 self.sending = false
                 let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
                 if code == 200 {
-                    self.composing = ""
+                    self.unread = 0
                     self.error = nil
                 } else {
                     let msg = (try? JSONSerialization.jsonObject(with: data ?? Data())) as? [String: Any]
@@ -118,78 +118,180 @@ final class MessengerModel: ObservableObject {
     }
 
     private static func notify(_ item: MsgItem) {
-        let n = NSUserNotification()
-        n.title = item.source == "line" ? "LINE: \(item.group)" : "🔥 焚き火"
-        n.informativeText = "\(item.who): \(item.text.prefix(80))"
-        n.soundName = NSUserNotificationDefaultSoundName
-        NSUserNotificationCenter.default.deliver(n)
+        // NSUserNotification は deprecated のため UNUserNotificationCenter を使う。
+        // (entitlements/plist の通知権があれば音・バナーで届く)
+        let center = UNUserNotificationCenter.current()
+        let content = UNMutableNotificationContent()
+        content.title = item.source == "line" ? "LINE: \(item.group)" : "🔥 焚き火"
+        content.body = "\(item.who): \(item.text)"
+        content.sound = .default
+        center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        center.add(UNNotificationRequest(identifier: item.id, content: content, trigger: nil))
     }
 }
 
 struct MessengerView: View {
     @ObservedObject var model: MessengerModel
     @State private var selection: MsgItem?
+    @State private var composing = ""
 
     var body: some View {
         VStack(spacing: 0) {
+            // ヘッダー
+            HStack {
+                Text("💬 メッセンジャー")
+                    .font(.title2).bold()
+                if model.unread > 0 {
+                    Text("\(model.unread) 件未読")
+                        .font(.caption).foregroundColor(.orange)
+                }
+                Spacer()
+                Button(action: { model.unread = 0 }) {
+                    Image(systemName: "checkmark.circle")
+                }
+                .buttonStyle(.plain)
+                .help("未読をクリア")
+            }
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 4)
+
             if let err = model.error {
-                Text(err).font(.caption).foregroundColor(.red).padding(6)
+                Text("⚠ \(err)")
+                    .font(.caption).foregroundColor(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 14).padding(.bottom, 4)
             }
-            if model.items.isEmpty {
-                Spacer()
-                Text("まだ届いていません").foregroundColor(.secondary)
-                Spacer()
-            } else {
-                List(model.items, selection: $selection) { item in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(item.source == "line" ? "💬 LINE · \(item.group)" : "🔥 焚き火")
-                                .font(.caption2).foregroundColor(.secondary)
-                            Spacer()
-                            Text(item.ts).font(.caption2).foregroundColor(.secondary)
+
+            Divider()
+
+            // メイン分割ビュー
+            NavigationSplitView {
+                Group {
+                    if model.items.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "tray")
+                                .font(.system(size: 32))
+                                .foregroundColor(.secondary)
+                            Text("まだ届いていません")
+                                .foregroundColor(.secondary)
                         }
-                        Text(item.who).font(.headline)
-                        Text(item.text).font(.body).lineLimit(4)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        List(model.items, id: \.id, selection: $selection) { item in
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text(item.source == "line" ? "💬 LINE" : "🔥 焚き火")
+                                        .font(.caption2).fontWeight(.bold)
+                                        .padding(.horizontal, 6).padding(.vertical, 1)
+                                        .background(item.source == "line" ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))
+                                        .foregroundColor(item.source == "line" ? .green : .orange)
+                                        .clipShape(Capsule())
+                                    if !item.group.isEmpty, item.group != "焚き火" {
+                                        Text(item.group)
+                                            .font(.caption2).foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Text(String(item.ts.prefix(16)))
+                                        .font(.caption2).foregroundColor(.secondary)
+                                }
+                                Text(item.who)
+                                    .font(.callout).fontWeight(.semibold)
+                                Text(item.text)
+                                    .font(.subheadline).lineLimit(4)
+                            }
+                            .padding(.vertical, 4)
+                            .tag(item)
+                        }
+                        .listStyle(.inset)
                     }
-                    .padding(.vertical, 3)
+                }
+                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
+            } detail: {
+                if let target = selection {
+                    detailView(for: target)
+                } else {
+                    VStack(spacing: 8) {
+                        Image(systemName: "text.bubble")
+                            .font(.system(size: 36))
+                            .foregroundColor(.secondary.opacity(0.5))
+                        Text("左の一覧からスレッドを選ぶと、ここに全文が表示されます")
+                            .font(.caption).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            if let target = selection ?? model.items.first {
-                HStack(alignment: .bottom) {
+
+            // 返信欄
+            if let target = selection {
+                Divider()
+                HStack(alignment: .bottom, spacing: 8) {
                     TextField("返信: \(target.source == "line" ? target.group : "焚き火")へ",
-                              text: $model.composing)
+                              text: $composing, axis: .vertical)
                         .textFieldStyle(.roundedBorder)
-                    Button(model.sending ? "…" : "送信") { model.send(to: target) }
-                        .disabled(model.sending || model.composing.isEmpty)
+                        .lineLimit(1...4)
+                    Button(action: {
+                        let text = composing
+                        composing = ""
+                        model.send(to: target, text: text)
+                    }) {
+                        if model.sending {
+                            ProgressView().scaleEffect(0.7)
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                        }
+                    }
+                    .disabled(model.sending || composing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || target.replyTo.isEmpty)
                 }
-                .padding(8)
-                .onAppear { model.markRead() }
+                .padding(10)
+                .background(Color(.windowBackgroundColor))
             }
         }
         .onAppear { model.start() }
-        // ウィンドウを閉じてもポーリングを止めない(未読バッジと通知を受け続けるため)
+        .onChange(of: selection) { _ in model.unread = 0 }
+    }
+
+    @ViewBuilder
+    private func detailView(for item: MsgItem) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(item.source == "line" ? "💬 LINE · \(item.group)" : "🔥 焚き火")
+                        .font(.caption).foregroundColor(.secondary)
+                    Spacer()
+                    Text(item.ts).font(.caption).foregroundColor(.secondary)
+                }
+                Text(item.who)
+                    .font(.title3).fontWeight(.semibold)
+                Text(item.text)
+                    .font(.body).textSelection(.enabled)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
 final class MessengerWindow {
     private var window: NSWindow?
     private let model = MessengerModel()
-
     /// singleton化（AppDelegateの@objcから常に同じインスタンスを使う）。
     static let shared = MessengerWindow()
 
     func show() {
-        // LSUIElement(メニューバーアプリ)のままだとアプリが前面化せず、
-        // IME(ひらがな⇄英字の切替)が他アプリ側に吸われてテキスト入力が英字固定になる。
-        // 既存ウィンドウ(KoeWebWindow/VoiceMessageWindow)と同じく activate を必ず呼ぶ。
+        // LSUIElement(メニューバーアプリ)は activate しないと IME が別アプリに吸われ
+        // 日本語入力切替が効かない既知の macOS 罠(2026-08-21)。既存の KoeWebWindow/
+        // VoiceMessageWindow と同じく activate が必須。
         NSApp.activate(ignoringOtherApps: true)
         if let w = window { w.makeKeyAndOrderFront(nil); return }
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 640),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 680),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
             backing: .buffered, defer: false)
         win.title = "💬 メッセンジャー"
-        win.minSize = NSSize(width: 360, height: 320)
+        win.titleVisibility = .hidden
+        win.titlebarAppearsTransparent = true
+        win.minSize = NSSize(width: 420, height: 400)
         win.isReleasedWhenClosed = false
         win.contentView = NSHostingView(rootView: MessengerView(model: model))
         win.center()

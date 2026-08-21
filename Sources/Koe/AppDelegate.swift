@@ -553,6 +553,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 直前の音声入力が本文にプリフィルされる=「しゃべって、そのまま送る」。
         voiceToolsMenu.addItem(withTitle: "🔊 声を送る…", action: #selector(openVoiceMessage), keyEquivalent: "")
         // メッセージ(Web): koe.live/app（統合Webアプリ＝受信箱/焚き火/設定BYOK/通話）をウィンドウで開く
+        // メッセンジャー: takibi(焚き火)/LINE の届いた連絡を読む・返す(管理者専用・2026-08-21)
+        voiceToolsMenu.addItem(withTitle: "💬 メッセンジャー", action: #selector(openMessenger), keyEquivalent: "")
         voiceToolsMenu.addItem(withTitle: "💬 メッセージ (Web)", action: #selector(openKoeWebApp), keyEquivalent: "")
         let voiceToolsItem = NSMenuItem(title: "🗣 声のツール", action: nil, keyEquivalent: "")
         voiceToolsItem.submenu = voiceToolsMenu
@@ -2711,6 +2713,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.setTranslateMode(true)
         klog("Translate mode: ON (menu)")
         startRecording()
+    }
+
+    /// 💬 メッセンジャー — takibi/焚き火/LINE の届いた連絡を読む・返す(管理者専用)。
+    @objc private func openMessenger() {
+        MessengerWindow.shared.show()
     }
 
     /// 💬 メッセージ (Web) — koe.live/app（統合Webアプリ）をウィンドウで開く。

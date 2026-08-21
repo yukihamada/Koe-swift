@@ -17,8 +17,10 @@ COPY sitemap.xml .
 RUN cargo build --release
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates libssl3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r koe && useradd -r -g koe -u 10001 koe
 COPY --from=builder /app/target/release/koe-site /usr/local/bin/koe-site
 ENV PORT=8080
 EXPOSE 8080
+USER koe
 CMD ["koe-site"]

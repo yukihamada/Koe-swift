@@ -34,6 +34,11 @@ if [ -f "Resources/oww_detector.py" ]; then
     cp Resources/oww_detector.py "$APP/Contents/Resources/"
 fi
 
+# Copy reference voice clip for RadioUploader's local voice-match check
+if [ -f "Resources/ref_yuki.wav" ]; then
+    cp Resources/ref_yuki.wav "$APP/Contents/Resources/"
+fi
+
 # Homebrew prefix (Apple Silicon: /opt/homebrew, Intel: /usr/local)
 BREW_PREFIX=$(brew --prefix 2>/dev/null || echo "/opt/homebrew")
 
@@ -193,6 +198,7 @@ swiftc Sources/Koe/*.swift \
     -framework AppKit \
     -framework AVFoundation \
     -framework Speech \
+    -framework CoreLocation \
     -framework SwiftUI \
     -framework Metal \
     -framework Accelerate \
@@ -381,10 +387,15 @@ for mlib in "$WHISPER_LIB"/ggml*.metallib "$WHISPER_LIB"/../share/whisper-cpp/*.
 done
 
 # Sign everything — use Developer ID if available, else ad-hoc
+# ⚠ ad-hoc 署名は cdhash がビルド毎に変わるため macOS TCC(マイク/音声認識/アクセシビリティ)が
+#   「別アプリ」と認識し、再インストールの度に許可ダイアログが出て許可リストに重複エントリが
+#   増殖する(2026-08-21 実害)。Developer ID 署名なら stable requirement で許可は引き継がれる。
 SIGN_ID="Developer ID Application: Yuki Hamada (5BV85JW8US)"
 if ! security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
     SIGN_ID="-"
-    echo "⚠ Developer ID not found, using ad-hoc signing"
+    echo "⚠⚠ Developer ID not found, using ad-hoc signing"
+    echo "⚠⚠ ad-hoc 署名では macOS の各種許可が再インストール毎にリセットされます。"
+    echo "⚠⚠ 配布・常用するマシンでは Developer ID 証明書をキーチェーンに入れてください。"
 fi
 ENTITLEMENTS="entitlements.plist"
 
@@ -422,6 +433,15 @@ if [ "$SIGN_ID" = "-" ]; then
     codesign --force --sign - --options runtime --entitlements "$ENTITLEMENTS" --deep "$APP"
 else
     codesign --force --sign "$SIGN_ID" --options runtime --timestamp --entitlements "$ENTITLEMENTS" --deep "$APP"
+fi
+
+# 署名結果の検証: リンカ(swiftc)が付ける自動 ad-hoc 署名のまま残る事故を検知する。
+# (署名ステップ前にビルドを中断し未完成バイナリをインストールした 2026-08-21 の実例)
+FINAL_AUTHORITY=$(codesign -dv --verbose=2 "$APP" 2>&1 | grep '^Authority=' | head -1)
+if [ "$SIGN_ID" != "-" ] && ! echo "$FINAL_AUTHORITY" | grep -q "Developer ID Application"; then
+    echo "❌ SIGNATURE VERIFICATION FAILED: expected Developer ID but got: ${FINAL_AUTHORITY:-adhoc}"
+    echo "   /Applications へはインストールしません(許可リセットの事故防止)。"
+    exit 1
 fi
 
 echo "✓ Built and signed $APP (with embedded whisper.cpp)"

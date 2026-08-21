@@ -10,14 +10,17 @@ enum ConnectSection: String, CaseIterable, Identifiable {
     case box = "届いた声"
     case feed = "みんなの声"
     case live = "ラジオ"
+    case messenger = "連絡"
     var id: String { rawValue }
     var url: URL {
         switch self {
         case .box: return URL(string: "https://koe.live/box")!
         case .feed: return URL(string: "https://koe.live/feed")!
         case .live: return URL(string: "https://koe.live/live")!
+        case .messenger: return URL(string: "https://mcp.koe.live/messenger")!  // WebView は使わずネイティブで開く
         }
     }
+    var isNative: Bool { self == .messenger }
 }
 
 private let kBoxClaimedKey = "koe_box_claimed_native"
@@ -31,8 +34,14 @@ struct ConnectView: View {
         // Web側実装だけで動く)。ここではネイティブ側に「一度でも受信箱を持ったことがある」
         // というフラグだけを保持し、無ければ「届いた声」でなく「ラジオ」を初期表示にする
         // (いきなり空の受信箱・認証UIを見せず、聞くだけで温かい入口から始める)。
-        let claimed = KeychainHelper.get(key: kBoxClaimedKey) == "1"
-        _selection = State(initialValue: claimed ? .box : .live)
+        // チュートリアル後に「つながる」を開いた場合は AppState の指示でラジオを強制表示。
+        if AppState.shared.pendingConnectSection == .live {
+            AppState.shared.pendingConnectSection = nil
+            _selection = State(initialValue: .live)
+        } else {
+            let claimed = KeychainHelper.get(key: kBoxClaimedKey) == "1"
+            _selection = State(initialValue: claimed ? .box : .live)
+        }
     }
 
     var body: some View {
@@ -50,11 +59,19 @@ struct ConnectView: View {
 
                 ZStack {
                     ForEach(ConnectSection.allCases) { s in
-                        ConnectWebPane(url: s.url, onBoxIdentified: {
-                            KeychainHelper.save(key: kBoxClaimedKey, value: "1")
-                        })
-                        .opacity(selection == s ? 1 : 0)
-                        .allowsHitTesting(selection == s)
+                        if s.isNative {
+                            // 💬 メッセンジャーは WebView ではなくネイティブ SwiftUI で開く
+                            // (読み上げ・通知・返信を iPhone 側で制御するため)
+                            MessengerView(model: MessengerModel())
+                                .opacity(selection == s ? 1 : 0)
+                                .allowsHitTesting(selection == s)
+                        } else {
+                            ConnectWebPane(url: s.url, onBoxIdentified: {
+                                KeychainHelper.save(key: kBoxClaimedKey, value: "1")
+                            })
+                            .opacity(selection == s ? 1 : 0)
+                            .allowsHitTesting(selection == s)
+                        }
                     }
                 }
 

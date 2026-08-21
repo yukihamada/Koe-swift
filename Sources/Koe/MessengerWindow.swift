@@ -1,12 +1,14 @@
 import AppKit
 import SwiftUI
 import UserNotifications
+import AVFoundation
 
 /// 💬 メッセンジャー — takibi(焚き火)/LINE の届いた連絡を1つの窓で見る・返す。
 ///
 /// バックエンド = mcp.koe.live の /api/messenger/inbox・/api/messenger/reply
 /// (2026-08-21 本人指示「takibiとかLINEに連絡きたらKoeアプリのメッセンジャーで見れるように」)。
 /// 管理鍵はサーバ側のみが保持し、アプリは自分の koe_… キー(KoeAccount)で叩く。
+/// 新着時は内容を音声で読み上げる(koe.live/api/speak 経由・本人指示「届いたら読み上げる」)。
 struct MsgItem: Identifiable, Hashable {
     let id: String
     let source: String   // "line" | "takibi"
@@ -30,6 +32,20 @@ final class MessengerModel: ObservableObject {
     private let base = "https://mcp.koe.live"
     private var seen = Set<String>()
     private var timer: Timer?
+    private var player: AVAudioPlayer?
+
+    /// 読み上げに使う声（設定で変更可能）。既定は本人声。
+    static var speakVoiceID: String {
+        UserDefaults.standard.string(forKey: "messenger.speakVoiceID") ?? "yuki"
+    }
+    /// 読み上げを無効化するスイッチ。既定=ON。
+    static var speakEnabled: Bool {
+        UserDefaults.standard.object(forKey: "messenger.speakEnabled") as? Bool ?? true
+    }
+    /// 読み上げる対象（"all" / "line" / "takibi"）。既定=全部。
+    static var speakFilter: String {
+        UserDefaults.standard.string(forKey: "messenger.speakFilter") ?? "all"
+    }
 
     func start() {
         timer?.invalidate()
@@ -76,6 +92,7 @@ final class MessengerModel: ObservableObject {
                         if !self.items.isEmpty { // 初回ロードは通知しない
                             self.unread += 1
                             MessengerModel.notify(item)
+                            self.speakIfNeeded(item)
                         }
                         fresh.append(item)
                     }
@@ -128,6 +145,52 @@ final class MessengerModel: ObservableObject {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
         center.add(UNNotificationRequest(identifier: item.id, content: content, trigger: nil))
     }
+
+    /// 新着メッセージを音声で読み上げる(koe.live/api/speak 経由)。
+    /// 読み上げテキストは「差出人 + 本文」を短く整形。声は設定で選べる(既定=本人声)。
+    private func speakIfNeeded(_ item: MsgItem) {
+        guard MessengerModel.speakEnabled else { return }
+        guard MessengerModel.speakFilter == "all" || MessengerModel.speakFilter == item.source else { return }
+
+        let who = item.who.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+
+        // 長文は頭の部分だけ読む(200字目安)。末尾に「以上」を添えて「切れた」のではないことを明示。
+        let maxLen = 200
+        let body = text.count > maxLen ? String(text.prefix(maxLen)) + "、以上です" : text
+        let speakText = "\(who) から。\(body)"
+
+        var req = URLRequest(url: URL(string: "https://koe.live/api/speak")!)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: [
+            "text": speakText,
+            "user_id": MessengerModel.speakVoiceID.isEmpty ? "yuki" : MessengerModel.speakVoiceID,
+            "source": "messenger",
+        ])
+        URLSession.shared.dataTask(with: req) { [weak self] data, resp, error in
+            guard let self, let data, error == nil,
+                  (resp as? HTTPURLResponse)?.statusCode == 200 else {
+                klog("Messenger: speak failed: \(error?.localizedDescription ?? "bad status")")
+                return
+            }
+            DispatchQueue.main.async {
+                do {
+                    self.player = try AVAudioPlayer(data: data)
+                    self.player?.play()
+                } catch {
+                    klog("Messenger: audio play error: \(error)")
+                }
+            }
+        }.resume()
+    }
+
+    /// 読み上げを手動で止める(設定UIやウィンドウ操作から呼ぶ想定)。
+    func stopSpeaking() {
+        player?.stop()
+        player = nil
+    }
 }
 
 struct MessengerView: View {
@@ -146,6 +209,16 @@ struct MessengerView: View {
                         .font(.caption).foregroundColor(.orange)
                 }
                 Spacer()
+                // 読み上げトグル
+                Button(action: {
+                    let new = !MessengerModel.speakEnabled
+                    UserDefaults.standard.set(new, forKey: "messenger.speakEnabled")
+                    if !new { model.stopSpeaking() }
+                }) {
+                    Image(systemName: MessengerModel.speakEnabled ? "speaker.wave.2" : "speaker.slash")
+                }
+                .buttonStyle(.plain)
+                .help("読み上げ \(MessengerModel.speakEnabled ? "ON" : "OFF")")
                 Button(action: { model.unread = 0 }) {
                     Image(systemName: "checkmark.circle")
                 }

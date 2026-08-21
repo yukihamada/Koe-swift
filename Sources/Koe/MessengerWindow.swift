@@ -12,12 +12,14 @@ import AVFoundation
 struct MsgItem: Identifiable, Hashable {
     let id: String
     let source: String   // "line" | "takibi"
+    let kind: String     // "post" | "comment" | ""(line)
     let slug: String
     let ts: String
     let who: String
     let group: String
     let text: String
     let replyTo: String
+    let selfAuthored: Bool
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (a: MsgItem, b: MsgItem) -> Bool { a.id == b.id }
@@ -80,19 +82,27 @@ final class MessengerModel: ObservableObject {
                     let item = MsgItem(
                         id: (x["id"] as? String) ?? "",
                         source: (x["source"] as? String) ?? "",
+                        kind: (x["kind"] as? String) ?? "",
                         slug: (x["slug"] as? String) ?? "",
                         ts: (x["ts"] as? String) ?? "",
                         who: (x["who"] as? String) ?? "名無し",
                         group: (x["group"] as? String) ?? "",
                         text: (x["text"] as? String) ?? "",
-                        replyTo: (x["reply_to"] as? String) ?? ""
+                        replyTo: (x["reply_to"] as? String) ?? "",
+                        selfAuthored: (x["self_authored"] as? Bool) ?? false
                     )
                     if !self.seen.contains(item.id) {
                         self.seen.insert(item.id)
                         if !self.items.isEmpty { // 初回ロードは通知しない
-                            self.unread += 1
-                            MessengerModel.notify(item)
-                            self.speakIfNeeded(item)
+                            // 自分発の投稿/コメントは「連絡が来た」ではないので通知も読み上げもしない
+                            if !item.selfAuthored {
+                                self.unread += 1
+                                MessengerModel.notify(item)
+                                self.speakIfNeeded(item)
+                                klog("Messenger: new \(item.source)/\(item.kind) from \(item.who): \(item.text.prefix(40))")
+                            } else {
+                                klog("Messenger: self-authored \(item.kind) seen (no notify/speak)")
+                            }
                         }
                         fresh.append(item)
                     }
@@ -253,7 +263,7 @@ struct MessengerView: View {
                         List(model.items, id: \.id, selection: $selection) { item in
                             VStack(alignment: .leading, spacing: 3) {
                                 HStack {
-                                    Text(item.source == "line" ? "💬 LINE" : "🔥 焚き火")
+                                        Text(item.source == "line" ? "💬 LINE" : (item.kind == "comment" ? "🔥💬 コメント" : "🔥 焚き火"))
                                         .font(.caption2).fontWeight(.bold)
                                         .padding(.horizontal, 6).padding(.vertical, 1)
                                         .background(item.source == "line" ? Color.green.opacity(0.15) : Color.orange.opacity(0.15))

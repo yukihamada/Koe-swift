@@ -95,6 +95,7 @@ final class MessengerModel: ObservableObject {
                         self.seen.insert(item.id)
                         if !self.items.isEmpty { // 初回ロードは通知しない
                             // 自分発の投稿/コメントは「連絡が来た」ではないので通知も読み上げもしない
+                            // 自分宛の返信だけ読み上げる(他人の投稿は通知だけ)。本人指示「自分宛だけ」
                             if !item.selfAuthored {
                                 self.unread += 1
                                 MessengerModel.notify(item)
@@ -156,41 +157,47 @@ final class MessengerModel: ObservableObject {
         center.add(UNNotificationRequest(identifier: item.id, content: content, trigger: nil))
     }
 
-    /// 新着メッセージを音声で読み上げる(koe.live/api/speak 経由)。
-    /// 読み上げテキストは「差出人 + 本文」を短く整形。声は設定で選べる(既定=本人声)。
+    /// 新着メッセージを音声で読み上げる。
+    /// ただ本文を読むのではなく、/api/messenger/brief で『誰から・どの文脈で・何を求めているか』
+    /// を1〜2文でまとめ、次の一手を添えた読み上げ用の短い文章に変えてから、
+    /// 発信者の koe 同意済み声(推定できる場合)で再生する。本人指示「背景を考えてまとめる
+    /// などしてください。あとその人の声を使ってください。僕の声でまとめたり提案したりして次のアクション」。
     private func speakIfNeeded(_ item: MsgItem) {
         guard MessengerModel.speakEnabled else { return }
         guard MessengerModel.speakFilter == "all" || MessengerModel.speakFilter == item.source else { return }
 
-        let who = item.who.trimmingCharacters(in: .whitespacesAndNewlines)
-        let text = item.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
-
-        // 長文は頭の部分だけ読む(200字目安)。末尾に「以上」を添えて「切れた」のではないことを明示。
-        let maxLen = 200
-        let body = text.count > maxLen ? String(text.prefix(maxLen)) + "、以上です" : text
-        let speakText = "\(who) から。\(body)"
-
-        var req = URLRequest(url: URL(string: "https://koe.live/api/speak")!)
+        let body: [String: Any] = [
+            "item": [
+                "who": item.who,
+                "group": item.group,
+                "text": item.text,
+                "source": item.source,
+                "kind": item.kind,
+                "ts": item.ts,
+            ]
+        ]
+        var req = URLRequest(url: URL(string: "\(base)/api/messenger/brief")!)
         req.httpMethod = "POST"
-        req.timeoutInterval = 90  // 音声生成(ElevenLabs)が混んでいると 60s を超えることがある
+        req.timeoutInterval = 120  // Gemini + TTS の合成時間(混雑時は 90s を超えることがある)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: [
-            "text": speakText,
-            "user_id": MessengerModel.speakVoiceID.isEmpty ? "yuki" : MessengerModel.speakVoiceID,
-            "source": "messenger",
-        ])
+        req.setValue("Bearer \(KoeAccount.current ?? "")", forHTTPHeaderField: "Authorization")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         URLSession.shared.dataTask(with: req) { [weak self] data, resp, error in
             guard let self, let data, error == nil,
-                  (resp as? HTTPURLResponse)?.statusCode == 200 else {
-                klog("Messenger: speak failed: \(error?.localizedDescription ?? "bad status")")
+                  (resp as? HTTPURLResponse)?.statusCode == 200,
+                  let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let b64 = j["audio_base64"] as? String,
+                  let audioData = Data(base64Encoded: b64) else {
+                klog("Messenger: brief/speak failed: \(error?.localizedDescription ?? "bad response")")
                 return
             }
+            let text = (j["text"] as? String) ?? ""
+            let voice = (j["voice_used"] as? String) ?? "yukihamada"
             DispatchQueue.main.async {
                 do {
-                    self.player = try AVAudioPlayer(data: data)
+                    self.player = try AVAudioPlayer(data: audioData)
                     self.player?.play()
-                    klog("Messenger: speaking new \(item.source) message from \(item.who) (\(data.count) bytes)")
+                    klog("Messenger: speaking brief from \(item.who) with voice=\(voice): \(text.prefix(50))")
                 } catch {
                     klog("Messenger: audio play error: \(error)")
                 }

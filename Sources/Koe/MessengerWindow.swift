@@ -179,6 +179,7 @@ final class MessengerModel: ObservableObject {
                 do {
                     self.player = try AVAudioPlayer(data: data)
                     self.player?.play()
+                    klog("Messenger: speaking new \(item.source) message from \(item.who) (\(data.count) bytes)")
                 } catch {
                     klog("Messenger: audio play error: \(error)")
                 }
@@ -350,6 +351,13 @@ final class MessengerWindow {
     private let model = MessengerModel()
     /// singleton化（AppDelegateの@objcから常に同じインスタンスを使う）。
     static let shared = MessengerWindow()
+
+    /// アプリ起動時にバックグラウンドポーリングを開始する(ウィンドウを開かなくても
+    /// 新着検知→通知→読み上げが動くように。本人指示「届いたら読み上げる」)。
+    func startBackgroundPolling() {
+        model.start()
+        klog("Messenger: background polling started (30s interval)")
+    }
 
     func show() {
         // LSUIElement(メニューバーアプリ)は activate しないと IME が別アプリに吸われ

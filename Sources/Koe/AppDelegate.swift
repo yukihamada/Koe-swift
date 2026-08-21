@@ -443,6 +443,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setIcon(recording: false)
         rebuildMenu()
 
+        // 💬 メッセンジャー: 起動直後からバックグラウンドで新着ポーリング
+        // (ウィンドウを開かなくても通知+読み上げが動く・2026-08-21 本人指示)
+        MessengerWindow.shared.startBackgroundPolling()
+
         // ドラッグ&ドロップ: 音声ファイルをメニューバーアイコンにドロップで文字起こし
         statusItem.button?.registerForDraggedTypes([.fileURL])
         let dropDelegate = StatusBarDropDelegate(appDelegate: self)

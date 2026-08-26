@@ -23,6 +23,9 @@ struct MsgItem: Identifiable, Hashable {
     /// LINEの画像/動画/スタンプの実体URL(mcp.koe.live 経由の認証付きプロキシ・Bearer必須)。
     /// あれば text は "📷 画像" 等のプレースホルダー(2026-08-25 本人指摘「画像表示されない」)。
     let imageURL: String
+    /// LINEグループが紐づくプロジェクト名(サーバのproject_for_groupで判定・無ければ空文字)。
+    /// 「どのプロジェクトの話か一目でわかるように」(2026-08-26 本人指摘)。
+    let project: String
 
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
     static func == (a: MsgItem, b: MsgItem) -> Bool { a.id == b.id }
@@ -134,6 +137,12 @@ final class MessengerModel: ObservableObject {
     static var speakFilter: String {
         UserDefaults.standard.string(forKey: "messenger.speakFilter") ?? "all"
     }
+    /// これ未満の文字数の本文は自動読み上げしない(2026-08-26 本人指示「読み上げは長いやつだけ」)。
+    /// 「了解です」「ありがとうございます」のような短い相槌まで毎回読み上げるのが煩わしかったため。
+    static var speakMinLength: Int {
+        let v = UserDefaults.standard.integer(forKey: "messenger.speakMinLength")
+        return v > 0 ? v : 30
+    }
 
     func start() {
         timer?.invalidate()
@@ -178,7 +187,8 @@ final class MessengerModel: ObservableObject {
                         text: (x["text"] as? String) ?? "",
                         replyTo: (x["reply_to"] as? String) ?? "",
                         selfAuthored: (x["self_authored"] as? Bool) ?? false,
-                        imageURL: (x["image_url"] as? String) ?? ""
+                        imageURL: (x["image_url"] as? String) ?? "",
+                        project: (x["project"] as? String) ?? ""
                     )
                     if !self.seen.contains(item.id) {
                         self.seen.insert(item.id)
@@ -504,6 +514,10 @@ final class MessengerModel: ObservableObject {
         guard MessengerModel.speakEnabled else { return }
         guard MessengerModel.speakFilter == "all" || MessengerModel.speakFilter == item.source else { return }
         guard !mutedThreadIDs.contains(threadKey(for: item)) else { return }
+        // 画像は本文がプレースホルダーで短くなりがちなので、長さ判定は除外して常に読み上げる
+        // (画像の中身はAI説明で伝わる)。テキストは短い相槌まで毎回読み上げると煩わしいので、
+        // 一定の長さがあるものだけ自動読み上げする。
+        guard !item.imageURL.isEmpty || item.text.count >= MessengerModel.speakMinLength else { return }
         speakBrief(for: item)
     }
 
@@ -656,6 +670,24 @@ struct MsgThread: Identifiable {
     let label: String
     let color: Color
     let items: [MsgItem]
+
+    /// このスレッドが紐づくプロジェクト名(どれか1件でも判定できていれば採用)。
+    var project: String { items.first(where: { !$0.project.isEmpty })?.project ?? "" }
+}
+
+/// プロジェクト名 → 一目でわかるアイコン。未知のプロジェクトでも汎用アイコンで「何かのプロジェクトに
+/// 紐づいている」ことだけは伝える(2026-08-26 本人指摘「なんのプロジェクトかわかるようにしてほしい」)。
+func projectIcon(_ project: String) -> String {
+    switch project {
+    case "焚き火": return "🔥"
+    case "イネブラ本体": return "🏢"
+    case "JiuFlow": return "🥋"
+    case "nagaiki.app": return "🐕"
+    case "MU": return "👕"
+    case "SOLUNA": return "🌙"
+    case "": return ""
+    default: return "📁"
+    }
 }
 
 struct MessengerView: View {
@@ -1059,6 +1091,9 @@ struct MessengerView: View {
                         Circle().fill(triage.dotColor).frame(width: 7, height: 7)
                             .help(triage.reason.isEmpty ? triage.priority : triage.reason)
                     }
+                    if !thread.project.isEmpty {
+                        Text(projectIcon(thread.project)).font(.caption).help(thread.project)
+                    }
                     Text(thread.label)
                         .font(.callout).fontWeight(unreadCount > 0 ? .bold : .semibold)
                         .foregroundColor(thread.color)
@@ -1130,6 +1165,27 @@ struct MessengerView: View {
         return Color(hue: hue, saturation: 0.5, brightness: 0.65)
     }
 
+    /// 本文中のURLをクリックでブラウザが開くリンクにする(2026-08-26 本人指摘「URLクリックしたら
+    /// ブラウザ飛ぶとか基本的なことちゃんと頼むよ」)。SwiftUIのTextは`.link`属性を付けた区間を
+    /// 自動でクリック可能にし、既定のopenURLアクション(システムのデフォルトブラウザ)で開く。
+    private static func linkified(_ text: String) -> AttributedString {
+        var attributed = AttributedString(text)
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return attributed
+        }
+        let ns = text as NSString
+        let matches = detector.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        for match in matches {
+            guard let url = match.url,
+                  let range = Range(match.range, in: text),
+                  let attrRange = Range<AttributedString.Index>(range, in: attributed) else { continue }
+            attributed[attrRange].link = url
+            attributed[attrRange].foregroundColor = .accentColor
+            attributed[attrRange].underlineStyle = .single
+        }
+        return attributed
+    }
+
     /// 会話1行分: メッセージ本体と、直前の行と日付が変わっていれば区切り見出し。
     private struct ConversationRow: Identifiable {
         let id: String
@@ -1162,6 +1218,12 @@ struct MessengerView: View {
                     HStack {
                         Text(thread.label)
                             .font(.title3).fontWeight(.semibold).foregroundColor(thread.color)
+                        if !thread.project.isEmpty {
+                            Text("\(projectIcon(thread.project)) \(thread.project)")
+                                .font(.caption).foregroundColor(.secondary)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.secondary.opacity(0.12), in: Capsule())
+                        }
                         Spacer()
                         Button(action: { model.toggleMute(thread.id) }) {
                             Label(
@@ -1182,11 +1244,18 @@ struct MessengerView: View {
                     } else if model.recapLoading.contains(thread.id) {
                         HStack(spacing: 5) { ProgressView().scaleEffect(0.5); Text("近況を思い出しています…").font(.caption2).foregroundColor(.secondary) }
                     }
-                    ForEach(conversationRows(for: thread)) { row in
-                        if let heading = row.dayHeading {
-                            dayDivider(heading)
+                    // LazyVStack: 長いスレッドで全メッセージ・全画像を即座に読み込まず、
+                    // スクロールで実際に見える範囲だけ描画+ネットワーク要求する(2026-08-26
+                    // 本人指摘「爆速にしてほしい」— 通常のVStackは画面外も含め全件を即時構築していた)。
+                    // メッセージ間の余白は詰め気味に(2026-08-26 本人指摘「隙間多いかも」・
+                    // 以前の14ptは一般的なチャットアプリより間延びして見えた)。
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(conversationRows(for: thread)) { row in
+                            if let heading = row.dayHeading {
+                                dayDivider(heading)
+                            }
+                            messageBubble(row.item).id(row.item.id)
                         }
-                        messageBubble(row.item).id(row.item.id)
                     }
                 }
                 .padding(16)
@@ -1242,7 +1311,7 @@ struct MessengerView: View {
                         Text(desc).font(.caption2).foregroundColor(.secondary)
                     }
                 } else {
-                    Text(item.text).font(.body).textSelection(.enabled)
+                    Text(Self.linkified(item.text)).font(.body).textSelection(.enabled)
                 }
                 Button(action: { model.speakBrief(for: item) }) {
                     if model.briefLoading.contains(item.id) {
@@ -1343,6 +1412,9 @@ final class MessengerWindow {
         win.titlebarAppearsTransparent = true
         win.minSize = NSSize(width: 420, height: 400)
         win.isReleasedWhenClosed = false
+        // LSUIElement(メニューバー常駐)アプリはデフォルトで緑ボタンの全画面化が出ないことがあるため
+        // 明示的に許可する(2026-08-26 本人指示「全画面できるようにしてほしい」)。
+        win.collectionBehavior.insert(.fullScreenPrimary)
         win.contentView = NSHostingView(rootView: MessengerView(model: model))
         win.center()
         win.makeKeyAndOrderFront(nil)

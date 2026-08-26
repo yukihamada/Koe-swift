@@ -24,9 +24,11 @@
 		3D11AD1DFB73F721181249AF /* MeetingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B298131B562070D1E875106 /* MeetingView.swift */; };
 		3D84E4A6410ACFCEE5696CC6 /* TextExpansionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD4D5F6DA042AA84A1B8A015 /* TextExpansionStore.swift */; };
 		460E173BEF0748D1E94AA405 /* PhraseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48001AE57171E79F51953DAA /* PhraseManager.swift */; };
+		4616BECAE9558AFED788300E /* InterpreterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31609B5F9A49A069C4D48E0A /* InterpreterView.swift */; };
 		494339B2D85E4EC36B6C42CB /* AudioToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A4369D20092F5F94274C8FC /* AudioToolsView.swift */; };
 		4B9065CE589277EE6FF1C616 /* FeedbackView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 888FCE405888897014971A12 /* FeedbackView.swift */; };
 		4EA8C039A4386E504C52B8B7 /* WaveformView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06AF7EFAE2F809A9329BD672 /* WaveformView.swift */; };
+		54DA04EFCD4F84E54C743BFC /* breath_guide.m4a in Resources */ = {isa = PBXBuildFile; fileRef = 7F15C75F2D6A9B9C236D2215 /* breath_guide.m4a */; };
 		5511CA77E4F78B715DF5BBD7 /* MeetingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ABC6E7D02151EBF78768F6C /* MeetingManager.swift */; };
 		558EC4F9ECF68FA8EF5AA828 /* SoundMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3ECAD894C47D1D9072A46C5D /* SoundMemory.swift */; };
 		5CDA08B2FE4E8C5997D3CEAB /* KoeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 345D55DE66037B9F07C1D4B8 /* KoeApp.swift */; };
@@ -45,6 +47,8 @@
 		AA83818CE911CC12AA08D32E /* VoiceMemoStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25B6188B167F49D8EDFC746 /* VoiceMemoStore.swift */; };
 		AB734E1FD2422F3FB227A959 /* AudioInputManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB1A39FCF6B7C3BD815013F9 /* AudioInputManager.swift */; };
 		B0106297C77CDB451539032F /* MacBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2070A47D1A13E7273BCC061 /* MacBridge.swift */; };
+		B20ED238EA3782EBD5A6E0D5 /* MessengerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31A7810AC88049D8D9E3F1FA /* MessengerView.swift */; };
+		3C1A10D2D7D3449B9963DD0E /* AgentOperateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38BC8689E4C947F9B6F1F348 /* AgentOperateView.swift */; };
 		B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2E4A00EF6AE47584C718C989 /* Assets.xcassets */; };
 		C0F116F1B98F8CBD5A510780 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E264AF883E006A40D11232 /* ContentView.swift */; };
 		C0FF94CE637A67DCE63CC491 /* BLEAudioBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5432797E704450F805B66F45 /* BLEAudioBridge.swift */; };
@@ -119,6 +123,9 @@
 		2AB2E05A4945184645CE7C8A /* PhrasePaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhrasePaletteView.swift; sourceTree = "<group>"; };
 		2B298131B562070D1E875106 /* MeetingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingView.swift; sourceTree = "<group>"; };
 		2E4A00EF6AE47584C718C989 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		31609B5F9A49A069C4D48E0A /* InterpreterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InterpreterView.swift; sourceTree = "<group>"; };
+		31A7810AC88049D8D9E3F1FA /* MessengerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessengerView.swift; sourceTree = "<group>"; };
+		38BC8689E4C947F9B6F1F348 /* AgentOperateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentOperateView.swift; sourceTree = "<group>"; };
 		345D55DE66037B9F07C1D4B8 /* KoeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeApp.swift; sourceTree = "<group>"; };
 		34F681797BC2F7A3415734A4 /* WatchRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRelay.swift; sourceTree = "<group>"; };
 		3ABC6E7D02151EBF78768F6C /* MeetingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingManager.swift; sourceTree = "<group>"; };
@@ -140,6 +147,7 @@
 		67DF02E93B8A617C32BF23A5 /* WakeWordDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeWordDetector.swift; sourceTree = "<group>"; };
 		6C8335D6BF37ED46929C1A99 /* KoeShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KoeShortcuts.swift; sourceTree = "<group>"; };
 		6D216B15D27DE4BD2245606F /* AudioReceiverBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AudioReceiverBridge.mm; sourceTree = "<group>"; };
+		7F15C75F2D6A9B9C236D2215 /* breath_guide.m4a */ = {isa = PBXFileReference; path = breath_guide.m4a; sourceTree = "<group>"; };
 		8534C73DDAE014A2EAC680CE /* SolunaManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolunaManager.swift; sourceTree = "<group>"; };
 		888FCE405888897014971A12 /* FeedbackView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedbackView.swift; sourceTree = "<group>"; };
 		8E5FE6B87FBBBDB56F573885 /* DeviceSetupView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceSetupView.swift; sourceTree = "<group>"; };
@@ -185,6 +193,7 @@
 				CF16A32B380CE3F4BF8EAEE4 /* AudioSessionCoordinator.swift */,
 				2A4369D20092F5F94274C8FC /* AudioToolsView.swift */,
 				5432797E704450F805B66F45 /* BLEAudioBridge.swift */,
+				7F15C75F2D6A9B9C236D2215 /* breath_guide.m4a */,
 				F454E302194F93F4226122ED /* CallKitManager.swift */,
 				B1D392A1252DF53DE14EC5C6 /* CallTranscriber.swift */,
 				43F5C4DA6E8201D7270B8918 /* CallTranscriberView.swift */,
@@ -196,6 +205,7 @@
 				888FCE405888897014971A12 /* FeedbackView.swift */,
 				E8D4209A6A834882CE32721D /* ggml-metal.metal */,
 				EC0B1D6E09BEEC6A1E1D16FD /* HistoryView.swift */,
+				31609B5F9A49A069C4D48E0A /* InterpreterView.swift */,
 				BDAFCAEA0BD98C7F3E002895 /* KeychainHelper.swift */,
 				50152F5092FA4390A3D59DC8 /* Koe-Bridging-Header.h */,
 				345D55DE66037B9F07C1D4B8 /* KoeApp.swift */,
@@ -207,6 +217,8 @@
 				1D06EA3315419A9F5688BF90 /* MacScreenView.swift */,
 				3ABC6E7D02151EBF78768F6C /* MeetingManager.swift */,
 				2B298131B562070D1E875106 /* MeetingView.swift */,
+				31A7810AC88049D8D9E3F1FA /* MessengerView.swift */,
+				38BC8689E4C947F9B6F1F348 /* AgentOperateView.swift */,
 				AC84C5A1752EC621A7C1A395 /* ModelManager.swift */,
 				9A3D60AF110C816648C690D3 /* MoreView.swift */,
 				48001AE57171E79F51953DAA /* PhraseManager.swift */,
@@ -427,6 +439,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B4BCADC679FA0F90FE0D2C96 /* Assets.xcassets in Resources */,
+				54DA04EFCD4F84E54C743BFC /* breath_guide.m4a in Resources */,
 				3BE11845D9D03FAB0987653C /* ggml-metal.metal in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -469,6 +482,7 @@
 				243C3C2EC6640051BCBA7684 /* FeedbackManager.swift in Sources */,
 				4B9065CE589277EE6FF1C616 /* FeedbackView.swift in Sources */,
 				2C39265DF9AFB6BDE16BD28A /* HistoryView.swift in Sources */,
+				4616BECAE9558AFED788300E /* InterpreterView.swift in Sources */,
 				33DA89D451994F38F8249DDB /* KeychainHelper.swift in Sources */,
 				5CDA08B2FE4E8C5997D3CEAB /* KoeApp.swift in Sources */,
 				F454A33B996E3EA2E8980152 /* KoeRecordingAttributes.swift in Sources */,
@@ -479,6 +493,8 @@
 				185ED9D7C6D1B7EBB3C98565 /* MacScreenView.swift in Sources */,
 				5511CA77E4F78B715DF5BBD7 /* MeetingManager.swift in Sources */,
 				3D11AD1DFB73F721181249AF /* MeetingView.swift in Sources */,
+				B20ED238EA3782EBD5A6E0D5 /* MessengerView.swift in Sources */,
+				3C1A10D2D7D3449B9963DD0E /* AgentOperateView.swift in Sources */,
 				89379325393A13D064595214 /* ModelManager.swift in Sources */,
 				23EB61FAE8D6C45F07528F27 /* MoreView.swift in Sources */,
 				460E173BEF0748D1E94AA405 /* PhraseManager.swift in Sources */,
@@ -546,7 +562,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -569,7 +585,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
 				OTHER_LDFLAGS = "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox -framework CallKit -framework EventKit -framework PushKit";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;
@@ -593,7 +609,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -677,7 +693,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.widget;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -696,7 +712,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -715,7 +731,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.keyboard;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -734,7 +750,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios.shareext;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -815,7 +831,7 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/lib";
-				MARKETING_VERSION = 1.4.0;
+				MARKETING_VERSION = 3.0.0;
 				MTL_HEADER_SEARCH_PATHS = "$(PROJECT_DIR)/Sources";
 				OTHER_LDFLAGS = "-lsoluna_core -lwhisper -lggml -lggml-base -lggml-cpu -lggml-metal -lggml-blas -lstdc++ -framework Accelerate -framework Metal -framework MetalKit -framework CoreMotion -framework AudioToolbox -framework CallKit -framework EventKit -framework PushKit";
 				PRODUCT_BUNDLE_IDENTIFIER = com.yuki.koe.ios;

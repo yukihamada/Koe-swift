@@ -11,6 +11,7 @@ enum ConnectSection: String, CaseIterable, Identifiable {
     case feed = "みんなの声"
     case live = "ラジオ"
     case messenger = "連絡"
+    case agent = "操作"
     var id: String { rawValue }
     var url: URL {
         switch self {
@@ -18,9 +19,10 @@ enum ConnectSection: String, CaseIterable, Identifiable {
         case .feed: return URL(string: "https://koe.live/feed")!
         case .live: return URL(string: "https://koe.live/live")!
         case .messenger: return URL(string: "https://mcp.koe.live/messenger")!  // WebView は使わずネイティブで開く
+        case .agent: return URL(string: "https://koe.live/agent")!  // WebView は使わずネイティブで開く
         }
     }
-    var isNative: Bool { self == .messenger }
+    var isNative: Bool { self == .messenger || self == .agent }
 }
 
 private let kBoxClaimedKey = "koe_box_claimed_native"
@@ -59,10 +61,16 @@ struct ConnectView: View {
 
                 ZStack {
                     ForEach(ConnectSection.allCases) { s in
-                        if s.isNative {
+                        if s == .messenger {
                             // 💬 メッセンジャーは WebView ではなくネイティブ SwiftUI で開く
                             // (読み上げ・通知・返信を iPhone 側で制御するため)
                             MessengerView(model: MessengerModel())
+                                .opacity(selection == s ? 1 : 0)
+                                .allowsHitTesting(selection == s)
+                        } else if s == .agent {
+                            // 🤖 操作もネイティブ(声入力・Claude/Sente切替をiPhone側で制御)
+                            // (2026-08-26 本人指示「Mac/iOSからClaude/Senteのプロセスを操作したい」)
+                            AgentOperateView(model: AgentOperateModel())
                                 .opacity(selection == s ? 1 : 0)
                                 .allowsHitTesting(selection == s)
                         } else {

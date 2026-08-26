@@ -446,6 +446,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 💬 メッセンジャー: 起動直後からバックグラウンドで新着ポーリング
         // (ウィンドウを開かなくても通知+読み上げが動く・2026-08-21 本人指示)
         MessengerWindow.shared.startBackgroundPolling()
+        // 未読件数が変わったらメニューバーのタイトルにすぐ反映する(2026-08-25 本人指示「見やすい場所に」)
+        NotificationCenter.default.addObserver(forName: .messengerUnreadChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.rebuildMenu()
+        }
 
         // ドラッグ&ドロップ: 音声ファイルをメニューバーアイコンにドロップで文字起こし
         statusItem.button?.registerForDraggedTypes([.fileURL])
@@ -542,6 +546,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             : L10n.menuMeetingStart
         menu.addItem(withTitle: meetingTitle, action: #selector(toggleMeetingMode), keyEquivalent: "m")
         menu.addItem(withTitle: L10n.menuFileTranscription, action: #selector(openFileTranscription), keyEquivalent: "t")
+        // 💬 メッセンジャー: takibi(焚き火)/LINE の新着連絡。以前は「声のツール」の3階層目に
+        // 埋もれていたが見つけにくいためトップ階層に単独表示(2026-08-25 本人指示「見やすい場所に」)。
+        // 未読があればタイトルに件数を出す。
+        let messengerUnread = MessengerWindow.shared.unreadCount()
+        let messengerTitle = messengerUnread > 0 ? "💬 メッセンジャー (\(messengerUnread))" : "💬 メッセンジャー"
+        menu.addItem(withTitle: messengerTitle, action: #selector(openMessenger), keyEquivalent: "")
+        // 🤖 操作: Claude(koe.live/agentと同じキュー)/Sente(sente-cloud)にテキスト/声で
+        // 指示を出す(2026-08-26 本人指示「Mac/iOSからClaudeやSenteのプロセスを操作したい」)。
+        menu.addItem(withTitle: "🤖 操作", action: #selector(openAgentOperate), keyEquivalent: "")
         // 2026-07 簡略化: 翻訳/再認識ホットキーはデフォルトOFFにしたため、クリックだけで使える導線をここに用意
         if !isRecording {
             menu.addItem(withTitle: "🌐 翻訳して録音", action: #selector(startTranslateRecordingFromMenu), keyEquivalent: "")
@@ -557,8 +570,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 直前の音声入力が本文にプリフィルされる=「しゃべって、そのまま送る」。
         voiceToolsMenu.addItem(withTitle: "🔊 声を送る…", action: #selector(openVoiceMessage), keyEquivalent: "")
         // メッセージ(Web): koe.live/app（統合Webアプリ＝受信箱/焚き火/設定BYOK/通話）をウィンドウで開く
-        // メッセンジャー: takibi(焚き火)/LINE の届いた連絡を読む・返す(管理者専用・2026-08-21)
-        voiceToolsMenu.addItem(withTitle: "💬 メッセンジャー", action: #selector(openMessenger), keyEquivalent: "")
+        // (💬 メッセンジャーはトップ階層に移動済み・上記参照)
         voiceToolsMenu.addItem(withTitle: "💬 メッセージ (Web)", action: #selector(openKoeWebApp), keyEquivalent: "")
         let voiceToolsItem = NSMenuItem(title: "🗣 声のツール", action: nil, keyEquivalent: "")
         voiceToolsItem.submenu = voiceToolsMenu
@@ -2722,6 +2734,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// 💬 メッセンジャー — takibi/焚き火/LINE の届いた連絡を読む・返す(管理者専用)。
     @objc private func openMessenger() {
         MessengerWindow.shared.show()
+    }
+
+    /// 🤖 操作 — Claude/Senteにテキスト/声で指示を出す(管理者専用)。
+    @MainActor @objc private func openAgentOperate() {
+        AgentOperateWindow.shared.show()
     }
 
     /// 💬 メッセージ (Web) — koe.live/app（統合Webアプリ）をウィンドウで開く。

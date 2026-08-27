@@ -29,6 +29,12 @@ private let kBoxClaimedKey = "koe_box_claimed_native"
 
 struct ConnectView: View {
     @State private var selection: ConnectSection
+    // 🪤 以前は MessengerView(model: MessengerModel()) のように body 内でインライン生成していた。
+    // SwiftUI は状態変化のたびに body を再評価しうるため、その都度モデルが作り直され、
+    // 送信直後の再描画で結果が消える(「何も表示されない」2026-08-27 本人報告の実バグ)。
+    // @StateObject で ConnectView の生存期間だけ1つのインスタンスを保持するのが正解。
+    @StateObject private var messengerModel = MessengerModel()
+    @StateObject private var agentModel = AgentOperateModel()
 
     init() {
         // /boxはkoe.live側のJSがlocalStorage(koe_box_h/koe_box_k)で本人を覚えている
@@ -64,13 +70,13 @@ struct ConnectView: View {
                         if s == .messenger {
                             // 💬 メッセンジャーは WebView ではなくネイティブ SwiftUI で開く
                             // (読み上げ・通知・返信を iPhone 側で制御するため)
-                            MessengerView(model: MessengerModel())
+                            MessengerView(model: messengerModel)
                                 .opacity(selection == s ? 1 : 0)
                                 .allowsHitTesting(selection == s)
                         } else if s == .agent {
                             // 🤖 操作もネイティブ(声入力・Claude/Sente切替をiPhone側で制御)
                             // (2026-08-26 本人指示「Mac/iOSからClaude/Senteのプロセスを操作したい」)
-                            AgentOperateView(model: AgentOperateModel())
+                            AgentOperateView(model: agentModel)
                                 .opacity(selection == s ? 1 : 0)
                                 .allowsHitTesting(selection == s)
                         } else {

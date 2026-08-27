@@ -132,10 +132,14 @@ final class AgentOperateModel: ObservableObject {
                 }
                 if let text = j["text"] as? String, !text.isEmpty {
                     self.finish(index: index, status: "完了", result: text)
-                } else if let err = j["error"] {
-                    self.finish(index: index, status: "エラー", result: "\(err)")
+                } else if let err = j["error"] as? String, !err.isEmpty {
+                    // 🪤 j["error"]はRust側でValue::Null(JSON null)の時も常にキーが存在し、
+                    // JSONSerializationはそれをNSNull(≠nil)にデコードする。`if let err = j["error"]`
+                    // だけだと null でも常に真になり、テキスト無しの正常応答が「エラー」表示に
+                    // 化けてしまう(2026-08-27 fork agentレビューで発見)。String castで明示的に除外する。
+                    self.finish(index: index, status: "エラー", result: err)
                 } else {
-                    self.finish(index: index, status: "完了", result: "(応答が空でした)")
+                    self.finish(index: index, status: "完了", result: "(テキストでの応答はありませんでした。操作は実行された可能性があります)")
                 }
             }
         }.resume()

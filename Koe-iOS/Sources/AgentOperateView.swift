@@ -123,10 +123,12 @@ final class AgentOperateModel: ObservableObject {
                 }
                 if let text = j["text"] as? String, !text.isEmpty {
                     self.finish(index: index, status: "完了", result: text)
-                } else if let err = j["error"] {
-                    self.finish(index: index, status: "エラー", result: "\(err)")
+                } else if let err = j["error"] as? String, !err.isEmpty {
+                    // 🪤 j["error"]はValue::Null(JSON null)でもNSNull(≠nil)になるため、
+                    // Stringキャストで明示的に除外する(2026-08-27 fork agentレビューで発見)。
+                    self.finish(index: index, status: "エラー", result: err)
                 } else {
-                    self.finish(index: index, status: "完了", result: "(応答が空でした)")
+                    self.finish(index: index, status: "完了", result: "(テキストでの応答はありませんでした。操作は実行された可能性があります)")
                 }
             }
         }.resume()

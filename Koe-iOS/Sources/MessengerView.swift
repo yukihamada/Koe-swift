@@ -719,7 +719,11 @@ struct MessengerView: View {
                     Spacer()
                 } else {
                     List(filteredThreads) { thread in
-                        NavigationLink(value: thread) {
+                        // 🪤 NavigationLinkにMessengerThread(値型)を直接渡すと、そのスナップショットが
+                        // 詳細画面に固定され、開いている間の新着ポーリングが反映されなくなる
+                        // (2026-08-27 fork agentレビューで発見)。idだけを渡し、詳細側で毎回
+                        // groupedThreadsから最新のスレッドを引き直すことで常に最新状態を表示する。
+                        NavigationLink(value: thread.id) {
                             threadRow(thread)
                         }
                         .onAppear { model.fetchTriage(for: thread) }
@@ -729,8 +733,10 @@ struct MessengerView: View {
             }
             .navigationTitle("💬 連絡")
             .navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(for: MessengerThread.self) { thread in
-                detailView(for: thread)
+            .navigationDestination(for: String.self) { threadID in
+                if let thread = groupedThreads.first(where: { $0.id == threadID }) {
+                    detailView(for: thread)
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

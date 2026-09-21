@@ -61,6 +61,7 @@ targets:
           -framework AppKit
           -framework AVFoundation
           -framework Speech
+          -framework CoreLocation
           -framework SwiftUI
           -framework AudioToolbox
           -framework CoreAudio

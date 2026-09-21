@@ -96,6 +96,42 @@ final class VoiceRecorderViewModel: ObservableObject {
         }
     }
 
+    @Published var checkingVoiceRecordID: UUID?
+    @Published var uploadingRecordID: UUID?
+    @Published var uploadErrorRecordID: UUID?
+    @Published var uploadErrorMessage: String?
+
+    /// 🎙→📻: まず声を照合し、本人ならそのままラジオへ。違う声なら無断登録せず案内する。
+    func uploadToRadio(_ record: VoiceMemoRecord) {
+        guard checkingVoiceRecordID == nil, uploadingRecordID == nil else { return }
+        uploadErrorMessage = nil
+        checkingVoiceRecordID = record.id
+        RadioUploader.shared.checkVoice(record) { [weak self] result in
+            guard let self else { return }
+            self.checkingVoiceRecordID = nil
+            switch result {
+            case .isYuki:
+                self.uploadingRecordID = record.id
+                RadioUploader.shared.uploadToRoom(record) { [weak self] outcome in
+                    guard let self else { return }
+                    self.uploadingRecordID = nil
+                    switch outcome {
+                    case .success:
+                        VoiceMemoLibrary.shared.updateAndSaveNow(id: record.id) { $0.radioUploaded = true }
+                    case .failure(let msg):
+                        self.uploadErrorRecordID = record.id
+                        self.uploadErrorMessage = msg
+                    }
+                }
+            case .notYuki:
+                RadioUploader.shared.promptEnrollIfNeeded()
+            case .checkFailed(let msg):
+                self.uploadErrorRecordID = record.id
+                self.uploadErrorMessage = msg
+            }
+        }
+    }
+
     func performDelete() {
         guard let record = deletingRecord else { return }
         if playingRecordID == record.id { stopPlayback() }
@@ -455,7 +491,9 @@ struct VoiceMemoRowView: View {
     private var subtitle: String {
         if record.duration < 0 { return "⚠ 破損" }
         let m = Int(max(0, record.duration)) / 60, s = Int(max(0, record.duration)) % 60
-        return String(format: "%02d:%02d", m, s)
+        let time = String(format: "%02d:%02d", m, s)
+        guard let location = record.location, !location.isEmpty else { return time }
+        return "\(time) ・ \(location)"
     }
 }
 
@@ -503,9 +541,17 @@ struct VoiceMemoDetailView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.displayTitle)
                     .font(.system(size: 17, weight: .semibold))
-                Text(dateString(record.createdAt))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    Text(dateString(record.createdAt))
+                    if let location = record.location, !location.isEmpty {
+                        Text("・")
+                        Image(systemName: "location.fill")
+                            .font(.system(size: 9))
+                        Text(location)
+                    }
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
             Spacer()
             Button(action: { model.beginRename(record) }) {
@@ -691,8 +737,35 @@ struct VoiceMemoDetailView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(model.sharingRecordID == record.id || record.takibiLogID != nil || record.summary == nil)
+
+                Button {
+                    model.uploadToRadio(record)
+                } label: {
+                    HStack(spacing: 5) {
+                        if model.checkingVoiceRecordID == record.id {
+                            ProgressView().scaleEffect(0.5)
+                            Text("声を確認中…").font(.system(size: 11, weight: .medium))
+                        } else if model.uploadingRecordID == record.id {
+                            ProgressView().scaleEffect(0.5)
+                            Text("アップロード中…").font(.system(size: 11, weight: .medium))
+                        } else if record.radioUploaded {
+                            Image(systemName: "checkmark.circle.fill")
+                            Text("ラジオに追加済み").font(.system(size: 11, weight: .medium))
+                        } else {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                            Text("ラジオにあげる").font(.system(size: 11, weight: .medium))
+                        }
+                    }
+                    .foregroundColor(record.radioUploaded ? .secondary : RecLux.amber)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.checkingVoiceRecordID == record.id || model.uploadingRecordID == record.id || record.radioUploaded)
+
                 Spacer()
                 if let msg = model.shareErrorMessage, model.shareErrorRecordID == record.id {
+                    Text(msg).font(.caption).foregroundColor(RecLux.amber)
+                }
+                if let msg = model.uploadErrorMessage, model.uploadErrorRecordID == record.id {
                     Text(msg).font(.caption).foregroundColor(RecLux.amber)
                 }
             }

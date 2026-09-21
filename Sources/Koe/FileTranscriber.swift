@@ -139,9 +139,9 @@ final class FileTranscriber {
             AVFormatIDKey: Int(kAudioFormatLinearPCM),
             AVSampleRateKey: 16000,
             AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
             AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsFloatKey: false,
         ]
 
         guard let reader = try? AVAssetReader(asset: asset) else {
@@ -191,15 +191,15 @@ final class FileTranscriber {
             return nil
         }
 
-        // Int16 PCM → Float32
-        let sampleCount = allData.count / 2
+        // Float32 PCM → [Float] にそのままコピー
+        let sampleCount = allData.count / 4
         guard sampleCount > 0 else { return nil }
 
         var samples = [Float](repeating: 0, count: sampleCount)
         allData.withUnsafeBytes { raw in
-            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: Int16.self) else { return }
+            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: Float.self) else { return }
             for i in 0..<sampleCount {
-                samples[i] = Float(ptr[i]) / 32768.0
+                samples[i] = ptr[i]
             }
         }
 

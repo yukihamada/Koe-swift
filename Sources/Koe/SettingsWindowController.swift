@@ -199,8 +199,43 @@ struct GeneralTab: View {
         ("⌃Space", 49, NSEvent.ModifierFlags.control.rawValue),
     ]
 
+    @State private var koeConnected = KoeAccount.isConnected
+
     var body: some View {
         Form {
+            Section {
+                HStack(spacing: 10) {
+                    Image(systemName: koeConnected ? "checkmark.seal.fill" : "person.crop.circle.badge.questionmark")
+                        .foregroundColor(koeConnected ? Lux.gold : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(koeConnected ? "Koeアカウントに接続済み" : "Koeアカウント未接続")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("本人声読み上げ・声を送る・ラジオ投稿で共通に使う鍵です")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    if koeConnected {
+                        Button("接続解除") {
+                            KoeAccount.disconnect()
+                        }
+                        .controlSize(.small)
+                    } else {
+                        Button("Koeアカウントを接続") {
+                            KoeAccount.openConnectFlow()
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .tint(Lux.gold)
+                    }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: KoeAccount.connectionChangedNotification)) { _ in
+                    koeConnected = KoeAccount.isConnected
+                }
+            } header: {
+                Label("Koeアカウント", systemImage: "person.crop.circle")
+                    .foregroundColor(Lux.gold)
+            }
+
             Section {
                 // Language — most frequently changed
                 Picker(L10n.labelLanguage, selection: $settings.language) {
@@ -272,6 +307,18 @@ struct GeneralTab: View {
                             .font(.system(size: 10)).foregroundColor(Lux.gold)
                     }
                 }
+
+                Divider()
+
+                Toggle(isOn: $settings.voiceMemoLocationEnabled) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "location.fill")
+                            .foregroundColor(settings.voiceMemoLocationEnabled ? Lux.gold : .secondary)
+                        Text("ボイスレコーダーで場所を記録")
+                    }
+                }
+                Text("録音開始時に地名を一度だけ取得しタイトルの横に表示します(端末内保存のみ)")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
             } header: {
                 Label("プライバシー", systemImage: "lock.shield")
                     .foregroundColor(Lux.gold)
@@ -472,6 +519,11 @@ struct GeneralTab: View {
         isRecordingKey = true
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // 矢印/Home/End/PgUp/PgDn/前方Deleteは素押しでも .function|.numericPad が付く。
+            // 実修飾キー(⌘⌥⌃⇧)なしのこれらを許すと、通常のカーソル操作で録音が誤発火する。
+            let realMods = flags.subtracting([.function, .numericPad])
+            let navKeys: Set<Int> = [115, 116, 117, 119, 121, 123, 124, 125, 126]
+            if navKeys.contains(Int(event.keyCode)) && realMods.isEmpty { return nil }
             if !flags.isEmpty || event.keyCode >= 96 {
                 self.settings.shortcutKeyCode  = Int(event.keyCode)
                 self.settings.shortcutModifiers = flags.rawValue
@@ -1336,33 +1388,6 @@ struct AutomationTab: View {
     @ObservedObject private var s = AppSettings.shared
     var body: some View {
         Form {
-            Section {
-                Toggle(L10n.toggleWakeWord, isOn: $s.wakeWordEnabled)
-                if s.wakeWordEnabled {
-                    // エンジン選択
-                    #if MAC_APP_STORE
-                    Text("MFCC+DTW（内蔵・テンプレート学習）").font(.caption).foregroundColor(.secondary)
-                    WakeWordTemplateView()
-                    #else
-                    Picker("エンジン", selection: $s.wakeWordEngineType) {
-                        ForEach(WakeWordEngineType.allCases, id: \.self) { t in
-                            Text(t.displayName).tag(t)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    if s.wakeWordEngineType == .mfccDTW {
-                        WakeWordTemplateView()
-                    } else {
-                        OWWSettingsView()
-                    }
-                    #endif
-                }
-            } header: {
-                Label(L10n.sectionWakeWord, systemImage: "ear")
-                    .foregroundColor(Lux.gold)
-            }
-
             Section {
                 Toggle(L10n.toggleAgentMode, isOn: $s.agentModeEnabled)
                 Text(L10n.agentModeDesc)

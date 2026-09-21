@@ -32,6 +32,13 @@ struct VoiceMemoView: View {
                         Label("共有", systemImage: "square.and.arrow.up")
                     }
                     .tint(.green)
+
+                    Button {
+                        shareToLINE(item.text)
+                    } label: {
+                        Label("LINE", systemImage: "message.fill")
+                    }
+                    .tint(.green)
                 }
             }
         }
@@ -43,6 +50,13 @@ struct VoiceMemoView: View {
                 ContentUnavailableView.search(text: searchText)
             }
         }
+    }
+
+    // LINE の共有URLスキームでテキストを友だちに送る。LINE未インストール時は標準の共有シートにフォールバック。
+    private func shareToLINE(_ text: String) {
+        guard let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://line.me/R/share?text=\(encoded)") else { return }
+        UIApplication.shared.open(url)
     }
 
     @ViewBuilder

@@ -57,6 +57,11 @@ struct VoiceMemoRecord: Codable, Identifiable, Equatable {
     var summary: String? = nil
     var koeListenURL: String? = nil
     var takibiLogID: String? = nil
+    /// 🎙→📻 自分の声かどうかの判定結果(未実施=nil)。ラジオ(自分の部屋)へアップロード済みならtrue。
+    var radioUploaded: Bool = false
+    /// 録音開始時に一度だけ取得した地名(逆ジオコーディング済み・人が読める形。例: "渋谷区")。
+    /// 位置情報が無効/権限なし/取得失敗の場合は nil のまま(黙って諦める。録音自体は失敗させない)。
+    var location: String? = nil
 
     // 後方互換デコード(HistoryEntry と同じ方針: 将来フィールド追加でも既存 index.json を壊さない)
     init(from decoder: Decoder) throws {
@@ -75,6 +80,8 @@ struct VoiceMemoRecord: Codable, Identifiable, Equatable {
         summary = try c.decodeIfPresent(String.self, forKey: .summary)
         koeListenURL = try c.decodeIfPresent(String.self, forKey: .koeListenURL)
         takibiLogID = try c.decodeIfPresent(String.self, forKey: .takibiLogID)
+        radioUploaded = try c.decodeIfPresent(Bool.self, forKey: .radioUploaded) ?? false
+        location = try c.decodeIfPresent(String.self, forKey: .location)
     }
 
     init(fileName: String, createdAt: Date, duration: Double, title: String) {

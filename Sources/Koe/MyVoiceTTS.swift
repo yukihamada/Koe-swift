@@ -24,6 +24,13 @@ final class MyVoiceTTS: NSObject, AVAudioPlayerDelegate {
     private var currentTask: URLSessionDataTask?
     private(set) var isGenerating = false
 
+    private struct SpeechQueueItem {
+        let text: String
+        let completion: (Bool, String) -> Void
+    }
+    private var queue: [SpeechQueueItem] = []
+    private var isPlayingQueue = false
+
     /// 匿名時の文字数上限 (koe-mcp ANON_TEXT_CHARS 準拠)。超過分は切り詰める。
     private let anonTextLimit = 120
     /// 鍵あり時の文字数上限 (koe-mcp MAX_TEXT_CHARS 準拠)。
@@ -51,6 +58,27 @@ final class MyVoiceTTS: NSObject, AVAudioPlayerDelegate {
 
     /// テキストを自分の声で読み上げる。完了/失敗で completion(成功か, メッセージ)。
     func speak(_ text: String, completion: @escaping (Bool, String) -> Void) {
+        let item = SpeechQueueItem(text: text, completion: completion)
+        queue.append(item)
+        processQueue()
+    }
+
+    private func processQueue() {
+        guard !isPlayingQueue else { return }
+        guard let item = queue.first else { return }
+
+        isPlayingQueue = true
+        performSpeak(item.text) { [weak self] success, message in
+            DispatchQueue.main.async {
+                item.completion(success, message)
+                self?.queue.removeFirst()
+                self?.isPlayingQueue = false
+                self?.processQueue() // 次のアイテムを処理
+            }
+        }
+    }
+
+    private func performSpeak(_ text: String, completion: @escaping (Bool, String) -> Void) {
         var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { completion(false, "テキストが空です"); return }
         guard !isGenerating else { completion(false, "生成中です"); return }
@@ -200,18 +228,28 @@ final class MyVoiceTTS: NSObject, AVAudioPlayerDelegate {
     }
 
     private func play(url: URL, completion: @escaping (Bool, String) -> Void) {
+        stop() // Stop any current playback
         do {
-            let p = try AVAudioPlayer(contentsOf: url)
-            p.delegate = self
-            player = p
-            p.play()
-            completion(true, "")
+            player = try AVAudioPlayer(contentsOf: url)
+            player?.delegate = self
+            player?.play()
+            // Completion will be called in audioPlayerDidFinishPlaying
         } catch {
-            completion(false, "再生に失敗しました")
+            klog("MyVoiceTTS: player init failed — \(error.localizedDescription)")
+            completion(false, "音声再生に失敗しました")
         }
     }
 
+    // MARK: - AVAudioPlayerDelegate
+
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         self.player = nil
+        // Signal that the current item has finished playing, allowing the queue to proceed.
+        DispatchQueue.main.async {
+            self.isPlayingQueue = false
+            // The completion for the original speak request is handled in processQueue
+            // This just signals that a playback has finished.
+            self.processQueue()
+        }
     }
 }

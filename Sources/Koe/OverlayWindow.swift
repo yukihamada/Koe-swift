@@ -329,12 +329,14 @@ struct OverlayView: View {
                 .padding(.leading, 24)
             }
         } else {
-            // Recognizing: show "認識中" label — streaming text appears in streamingRow below
-            HStack(spacing: 6) {
+            // Recognizing: gold のラベル + 呼吸するドットで「考え中」を表現。
+            // streaming text は下の streamingRow に表示される。
+            HStack(spacing: 7) {
                 Text("認識中")
-                    .font(.system(size: 11, weight: .light, design: .rounded))
-                    .foregroundColor(.white.opacity(0.45))
-                    .tracking(1.2)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundColor(gold.opacity(0.85))
+                    .tracking(1.4)
+                ThinkingDotsView(color: gold)
                 Spacer()
             }
         }
@@ -436,22 +438,55 @@ struct MicPulseView: View {
 struct SpinnerArcView: View {
     let color: Color
     @State private var rotation: Double = 0
+    @State private var breathe = false
 
     var body: some View {
         ZStack {
+            // 呼吸するソフトグロー: 「考えている」感を出す背景の光
+            Circle()
+                .fill(color.opacity(0.22))
+                .blur(radius: 5)
+                .scaleEffect(breathe ? 1.25 : 0.8)
+                .opacity(breathe ? 0.9 : 0.35)
+                .animation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true), value: breathe)
+
             Circle()
                 .stroke(color.opacity(0.12), lineWidth: 2)
 
             Circle()
-                .trim(from: 0, to: 0.28)
+                .trim(from: 0, to: 0.26)
                 .stroke(
                     AngularGradient(colors: [color, color.opacity(0)], center: .center),
-                    style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                    style: StrokeStyle(lineWidth: 2.2, lineCap: .round)
                 )
                 .rotationEffect(.degrees(rotation))
-                .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: rotation)
+                .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: rotation)
         }
-        .onAppear { rotation = 360 }
+        .onAppear {
+            breathe = true
+            rotation = 360
+        }
+    }
+}
+
+// MARK: - Thinking dots (recognizing label suffix)
+
+/// 「認識中」の隣で3つの点が順に点滅する、考え中を表す小さなドットアニメーション。
+struct ThinkingDotsView: View {
+    let color: Color
+    @State private var active = 0
+    private let timer = Timer.publish(every: 0.35, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle()
+                    .fill(color)
+                    .frame(width: 3.5, height: 3.5)
+                    .opacity(active == i ? 0.95 : 0.22)
+            }
+        }
+        .onReceive(timer) { _ in active = (active + 1) % 3 }
     }
 }
 

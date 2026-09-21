@@ -6,7 +6,6 @@ import AVFoundation
 final class M5SpeakClient: NSObject {
     static let shared = M5SpeakClient()
 
-    private static let keychainKey = "m5SpeakKey"
     private var player: AVAudioPlayer?
     private var speechSynth: NSSpeechSynthesizer?
 
@@ -111,22 +110,12 @@ final class M5SpeakClient: NSObject {
         synth.startSpeaking(text)
     }
 
-    // MARK: - API キー(Keychain・初回はペースト。VoiceMessageWindow と同じ導線)
+    // MARK: - API キー(KoeAccount 共通・全機能で1回の接続を共有)
 
     private func resolveApiKey() -> String? {
-        if let k = KeychainHelper.get(Self.keychainKey), !k.isEmpty { return k }
-        let alert = NSAlert()
-        alert.messageText = "本人声読み上げの API キーが未設定です"
-        alert.informativeText = "mcp.koe.live/login でメール認証すると koe_… キーが発行されます。ここに貼り付けてください（Keychain に保存されます）。"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "koe_…"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "キャンセル")
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        let key = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return nil }
-        KeychainHelper.set(key, for: Self.keychainKey)
-        return key
+        KoeAccount.resolveWithPasteFallback(
+            promptTitle: "本人声読み上げの API キーが未設定です",
+            promptBody: "「ブラウザで接続」を押すとログインリンクが届き、開くだけで自動的に接続されます。"
+        )
     }
 }

@@ -5,8 +5,8 @@ import AppKit
 /// バックエンドは Koe MCP (mcp.koe.live) の `send_voice` ツール:
 ///   テキスト → ElevenLabs クローン声 MP3 → /v/:file 試聴ページ →
 ///   書き起こし付き HTML メールを宛先へ送信（Resend）。
-/// API キーは Keychain (`voiceSendKey`) に保存。未設定なら初回にペースト用
-/// ダイアログを出す（mcp.koe.live/login で誰でも自分の鍵を発行できる）。
+/// API キーは KoeAccount 経由で Keychain に保存(他の Koe 機能と共有)。未接続なら
+/// ブラウザで mcp.koe.live/login を開き、ログインリンクから koe://connect で自動接続する。
 final class VoiceMessageWindow: NSObject, NSWindowDelegate {
     static let shared = VoiceMessageWindow()
 
@@ -17,7 +17,6 @@ final class VoiceMessageWindow: NSObject, NSWindowDelegate {
     private var sendButton: NSButton!
 
     private static let endpoint = URL(string: "https://mcp.koe.live/mcp")!
-    private static let keychainKey = "voiceSendKey"
     private static let lastRecipientKey = "voiceMsgLastRecipient"
     private static let maxChars = 500
 
@@ -148,23 +147,13 @@ final class VoiceMessageWindow: NSObject, NSWindowDelegate {
         }
     }
 
-    // MARK: - API キー（Keychain・初回はペースト）
+    // MARK: - API キー(KoeAccount 共通・全機能で1回の接続を共有)
 
     private func resolveApiKey() -> String? {
-        if let k = KeychainHelper.get(Self.keychainKey), !k.isEmpty { return k }
-        let alert = NSAlert()
-        alert.messageText = "Koe API キーが未設定です"
-        alert.informativeText = "mcp.koe.live/login でメール認証すると koe_… キーが発行されます。ここに貼り付けてください（Keychain に保存されます）。"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "koe_…"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "キャンセル")
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        let key = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else { return nil }
-        KeychainHelper.set(key, for: Self.keychainKey)
-        return key
+        KoeAccount.resolveWithPasteFallback(
+            promptTitle: "Koe API キーが未設定です",
+            promptBody: "「ブラウザで接続」を押すとログインリンクが届き、開くだけで自動的に接続されます。"
+        )
     }
 
     // MARK: - MCP 呼び出し

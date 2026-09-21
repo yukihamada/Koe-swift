@@ -70,9 +70,22 @@ final class VoiceMemoRecorder: NSObject, AVAudioRecorderDelegate {
         var stored = record
         stored.id = id
         VoiceMemoLibrary.shared.add(stored)
+        tagLocation(id: id)
 
         klog("VoiceMemoRecorder: started -> \(fileName)")
         return id
+    }
+
+    /// 開始直後に一度だけ地名を取得してエントリへ書き戻す(非同期・録音自体はブロックしない)。
+    private func tagLocation(id: UUID) {
+        LocationTagger.shared.tagCurrentLocation { name in
+            guard let name, !name.isEmpty else { return }
+            DispatchQueue.main.async {
+                // 録音が既に破棄/停止後にファイル差し替えされた可能性もあるが、
+                // record(id:) が nil ならupdateは何もしないので安全。
+                VoiceMemoLibrary.shared.update(id: id) { $0.location = name }
+            }
+        }
     }
 
     func pause() {

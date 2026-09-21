@@ -38,6 +38,9 @@ final class SolunaManager: ObservableObject {
     private var receiver: SolunaAudioReceiver?
     private var statusTimer: Timer?
     private var listenTimer: Timer?
+    /// 呼吸ガイドの差し込み（ラジオ再生中に時々・音量を下げて重ねる）
+    private var breathTimer: Timer?
+    private var breathPlayer: AVAudioPlayer?
     private var micEngine: AVAudioEngine?
     @Published var micLevel: Float = 0
 
@@ -62,6 +65,7 @@ final class SolunaManager: ObservableObject {
         ChannelDef(id: "lofi",   name: "Lo-Fi",   emoji: "📻", colorHex: "#805AD5"),
         ChannelDef(id: "dance",  name: "Dance",   emoji: "💃", colorHex: "#D53F8C"),
         ChannelDef(id: "yuki",   name: "Yuki",    emoji: "❄️",  colorHex: "#63B3ED"),
+        ChannelDef(id: "breath", name: "声リリース", emoji: "🌬️", colorHex: "#48BB78"),
     ]
 
     private init() {
@@ -118,7 +122,55 @@ final class SolunaManager: ObservableObject {
         }
 
         startListenTimer()
+        scheduleBreathGuide()
         NSLog("[Soluna] Started with C++ bridge, channel=%@", channel)
+    }
+
+    // MARK: - Breath Guide (時々差し込む)
+
+    /// 10〜14分ごとにランダムで呼吸ガイドを差し込む。
+    /// ラジオ音量を一時的に30%まで下げ、ガイド(約2分)を重ねて再生し、終わったら音量を戻す。
+    /// 「聴き流していると、時々呼吸の時間がやってくる」体験。呼吸法を習慣に組み込む狙い。
+    private func scheduleBreathGuide() {
+        breathTimer?.invalidate()
+        // デバッグビルドは45〜60秒で検証しやすく、リリースは10〜14分
+        #if DEBUG
+        let delay = TimeInterval(Int.random(in: 45...60))
+        #else
+        let delay = TimeInterval(Int.random(in: 600...840))
+        #endif
+        breathTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.playBreathGuide()
+            }
+        }
+    }
+
+    private func playBreathGuide() {
+        guard isActive else { return }
+        guard let url = Bundle.main.url(forResource: "breath_guide", withExtension: "m4a") else {
+            scheduleBreathGuide()
+            return
+        }
+        do {
+            let p = try AVAudioPlayer(contentsOf: url)
+            breathPlayer = p
+            receiver?.volume = 0.3
+            p.play()
+            NSLog("[Soluna] Breath guide inserted")
+            // ガイド終了後に音量を戻し、次回をスケジュール
+            Timer.scheduledTimer(withTimeInterval: p.duration + 0.5, repeats: false) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.receiver?.volume = 1.0
+                    self.breathPlayer = nil
+                    self.scheduleBreathGuide()
+                }
+            }
+        } catch {
+            NSLog("[Soluna] Breath guide error: %@", error.localizedDescription)
+            scheduleBreathGuide()
+        }
     }
 
     func stop() {
@@ -129,6 +181,10 @@ final class SolunaManager: ObservableObject {
         statusTimer?.invalidate()
         statusTimer = nil
         stopListenTimer()
+        breathTimer?.invalidate()
+        breathTimer = nil
+        breathPlayer?.stop()
+        breathPlayer = nil
 
         receiver?.stop()
         receiver = nil

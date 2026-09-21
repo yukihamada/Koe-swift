@@ -7,6 +7,8 @@ class AppState: ObservableObject {
     @Published var selectedTab: Int = 0
     /// 📞 CallKitで応答が押された瞬間にroom_idが立つ。非nilの間、着信通話のWebViewを全画面表示する。
     @Published var incomingCallRoomID: String? = nil
+    /// チュートリアル等から「つながる」タブで最初に表示したいセクション（一度消費されたらクリア）
+    @Published var pendingConnectSection: ConnectSection? = nil
 }
 
 @main

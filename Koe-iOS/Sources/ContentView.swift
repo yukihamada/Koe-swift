@@ -351,6 +351,13 @@ struct ContentView: View {
         }
     }
 
+    /// LINEの共有URLスキームで書き起こしを友だちに送る（LINEアプリが開いて送信先を選ぶ）。
+    private func shareTextToLINE(_ text: String) {
+        guard let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://line.me/R/share?text=\(encoded)") else { return }
+        UIApplication.shared.open(url)
+    }
+
     // ハンズフリー時、自動停止が無効なら無音1.5秒で止まるようにする
     private func ensureSilenceAutoStop() {
         let cur = UserDefaults.koeShared.object(forKey: "koe_silence_duration") as? Double ?? 0
@@ -429,7 +436,7 @@ struct ContentView: View {
     // MARK: - Idle Hero (shown on the home screen when there's no result)
 
     private var idleHero: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 14) {
             Text("Koe")
                 .font(.system(size: 44, weight: .bold, design: .rounded))
                 .foregroundStyle(
@@ -439,9 +446,57 @@ struct ContentView: View {
             Text("話すだけで、文字になる。")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+
+            // 初回チュートリアル: 話す→文字→自分の声で聴く→翻訳して喋る→送る、を一気に体験
+            VStack(spacing: 10) {
+                stepRow(num: 1, title: "話す → 文字になる", desc: "下のボタンをタップして、そのまま話すだけ")
+                stepRow(num: 2, title: "自分の声で聴く", desc: "「声で聴く」で、あなたの声にエンハンスされて再生")
+                stepRow(num: 3, title: "違う言葉も喋れる", desc: "「声で聴く」を長押し → English/中文…を選ぶと翻訳してあなたの声で喋る")
+                stepRow(num: 4, title: "友だちに送れる", desc: "結果のLINEボタンでそのまま送信")
+
+                // 5. ラジオへ誘導 — 「自分の声」体験のあと、そのまま声の流れる場所へ
+                Button {
+                    AppState.shared.pendingConnectSection = .live
+                    appState.selectedTab = 4
+                } label: {
+                    HStack(spacing: 12) {
+                        Text("5")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 22, height: 22)
+                            .background(Color.green, in: Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("ラジオを聴いてみる").font(.subheadline.weight(.semibold))
+                            Text("世界中の声が流れてる。聴くだけでもOK").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .foregroundStyle(.green)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .padding(.top, 4)
         }
         .padding(.top, 8)
         .transition(.opacity)
+    }
+
+    private func stepRow(num: Int, title: String, desc: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(num)")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 22, height: 22)
+                .background(Color.orange, in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.semibold))
+                Text(desc).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
     }
 
     // MARK: - Result Card
@@ -608,6 +663,15 @@ struct ContentView: View {
                     Image(systemName: "square.and.arrow.up")
                         .font(.system(size: 18))
                         .foregroundStyle(.secondary)
+                }
+
+                // LINE: 書き起こしを友だちにそのまま送る
+                Button {
+                    shareTextToLINE(recorder.recognizedText)
+                } label: {
+                    Image(systemName: "message.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.green)
                 }
             }
             .padding(.horizontal, 16)
@@ -1106,6 +1170,15 @@ struct RecordButton: View {
         }
         .buttonStyle(.plain)
         .sensoryFeedback(.impact, trigger: isRecording)
+        .overlay(alignment: .top) {
+            // 初回ユーザーが迷わないよう、待機中だけ「タップして話す」を常時表示
+            if !isRecording {
+                Text("タップして話す")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .offset(y: -18)
+            }
+        }
         .onAppear {
             withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
                 breathe = true

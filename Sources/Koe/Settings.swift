@@ -271,6 +271,8 @@ class AppSettings: ObservableObject {
     @Published var rerecognizeHotkeyEnabled: Bool { didSet { ud.set(rerecognizeHotkeyEnabled, forKey: "rerecognizeHotkeyEnabled") } }
     /// 🎙 ボイスレコーダーはVoiceMemos置き換えの主機能のため、他の副次ホットキーと違いデフォルトON。
     @Published var voiceRecorderHotkeyEnabled: Bool { didSet { ud.set(voiceRecorderHotkeyEnabled, forKey: "voiceRecorderHotkeyEnabled") } }
+    /// 録音開始時に地名を1回だけ取得しタイトル欄の下に表示する(VoiceMemos.appと同等の挙動)。OS側の許可ダイアログが実質のゲート。
+    @Published var voiceMemoLocationEnabled: Bool { didSet { ud.set(voiceMemoLocationEnabled, forKey: "voiceMemoLocationEnabled") } }
 
     // Recognition
     @Published var language: String          { didSet { ud.set(language,               forKey: "language"); AppDelegate.shared?.reloadSpeechEngine() } }
@@ -630,6 +632,7 @@ class AppSettings: ObservableObject {
         meetingHotkeyEnabled     = ud.object(forKey: "meetingHotkeyEnabled") as? Bool ?? false
         rerecognizeHotkeyEnabled = ud.object(forKey: "rerecognizeHotkeyEnabled") as? Bool ?? false
         voiceRecorderHotkeyEnabled = ud.object(forKey: "voiceRecorderHotkeyEnabled") as? Bool ?? true
+        voiceMemoLocationEnabled = ud.object(forKey: "voiceMemoLocationEnabled") as? Bool ?? true
 
         language          = savedLang
         menuBarLanguageCodes = (ud.data(forKey: "menuBarLanguageCodes").flatMap { try? JSONDecoder().decode([String].self, from: $0) })
@@ -659,7 +662,7 @@ class AppSettings: ObservableObject {
         llmMemorySaveMode = ud.object(forKey: "llmMemorySaveMode") as? Bool ?? false  // デフォルトOFF（常時読み込み）
         superModeEnabled = ud.object(forKey: "superModeEnabled") as? Bool ?? false  // デフォルトOFF
         agentModeEnabled = ud.object(forKey: "agentModeEnabled") as? Bool ?? false  // デフォルトOFF
-        voiceControlEnabled = ud.object(forKey: "voiceControlEnabled") as? Bool ?? false  // デフォルトOFF
+        voiceControlEnabled = false  // 廃止（認識されないことが多いため 2026-08 削除）
         iphoneBridgeLLM = ud.object(forKey: "iphoneBridgeLLM") as? Bool ?? true  // デフォルトON
         iphoneBridgeAutoEnter = ud.object(forKey: "iphoneBridgeAutoEnter") as? Bool ?? false  // デフォルトOFF
         streamingPreviewEnabled = ud.object(forKey: "streamingPreviewEnabled") as? Bool ?? false  // デフォルトOFF: Apple Speechでリアルタイム入力
@@ -682,7 +685,7 @@ class AppSettings: ObservableObject {
         meetingLiveWindow = ud.object(forKey: "meetingLiveWindow") as? Bool ?? true  // デフォルトON
         cmdIMESwitchEnabled = ud.object(forKey: "cmdIMESwitchEnabled") as? Bool ?? true  // デフォルトON
         menuBarIconVisible = ud.object(forKey: "menuBarIconVisible") as? Bool ?? true  // デフォルトON
-        wakeWordEnabled = ud.bool(forKey: "wakeWordEnabled")
+        wakeWordEnabled = false  // 廃止（認識されないことが多いため 2026-08 削除）
         wakeWords = (ud.data(forKey: "wakeWords").flatMap { try? JSONDecoder().decode([String].self, from: $0) }) ?? ["ヘイエリオ", "ヘイこえ"]
         wakeWordEngineType = WakeWordEngineType(rawValue: ud.string(forKey: "wakeWordEngineType") ?? "") ?? .mfccDTW
         owwModelName       = ud.string(forKey: "owwModelName") ?? "hey_jarvis"

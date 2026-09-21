@@ -36,29 +36,55 @@ class SpeechEngine {
         }()
         switch engine {
         case .whisperCpp:
-            recognizeWhisperCpp(url: url, prompt: prompt, languageOverride: languageOverride, onDone: onDone)
+            recognizeWithRetryAndFallback(url: url, languageOverride: languageOverride, fallbackToApple: true, onDone: onDone) { attemptDone in
+                self.recognizeWhisperCpp(url: url, prompt: prompt, languageOverride: languageOverride, onDone: attemptDone)
+            }
         case .appleCloud, .appleOnDevice:
-            recognizeApple(url: url, languageOverride: languageOverride, onDone: onDone)
+            // すでに Apple Speech なのでフォールバック先はない。失敗時は1回だけ再試行する。
+            recognizeWithRetryAndFallback(url: url, languageOverride: languageOverride, fallbackToApple: false, onDone: onDone) { attemptDone in
+                self.recognizeApple(url: url, languageOverride: languageOverride, onDone: attemptDone)
+            }
         case .whisper:
-            recognizeWhisper(url: url, prompt: prompt, languageOverride: languageOverride,
-                             baseURL: "https://api.openai.com",
-                             apiKey: AppSettings.shared.whisperAPIKey,
-                             model: "whisper-1", onDone: onDone)
+            recognizeWithRetryAndFallback(url: url, languageOverride: languageOverride, fallbackToApple: true, onDone: onDone) { attemptDone in
+                self.recognizeWhisper(url: url, prompt: prompt, languageOverride: languageOverride,
+                                 baseURL: "https://api.openai.com",
+                                 apiKey: AppSettings.shared.whisperAPIKey,
+                                 model: "whisper-1", onDone: attemptDone)
+            }
         case .nouWhisper:
             // NOU ローカルサーバーの mlx_whisper エンドポイントを使用。
             // X-NOU-Whisper-Mode ヘッダーでルーティングモードを渡す。
-            // 利用不可なら Apple オンデバイスにフォールバック。
             let nouPort = AppSettings.shared.nouPort > 0 ? AppSettings.shared.nouPort : 4001
             let nouBase = "http://127.0.0.1:\(nouPort)"
             let routingMode = AppSettings.shared.nouWhisperRoutingMode
-            recognizeNOU(url: url, prompt: prompt, languageOverride: languageOverride,
-                         baseURL: nouBase, routingMode: routingMode) { text in
-                if text.isEmpty {
-                    klog("NOU Whisper failed, falling back to Apple STT")
-                    self.recognizeApple(url: url, languageOverride: languageOverride, onDone: onDone)
-                } else {
-                    onDone(text)
-                }
+            recognizeWithRetryAndFallback(url: url, languageOverride: languageOverride, fallbackToApple: true, onDone: onDone) { attemptDone in
+                self.recognizeNOU(url: url, prompt: prompt, languageOverride: languageOverride,
+                             baseURL: nouBase, routingMode: routingMode, onDone: attemptDone)
+            }
+        }
+    }
+
+    /// 「認識はできたのに貼り付けされない」対策の最終防波堤。
+    /// 空結果(失敗)なら1回だけ同じエンジンで再試行し、それでも空なら(指定時)Apple オンデバイスへフォールバックする。
+    /// Apple自体が対象の場合はこれ以上のフォールバック先が無いため、再試行のみで諦める。
+    private func recognizeWithRetryAndFallback(
+        url: URL, languageOverride: String, fallbackToApple: Bool, attempt: Int = 1,
+        onDone: @escaping (String) -> Void,
+        _ attemptRecognize: @escaping (@escaping (String) -> Void) -> Void
+    ) {
+        attemptRecognize { text in
+            if !text.isEmpty {
+                onDone(text)
+            } else if attempt < 2 {
+                klog("recognize: attempt \(attempt) empty, retrying once")
+                self.recognizeWithRetryAndFallback(url: url, languageOverride: languageOverride,
+                                                    fallbackToApple: fallbackToApple, attempt: attempt + 1,
+                                                    onDone: onDone, attemptRecognize)
+            } else if fallbackToApple {
+                klog("recognize: retry exhausted, falling back to Apple on-device speech")
+                self.recognizeApple(url: url, languageOverride: languageOverride, onDone: onDone)
+            } else {
+                onDone("")
             }
         }
     }

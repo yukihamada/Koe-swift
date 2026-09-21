@@ -49,6 +49,7 @@ final class SolunaSDKPlayer: ObservableObject {
         ChannelDef(id: "lofi",   name: "Lo-Fi",   emoji: "\u{1F4FB}", colorHex: "#805AD5"),
         ChannelDef(id: "dance",  name: "Dance",   emoji: "\u{1F483}", colorHex: "#D53F8C"),
         ChannelDef(id: "yuki",   name: "Yuki",    emoji: "\u{2744}\u{FE0F}",  colorHex: "#63B3ED"),
+        ChannelDef(id: "breath", name: "声リリース", emoji: "\u{1F32C}\u{FE0F}", colorHex: "#48BB78"),
     ]
 
     static let sdkVersion = "2.0.0"

@@ -133,23 +133,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wireRecorderCallbacks() {
-        // 2026-09-26 round-4: AVFoundation の delegate コールバックは worker
-        // thread から同期的に来ることがあり、main thread 上の通常停止経路
-        // (stopAndRecognize/cancelRecording) と生で競合すると二重 ended の
-        // 原因になる。main へ hop してから触ることで、AppDelegate 状態は
-        // 常にメインスレッド上でだけ変化する — 「exactly once」は
-        // DictationSession の sessionID 突き合わせが保証する。
+        // 録音中でない時点 (init / recorder 差し替え時) の既定バインド。
+        // 実際のセッションが始まったら startRecording() が sessionID 付きで
+        // 再バインドする — 詳細は bindUnexpectedStopHandler() のコメント参照。
+        bindUnexpectedStopHandler(forSessionID: dictationSession.currentSessionID)
+    }
+
+    /// `recorder.onUnexpectedStop` を「このクロージャは本来どのセッションに
+    /// ついてのものか」を値として捕まえた状態で (再) バインドする。
+    /// `wireRecorderCallbacks()` (recorder 差し替え時) と `startRecording()`
+    /// (新しいセッション開始時) の両方から呼ぶ。
+    ///
+    /// **2026-09-26 round-5 review**: 以前は `sessionID` を一切持たず、
+    /// main への hop 中に別のセッションが始まっていても
+    /// `handleRecorderUnexpectedStop()` は「今 isRecording かどうか」しか
+    /// 見ていなかった — Aの遅延した想定外停止イベントが、A→B の切り替え
+    /// (main hop の間に発生) の後に main で実際に処理されると、
+    /// `isRecording` は (Bが録音中なので) true のままで通過してしまい、
+    /// Bの isRecording/UI/ended 通知を誤って握り潰していた
+    /// (Bのバックエンド自体は AudioRecorder 側の identity ガード
+    /// (round-3) で守られているので止まらないが、AppDelegate 側の状態と
+    /// 通知が壊れる)。ここでクロージャ生成時点の `sessionID` を値として
+    /// 捕まえておけば、後で `recorder.onUnexpectedStop` が新しいセッション用
+    /// に再バインドされても、既に作られた (未実行の) 古いクロージャの
+    /// 中身は変わらない — 実行時に `handleRecorderUnexpectedStop(sessionID:)`
+    /// が現在のセッションと突き合わせて古ければ無視できる。
+    private func bindUnexpectedStopHandler(forSessionID sessionID: Int?) {
         recorder.onUnexpectedStop = { [weak self] in
-            DispatchQueue.main.async { self?.handleRecorderUnexpectedStop() }
+            // 2026-09-26 round-4: AVFoundation の delegate コールバックは
+            // worker thread から同期的に来ることがあり、main thread 上の
+            // 通常停止経路と生で競合すると二重 ended の原因になる。main へ
+            // hop してから触ることで、AppDelegate 状態は常にメインスレッド
+            // 上でだけ変化する。
+            DispatchQueue.main.async { self?.handleRecorderUnexpectedStop(sessionID: sessionID) }
         }
     }
 
     /// エンコードエラー等、`stopAndRecognize()`/`cancelRecording()` を経由しない
     /// 想定外の録音停止を AudioRecorder から受け取る。正規の停止経路を通らないため
     /// ここで確実に isRecording をリセットし、.ended を一度だけ送る。
-    /// 必ずメインスレッドから呼ぶこと (`wireRecorderCallbacks()` が保証する)。
-    func handleRecorderUnexpectedStop() {
-        guard isRecording else { return }
+    /// 必ずメインスレッドから呼ぶこと (`bindUnexpectedStopHandler()` が保証する)。
+    ///
+    /// `sessionID`: `bindUnexpectedStopHandler(forSessionID:)` がクロージャ
+    /// 生成時に捕まえた「本来このイベントがどのセッションについてのものか」。
+    /// 今アクティブなセッションと一致しなければ、状態リセット・UI操作・
+    /// 通知のどれも一切行わず無視する (2026-09-26 round-5)。
+    func handleRecorderUnexpectedStop(sessionID: Int?) {
+        guard isRecording, let sessionID, sessionID == dictationSession.currentSessionID else {
+            klog("handleRecorderUnexpectedStop: ignoring stale event for a session that is no longer current")
+            return
+        }
         klog("handleRecorderUnexpectedStop: resetting recording state")
         unregisterRecordingHotKeys()
         levelTimer?.invalidate(); levelTimer = nil
@@ -1339,7 +1372,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         isRecording    = true
         // dictationSession が「今 idle か」の唯一の判定役 — 二重 began の
         // 最終防衛 (通常は上の再入防止ガードで既に弾かれている)。
-        if dictationSession.begin() != nil {
+        if let sessionID = dictationSession.begin() {
+            // このセッション専用の sessionID を捕まえた状態で
+            // onUnexpectedStop を再バインドする (2026-09-26 round-5) —
+            // 詳細は bindUnexpectedStopHandler() のコメント参照。
+            bindUnexpectedStopHandler(forSessionID: sessionID)
             notifyDictationBegan()
         }
         lastStreamingResult = nil

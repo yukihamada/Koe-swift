@@ -527,6 +527,53 @@ func testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce() {
           "ended is posted exactly once even when two stop sources race for the same session (got \(endedCount) in \(log.events))")
 }
 
+func testRecordingLifecycleStaleUnexpectedStopAfterSessionTransitionIsIgnored() {
+    print("\n--- Recording lifecycle: A's late unexpected-stop (via the real main-hop) after A→B does not touch B ---")
+    // 2026-09-26 round-5 review: onUnexpectedStop hops to main WITHOUT
+    // carrying the originating sessionID; endDictationSession(reason:)
+    // re-read currentSessionID, so a late A callback delivered after A
+    // ended and B started would incorrectly reset AppDelegate's
+    // isRecording/UI state and post `ended` for B — even though B's actual
+    // backend was never touched (protected separately by AudioRecorder's
+    // own identity guard). Fixed by capturing the sessionID into the
+    // onUnexpectedStop closure at the moment each session begins
+    // (bindUnexpectedStopHandler), so a stale closure created for A stays
+    // stale even after `recorder.onUnexpectedStop` is rebound for B.
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    let rec = LoggingAudioRecorder(log: log)
+    ad.recorder = rec
+
+    // Session A starts — captures A's sessionID into rec.onUnexpectedStop.
+    ad.startRecording()
+    // Simulates: A's AVAudioRecorderDelegate/watchdog callback has already
+    // decided to fire onUnexpectedStop (this exact closure instance, with
+    // A's sessionID baked in) — captured now, before anything rebinds it.
+    let staleAUnexpectedStop = rec.onUnexpectedStop
+
+    // Session A ends normally, well before A's captured stale callback
+    // (above) actually gets delivered/processed.
+    ad.stopAndRecognize()
+
+    // Session B starts — rebinds rec.onUnexpectedStop with B's sessionID.
+    ad.startRecording()
+    let sessionIDAfterBStarted = ad.dictationSession.currentSessionID
+    let eventsBeforeStaleDelivery = log.events
+
+    // Deliver A's late unexpected-stop NOW, via the exact real main-hop
+    // path production code uses (the captured closure does
+    // `DispatchQueue.main.async { ... }` internally) — draining the main
+    // queue lets it actually run.
+    staleAUnexpectedStop?()
+    drainMainQueue(0.5)
+
+    check(ad.dictationSession.currentSessionID == sessionIDAfterBStarted,
+          "B's session is completely untouched by A's stale unexpected-stop (still \(String(describing: sessionIDAfterBStarted)))")
+    check(log.events == eventsBeforeStaleDelivery,
+          "A's stale unexpected-stop produces no new events at all — no extra ended, B's backend untouched (got \(log.events), expected unchanged from \(eventsBeforeStaleDelivery))")
+}
+
 // ══════════════════════════════════════
 // AudioRecorder — handleUnexpectedStop ordering, encode error, watchdog
 //
@@ -807,6 +854,7 @@ func runAllTests() {
     testRecordingLifecycleUnexpectedStop()
     testRecordingLifecycleTermination()
     testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce()
+    testRecordingLifecycleStaleUnexpectedStopAfterSessionTransitionIsIgnored()
     testAudioRecorderHandleUnexpectedStopOrdering()
     testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped()
     testAudioRecorderHandleUnexpectedStopIgnoresStaleSession()

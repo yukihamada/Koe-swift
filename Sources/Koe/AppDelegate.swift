@@ -532,13 +532,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 音声操作を再開できるようここで .ended を送る。ただし送るのは
         // recorder.shutdown() でマイクを実際に手放した後 — 停止前に送ると
         // Second がまだ Koe が握っているマイクを奪いに行ってしまう。
-        let wasRecording = isRecording
+        //
+        // round-11-final review: 以前は `wasRecording = isRecording` という
+        // AppDelegate 側だけの別プロパティで判定していた。しかし
+        // `stopAndRecognize()`/`cancelRecording()` は `recorder.stop()`/
+        // `cancel()` を呼ぶ**前**に `isRecording = false` をセットする —
+        // その停止試行が backend に拒否された場合 (round-11 の
+        // `stopActive` が `.stillRecording` を返すケース)、`isRecording` は
+        // 既に false になっているのに `dictationSession` はまだ
+        // `.recording(sessionID)` のまま (began を送ったセッションがまだ
+        // ended とペアになっていない) という状態が起こり得る。この
+        // ウィンドウ中にアプリが終了すると、`wasRecording` は既に false を
+        // 読んでしまい、force shutdown で実際にはマイクを解放しているのに
+        // ended が永久に送られなかった。
+        //
+        // 判定は `endDictationSession(reason:)` が内部で見ている
+        // `dictationSession` の状態 (`.recording` かどうか) だけに一本化する
+        // — began を送った (recording に遷移した) セッションだけが
+        // `end(sessionID:)` に成功して ended を送る。まだ `.starting` の
+        // (began すら送っていない) セッションや既に `.idle` の場合は
+        // no-op のまま。
         isRecording = false
         // 録音中の終了でもデータを失わない: cancel() はファイルを削除するため使わない。
         // shutdown() は録音を止めてファイルを残し (次回起動の CrashRecovery が回収)、
         // システムデフォルト入力デバイスも復元する
         recorder.shutdown()
-        if wasRecording { endDictationSession(reason: "termination") }
+        endDictationSession(reason: "termination")
     }
 
     // MARK: - Status Bar
@@ -1484,16 +1503,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // begin しても、このスナップショットで正しいファイルだけを後で削除できる）
         recognitionPartialID = PartialTranscriptStore.shared.currentSessionID
 
-        let audioURL = recorder.stop()
-        guard let audioURL else {
-            // round-11 review: recorder.stop() が nil を返すのは「バックエンドが
-            // 停止要求を無視してまだ録音中」の場合を含む (AudioRecorder.stopActive
-            // 参照) — この時点で .ended を送ると、Second がまだ Koe が握っている
+        let outcome = recorder.stop()
+        guard outcome.stopped else {
+            // round-11 review: `stopped == false` は「バックエンドが停止要求を
+            // 無視してまだ録音中」の場合 (AudioRecorder.stopActive 参照) —
+            // この時点で .ended を送ると、Second がまだ Koe が握っている
             // マイクを奪いに行ってしまう。AudioRecorder 内部で一度だけ再試行が
             // スケジュールされ、それでも止まらなければ既存の watchdog が実際の
             // 停止を検出した時点で handleRecorderUnexpectedStop 経由の通常の
             // 「想定外停止」経路として .ended を送る — ここでは送らない。
-            klog("stopAndRecognize: recorder.stop() returned nil — not posting ended (backend may still be recording; watchdog will finish it)")
+            klog("stopAndRecognize: recorder.stop() reports the backend is still recording — not posting ended (watchdog will finish it)")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
             overlay?.hide()
             if AppSettings.shared.wakeWordEnabled {
@@ -1501,11 +1520,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
-        // マイクは recorder.stop() が非nilを返した時点で確実に解放されている
-        // (AudioRecorder.stopActive が isRecording == false を確認済み)。
-        // .ended はここで初めて送る — 録音停止より前に送ると、Second がまだ Koe が
-        // 握っているマイクを奪いに行ってしまう。
+        // マイクは backend の停止が確認できた時点 (`outcome.stopped == true`)
+        // で確実に解放されている。.ended はここで送る — 録音停止より前に
+        // 送ると、Second がまだ Koe が握っているマイクを奪いに行ってしまう。
+        //
+        // round-11-final review: これは認識用ファイルの move が成功したか
+        // (`outcome.audioURL`) とは無関係に送る — backend が停止したという
+        // 事実 (マイク解放) と、ファイルが用意できたかという事実は独立して
+        // いる。move が失敗しても mic は既に解放済みなので、ended を送らない
+        // 理由にはならない。
         endDictationSession(reason: "stopAndRecognize")
+
+        guard let audioURL = outcome.audioURL else {
+            // backend は停止した (ended は送信済み) が、認識用ファイルの move
+            // に失敗した — 認識は実行できないだけで、マイクは解放済み。
+            klog("stopAndRecognize: recorder.stop() succeeded (mic released) but no audio file was produced — skipping recognition")
+            PartialTranscriptStore.shared.finish(id: recognitionPartialID)
+            overlay?.hide()
+            if AppSettings.shared.wakeWordEnabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+            }
+            return
+        }
 
         // 音声レベルが低すぎた場合のみスキップ（ハルシネーション防止）
         // speechDetected は参考情報のみ — peakLevel が十分あれば必ず認識する

@@ -391,20 +391,21 @@ final class LoggingAudioRecorder: AudioRecorder {
         }
         return ok
     }
-    override func stop() -> URL? {
+    override func stop() -> StopOutcome {
         log.record("recorder.stop")
         // round-11 review: previously this unconditionally discarded the
         // real result and returned `stopReturnsURL` regardless of whether
         // the backend actually stopped — that made it impossible to test the
         // round-11 rule ("nil means the backend is still recording, don't
         // post ended") through the full AppDelegate integration path, since
-        // AppDelegate would always see a non-nil URL. Now only a genuine
-        // success gets the fake destination-file substitution (still
-        // needed so `stopAndRecognize()` never attempts real speech
-        // recognition against a fake/empty WAV); an actual refusal (nil)
-        // propagates through untouched.
-        guard super.stop() != nil else { return nil }
-        return stopReturnsURL
+        // AppDelegate would always see a non-nil URL. Now `stopped` always
+        // reflects the real outcome; only a genuine success also gets the
+        // fake destination-file substitution (still needed so
+        // `stopAndRecognize()` never attempts real speech recognition
+        // against a fake/empty WAV).
+        let real = super.stop()
+        guard real.stopped else { return StopOutcome(stopped: false, audioURL: nil) }
+        return StopOutcome(stopped: true, audioURL: stopReturnsURL)
     }
     @discardableResult
     override func cancel() -> Bool {
@@ -571,6 +572,44 @@ func testRecordingLifecycleTermination() {
     let iEnded = indexOf(log.events, "notifier.ended")
     check(iShutdown != nil && iEnded != nil && iShutdown! < iEnded!,
           "stopRecordingForTermination(): ended fires after recorder.shutdown() releases the mic (got \(log.events))")
+}
+
+func testRecordingLifecycleTerminationAfterRefusedStopStillPostsEnded() {
+    print("\n--- Recording lifecycle: termination right after a refused stop still posts ended, decided from dictationSession state (round-11-final) ---")
+    // Coordinator's blocker #2: stopAndRecognize()/cancelRecording() set
+    // `isRecording = false` BEFORE calling recorder.stop()/cancel() — so if
+    // that stop attempt is refused by the backend (stopActive's
+    // `.stillRecording` outcome), `isRecording` is already false even though
+    // `dictationSession` is still `.recording(sessionID)` (began was sent,
+    // never paired with ended yet). `stopRecordingForTermination()` used to
+    // snapshot only `isRecording` to decide whether to post ended — reading
+    // that already-stale `false` — so an app quit landing in exactly this
+    // window would force-release the mic (shutdown()) but never post the
+    // deferred `ended`, leaving Second waiting out the full 120s failsafe.
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    let rec = LoggingAudioRecorder(log: log)
+    ad.recorder = rec
+
+    ad.startRecording()
+    guard let fakeRecorder = rec.sessionRecorder as? FakeRecordingAVAudioRecorder else {
+        check(false, "the active recorder is the fake backend"); return
+    }
+    fakeRecorder.refusesStop = true
+
+    ad.stopAndRecognize()  // refused: isRecording -> false, but dictationSession stays .recording (no ended yet)
+    check(!log.events.contains("notifier.ended"), "sanity: the refused stop did not post ended yet (got \(log.events))")
+    check(ad.dictationSession.currentSessionID != nil,
+          "sanity: dictationSession still considers the session active — began was sent and not yet paired with ended")
+
+    // The app quits NOW, in this exact in-between window.
+    ad.stopRecordingForTermination()
+
+    check(log.events.contains("recorder.shutdown"), "termination force-stops the backend regardless (got \(log.events))")
+    check(log.events.contains("notifier.ended"),
+          "termination posts the deferred ended — decided from dictationSession's still-\"recording\" state, not the already-stale isRecording flag (got \(log.events))")
+    check(ad.dictationSession.currentSessionID == nil, "dictationSession is idle after termination")
 }
 
 func testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce() {
@@ -899,11 +938,12 @@ func testAudioRecorderPreWarmDoesNotClobberActiveSessionRecorder() {
           "B's real recorder is STILL recording after the interleaved pre-warm — no stray/orphaned recording was created")
 
     // Now stop B for real.
-    let dest = ar.stop()
+    let outcome = ar.stop()
 
     check(!recorderB.isRecording,
           "stop() actually released B's REAL recording backend (mic stopped) — not a stray idle pre-warmed instance")
-    check(dest != nil, "stop() reports success (a destination file) for B's real session")
+    check(outcome.stopped, "stop() reports the backend actually stopped for B's real session")
+    check(outcome.audioURL != nil, "stop() reports success (a destination file) for B's real session")
     check(deliveries.isEmpty, "no unexpected-stop delivery occurred for B during this normal start→stop flow")
 }
 
@@ -1265,24 +1305,52 @@ func testAudioRecorderStopReturnsNilAndKeepsSessionWhenBackendRefusesStop() {
     }
     recorder.refusesStop = true
 
-    let dest = ar.stop()
+    let outcome = ar.stop()
 
-    check(dest == nil, "stop() reports nil when the backend refuses to actually stop (got \(String(describing: dest)))")
+    check(!outcome.stopped, "stop() reports stopped == false when the backend refuses to actually stop")
+    check(outcome.audioURL == nil, "no audio file is produced when the backend never actually stopped (got \(String(describing: outcome.audioURL)))")
     check(recorder.stopCallCount == 1, "stop() was still attempted on the backend (got \(recorder.stopCallCount))")
     check(ar.currentRecorderForTesting === recorder,
           "the session stays active (currentContext is NOT cleared) when the backend refuses to stop — must not silently drop a still-recording session")
 }
 
 func testAudioRecorderStopSucceedsWhenBackendActuallyStops() {
-    print("\n--- AudioRecorder.stop(): backend actually stops -> non-nil, session cleared (sanity control) ---")
+    print("\n--- AudioRecorder.stop(): backend actually stops -> stopped == true + audio file, session cleared (sanity control) ---")
     let ar = AudioRecorder()
     ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
     check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in }), "session starts")
 
-    let dest = ar.stop()
+    let outcome = ar.stop()
 
-    check(dest != nil, "stop() reports success when the backend actually stops (got \(String(describing: dest)))")
+    check(outcome.stopped, "stop() reports stopped == true when the backend actually stops")
+    check(outcome.audioURL != nil, "stop() reports a destination file when the backend actually stops (got \(String(describing: outcome.audioURL)))")
     check(ar.currentRecorderForTesting == nil, "the session is cleared after a successful stop")
+}
+
+func testAudioRecorderStopStillReportsStoppedWhenFileMoveFails() {
+    print("\n--- AudioRecorder.stop(): backend stops but the file move fails -> stopped == true (ended must still be posted), audioURL == nil (round-11-final) ---")
+    // Coordinator's blocker #1: `stop()` used to conflate two independent
+    // facts into one Optional — "did the backend actually stop" (which
+    // should drive `.ended`) and "did the recognition file get produced".
+    // A move failure (disk full, sandbox restriction, permissions — nothing
+    // to do with the backend's stop confirmation) made `stop()` return nil,
+    // which `AppDelegate.stopAndRecognize()` couldn't distinguish from "the
+    // backend is still recording" — so `.ended` was wrongly withheld even
+    // though the mic was already released.
+    let ar = AudioRecorder()
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
+    // Inject a failing file mover — this must not depend on the real
+    // filesystem actually refusing the move (sandboxes vary), so it's
+    // faked directly via `fileMover`.
+    struct FakeMoveError: Error {}
+    ar.fileMover = { _, _ in throw FakeMoveError() }
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in }), "session starts")
+
+    let outcome = ar.stop()
+
+    check(outcome.stopped, "stop() still reports stopped == true when the backend released the mic, even though the file move failed")
+    check(outcome.audioURL == nil, "no audio file is available when the move failed (got \(String(describing: outcome.audioURL)))")
+    check(ar.currentRecorderForTesting == nil, "the session is still cleared — the backend really did stop, independent of the file move outcome")
 }
 
 func testAudioRecorderStopRefusalIsEventuallyResolvedByWatchdog() {
@@ -1297,7 +1365,7 @@ func testAudioRecorderStopRefusalIsEventuallyResolvedByWatchdog() {
         check(false, "recorder exists and is the fake"); return
     }
     recorder.refusesStop = true
-    check(ar.stop() == nil, "stop() reports failure while the backend still refuses")
+    check(!ar.stop().stopped, "stop() reports stopped == false while the backend still refuses")
 
     // The backend "catches up" later (e.g. a delayed encoder flush) — nothing
     // calls stop() again explicitly; the watchdog's own polling is what must
@@ -1504,6 +1572,7 @@ func runAllTests() {
     testRecordingLifecycleReentrancyGuard()
     testRecordingLifecycleUnexpectedStop()
     testRecordingLifecycleTermination()
+    testRecordingLifecycleTerminationAfterRefusedStopStillPostsEnded()
     testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce()
     testRecordingLifecycleStaleUnexpectedStopAfterSessionTransitionIsIgnored()
     testAudioRecorderStartDeliversFirstSessionUnexpectedStopToThatSession()
@@ -1520,6 +1589,7 @@ func runAllTests() {
     testAudioRecorderInputDeviceChangeEndsAlreadyStoppedSession()
     testAudioRecorderStopReturnsNilAndKeepsSessionWhenBackendRefusesStop()
     testAudioRecorderStopSucceedsWhenBackendActuallyStops()
+    testAudioRecorderStopStillReportsStoppedWhenFileMoveFails()
     testAudioRecorderStopRefusalIsEventuallyResolvedByWatchdog()
     testAudioRecorderCancelReturnsFalseAndKeepsSessionWhenBackendRefusesStop()
     testAudioRecorderCancelSucceedsWhenBackendActuallyStops()

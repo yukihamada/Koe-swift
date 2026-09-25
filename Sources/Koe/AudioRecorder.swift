@@ -109,6 +109,29 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         case noActiveSession
     }
 
+    /// `stop()` の結果。**round-11-final review**: 以前は `stop()` の戻り値が
+    /// `URL?` 一本で、「backend が実際に停止したか」と「認識用ファイルの
+    /// move が成功したか」という**独立した2つの事実**を一つの Optional に
+    /// 押し込めていた。move が失敗すると (ディスク容量・sandbox 制約・
+    /// 権限等、backend の停止確認とは無関係な理由で普通に起こりうる)
+    /// `stop()` は nil を返し、`AppDelegate.stopAndRecognize()` はそれを
+    /// 「backend がまだ録音中」の場合と区別できず `.ended` を送らなかった —
+    /// マイクは既に解放されているのに、Second 側は 120 秒の失効待ちに
+    /// 突入してしまう。
+    ///
+    /// `.ended` を送ってよいかは `stopped` だけで判定し、`audioURL` は
+    /// 「認識を実行できるか」だけに使う、独立した2つの値に分離する。
+    struct StopOutcome {
+        /// backend が実際に停止したことを確認できたか。呼び出し側はこれが
+        /// `true` の時だけ `.ended` を送ってよい — ファイル move の成否とは
+        /// 無関係。
+        let stopped: Bool
+        /// 認識用に move できた最終ファイルの URL。`stopped == true` でも、
+        /// move 自体が失敗すれば nil になりうる (その場合でもマイクは
+        /// 解放済みなので `.ended` は送るべきだが、音声認識は実行できない)。
+        let audioURL: URL?
+    }
+
     /// **2026-09-26 round-9 review**: `currentContext`/pre-warm 用プロパティ/
     /// watchdog タイマーは全て main thread 専属の mutable state とする —
     /// `AVAudioRecorderDelegate` のコールバックは AVFoundation の内部
@@ -166,6 +189,19 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// 直接注入の抜け道は廃止し、テストは常にこの経路を通る。
     var recorderFactory: (URL, [String: Any]) throws -> AVAudioRecorder = { url, settings in
         try AVAudioRecorder(url: url, settings: settings)
+    }
+
+    /// `stop()` が録音済みの一時ファイルを認識用の最終パスへ move する処理を
+    /// 差し替え可能にするファクトリ。本番は常にデフォルト実装
+    /// (`FileManager.default.moveItem(at:to:)`) を使う。
+    ///
+    /// **round-11-final review**: テストが「move が失敗するケース」を実際の
+    /// ファイルシステムの状態(権限・sandbox 制約等)に依存せず注入できる
+    /// ようにする — 環境によって move が失敗する/しないが変わってしまうと、
+    /// 「move 失敗時も ended は送られるべき」というルールをテストで安定して
+    /// 検証できない。
+    var fileMover: (URL, URL) throws -> Void = { src, dest in
+        try FileManager.default.moveItem(at: src, to: dest)
     }
 
     private let settings: [String: Any] = [
@@ -404,26 +440,32 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         return .stopped(sessionID: sessionID, tempURL: tempURL)
     }
 
-    /// **round-10/11 review**: `stopActive(reason:)` に一本化。backend が
-    /// 実際に停止を確認できた時だけ非nilを返す。
-    func stop() -> URL? {
+    /// **round-10/11/11-final review**: `stopActive(reason:)` に一本化。
+    /// `stopped` は「backend が実際に停止を確認できたか」だけを表す —
+    /// 認識用ファイルの move が失敗しても、backend が停止していれば
+    /// `stopped == true` のまま返す (`.ended` を送ってよいかどうかと、
+    /// 音声認識を実行できるかどうかは独立した事実なので、混ぜない)。
+    func stop() -> StopOutcome {
         switch stopActive(reason: .normalStop) {
         case .noActiveSession:
             klog("AudioRecorder: stop called but no session is active")
-            return nil
+            return StopOutcome(stopped: false, audioURL: nil)
         case .stillRecording:
             klog("AudioRecorder: stop() — backend refused to release the active recorder; not reporting success (retry scheduled, watchdog will finish it)")
-            return nil
+            return StopOutcome(stopped: false, audioURL: nil)
         case .stopped(_, let src):
             // 一意なファイル名で保存（議事録モードで次の録音に上書きされないように）
             let id = UUID().uuidString.prefix(8)
             let dest = Self.audioDir.appendingPathComponent("recognize_\(id).wav")
             do {
                 // move (rename) — 長時間録音の巨大 WAV をコピーしない & 同一ボリューム内でアトミック
-                try FileManager.default.moveItem(at: src, to: dest)
+                try fileMover(src, dest)
             } catch {
-                klog("AudioRecorder: move failed: \(error.localizedDescription)")
-                return nil
+                // backend は既に停止を確認済み (マイクは解放されている) —
+                // move の失敗は「認識用ファイルが用意できない」という別問題
+                // でしかないので、stopped は true のまま返す。
+                klog("AudioRecorder: move failed: \(error.localizedDescription) — backend already released the mic, still reporting stopped")
+                return StopOutcome(stopped: true, audioURL: nil)
             }
             let size = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
             klog("Recording stopped, size=\(size) bytes -> \(dest.lastPathComponent)")
@@ -431,7 +473,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             if !MeetingMode.shared.isActive {
                 cleanOldFiles()
             }
-            return dest
+            return StopOutcome(stopped: true, audioURL: dest)
         }
     }
 

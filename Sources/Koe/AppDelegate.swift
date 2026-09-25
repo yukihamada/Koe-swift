@@ -419,10 +419,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // static let のため deinit がプロセス終了時に確実に走る保証がなく、放置すると
         // ggml の Metal backend が誰にも free されず、Metal デバイス消滅後の
         // __cxa_finalize で ggml_metal_device_free が abort する
-        // (2026-09-19 終了時クラッシュの原因)。
-        WhisperContext.shared.unloadForTermination()
+        // (2026-09-19 終了時クラッシュの原因)。`.shared` だけでなく、
+        // SettingsWindowController の再認識機能が作る非共有インスタンスも含めて
+        // プロセス内の全インスタンスを解放する (unloadAllForTermination はレジストリ
+        // 経由で登録済みの全インスタンスを対象にする — 詳細は InstanceRegistry.swift)。
+        WhisperContext.unloadAllForTermination()
         // LLM後処理用のローカル llama.cpp モデル（ロードされていれば）も同じ理由で解放
-        LlamaContext.shared.unloadForTermination()
+        LlamaContext.unloadAllForTermination()
         // Carbon の global hotkey / event handler を確実に解放
         // (deinit はアプリ終了時に確実には呼ばれない)
         unregisterAllCarbonHotKeys()

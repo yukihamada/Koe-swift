@@ -8,6 +8,34 @@ import CWhisper
 final class WhisperContext {
     static let shared = WhisperContext()
 
+    /// プロセス内で生成された全 WhisperContext を弱参照で追跡するレジストリ。
+    /// `SettingsWindowController` の再認識機能は `.shared` とは別に自前の
+    /// `WhisperContext()` を作る — 詳細は `InstanceRegistry.swift` のコメント参照。
+    private static let registry = WeakInstanceRegistry<WhisperContext>()
+
+    /// プロセス内の全 WhisperContext インスタンス (`.shared` 含む) に対して
+    /// `unloadForTermination()` を呼ぶ。`AppDelegate.applicationWillTerminate`
+    /// はこれを呼ぶこと — `.shared` だけを呼ぶと、再認識機能が作る非共有
+    /// インスタンスが取りこぼされ、その Metal context が未解放のまま残る
+    /// (2026-09-19 のクラッシュがそれらについて再発しうる)。
+    ///
+    /// 各インスタンスの解放は `timeout` 秒までしか待たない —
+    /// 1つの認識が異常に長引いていても、アプリ終了処理全体を無期限に
+    /// ブロックしないための保険 (bounded wait)。タイムアウトした場合は
+    /// そのインスタンスの解放をベストエフォートで諦めてログを残す。
+    static func unloadAllForTermination(timeout: TimeInterval = 5) {
+        for ctx in registry.snapshot() {
+            let sem = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                ctx.unloadForTermination()
+                sem.signal()
+            }
+            if sem.wait(timeout: .now() + timeout) == .timedOut {
+                klog("WhisperContext: unloadForTermination timed out for one instance during termination (best-effort, giving up)")
+            }
+        }
+    }
+
     private var ctx: OpaquePointer?  // whisper_context*
     /// unload() を deinit/queue 内から呼んでも自己 dispatch_sync でデッドロック
     /// しないための共有ラッパー。WhisperContext/LlamaContext で共通実装 —
@@ -15,7 +43,19 @@ final class WhisperContext {
     private let rq = ReentrantSerialQueue(label: "com.yuki.koe.whisper")
     private var queue: DispatchQueue { rq.queue }
     // 投機実行は同じqueueを使用（whisper_contextは並行アクセス不可）
-    private(set) var isLoaded = false
+    /// `isLoaded` は queue 上 (loadModel/loadModelSync/unload/unloadForTermination)
+    /// でのみ書き込むが、`transcribe`/`transcribeBuffer`/`transcribeWithSpeakers`
+    /// の冒頭は意図的に queue の外 (呼び出し元のスレッド) から読む — 詳細は
+    /// `transcribe()` のコメント参照。この off-queue 読み取りがデータレースに
+    /// ならないよう、`isLoaded` の読み書きは全て `isLoadedLock` 越しにする
+    /// (真の atomic read/write。work queue には一切乗らないので、
+    /// レイテンシに敏感な transcribe 呼び出しに同期キューホップを足さない)。
+    private let isLoadedLock = NSLock()
+    private var _isLoaded = false
+    private(set) var isLoaded: Bool {
+        get { isLoadedLock.lock(); defer { isLoadedLock.unlock() }; return _isLoaded }
+        set { isLoadedLock.lock(); _isLoaded = newValue; isLoadedLock.unlock() }
+    }
     private(set) var isLoading = false
     /// `ctx`/`isLoaded` と同じく `queue` 上でのみ読み書きする (queue-confined)。
     /// `unload()`/`loadModel`/`loadModelSync` はどれもこれを「今から作る/作った
@@ -34,7 +74,11 @@ final class WhisperContext {
     /// アプリ終了専用の恒久フラグ。`unloadForTermination()` だけが立てる —
     /// 立った後は `generation` の食い違いを待つまでもなく、以後のロードを
     /// 全て拒否する。通常の `unload()` はこれを立てない。
-    private var isShutDown = false
+    /// 書き込みは private のまま (WhisperContext 内部のみ) だが、読み取りは
+    /// module-internal — テスト (Tests/KoeTests.swift、同一コンパイル単位) が
+    /// `whisper_init_from_file_with_params` を経由せず直接この状態を検証
+    /// できるようにするため。
+    private(set) var isShutDown = false
     /// 直前の認識にかかった時間（秒）
     private(set) var lastTranscriptionTime: Double = 0
     /// 投機実行をキャンセルするフラグ
@@ -46,6 +90,10 @@ final class WhisperContext {
         ptr.initialize(to: false)
         return ptr
     }()
+
+    init() {
+        Self.registry.register(self)
+    }
 
     // MARK: - Model loading
 
@@ -241,9 +289,10 @@ final class WhisperContext {
     /// メイン認識パス: 投機実行をキャンセルしてから実行。
     func transcribe(url: URL, language: String = "ja", prompt: String = "",
                     completion: @escaping (String?) -> Void) {
-        // `isLoaded`/`ctx` はここでは呼び出し元のスレッド (UI 等) から読む —
-        // queue-confined ではなく、意図的にレースを許容した「だめ元」の早期
-        // リターンでしかない。本当の可否判定は必ず下の `queue.async` の中で
+        // `isLoaded` はここでは呼び出し元のスレッド (UI 等) から読むが、
+        // `isLoadedLock` 越しの atomic な読み書きなのでデータレースにはならない。
+        // `ctx` (単なるポインタ値の比較) は意図的にレースを許容した「だめ元」の
+        // 早期リターンでしかない。本当の可否判定は必ず下の `queue.async` の中で
         // `self.ctx`/`self.isLoaded` を読み直して行う (queue-confined) ため、
         // ここが古い値を読んでも実害は「無駄に completion(nil) で早期returnする」
         // か「無駄に queue.async を1個積んで、その中で正しく nil 判定される」

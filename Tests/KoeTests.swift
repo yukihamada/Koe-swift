@@ -402,6 +402,107 @@ func testModelLoaderGenerateAfterUnloadReturnsNil() {
 }
 
 // ══════════════════════════════════════
+// WeakInstanceRegistry — proves that a process-wide "unload all" call
+// reaches non-shared instances too, not just a single `.shared` singleton.
+//
+// 2026-09-26 round-3 review: SettingsWindowController.rerecognizeEntry/
+// batchRerecognize each create their OWN non-shared `WhisperContext()` (not
+// `.shared`) to re-transcribe with a user-selected model.
+// AppDelegate.applicationWillTerminate previously only called
+// `WhisperContext.shared.unloadForTermination()` — these non-shared
+// instances were never reached, so if the app quit while one was still
+// alive, its Metal-backed context could be freed by deinit/static
+// destructors at process exit instead — the same crash class
+// (ggml_metal_device_free during __cxa_finalize) this PR already fixes for
+// `.shared`. Fixed by giving WhisperContext/LlamaContext a process-wide
+// WeakInstanceRegistry (registered in `init()`) and a static
+// `unloadAllForTermination()` that iterates every live registered instance.
+//
+// FakeRegisteredContext below exercises the exact same `WeakInstanceRegistry`
+// generic type the production code uses (just instantiated for a fake
+// element type), so it needs no real whisper model file.
+// ══════════════════════════════════════
+final class FakeRegisteredContext {
+    private static let registry = WeakInstanceRegistry<FakeRegisteredContext>()
+    static func unloadAllForTermination() {
+        for ctx in registry.snapshot() { ctx.unloadForTermination() }
+    }
+
+    let id: Int
+    private(set) var unloadedForTermination = false
+
+    init(id: Int) {
+        self.id = id
+        Self.registry.register(self)
+    }
+
+    func unloadForTermination() {
+        unloadedForTermination = true
+    }
+}
+
+func testWeakInstanceRegistryReachesNonSharedInstances() {
+    print("\n--- WeakInstanceRegistry: unloadAllForTermination() reaches non-shared instances too ---")
+    let sharedLike = FakeRegisteredContext(id: 1)
+    // Simulates SettingsWindowController.rerecognizeEntry's `let ctx = WhisperContext()`
+    // — a second, non-shared instance the app-quit path must not skip.
+    let nonShared = FakeRegisteredContext(id: 2)
+
+    FakeRegisteredContext.unloadAllForTermination()
+
+    check(sharedLike.unloadedForTermination, "the first ('.shared'-like) instance is unloaded on termination")
+    check(nonShared.unloadedForTermination,
+          "a second, separately-created ('non-shared'-like) instance is ALSO unloaded on termination — this is exactly the gap the registry closes")
+}
+
+func testWeakInstanceRegistryDropsDeallocatedInstances() {
+    print("\n--- WeakInstanceRegistry: deallocated instances are dropped, not force-retained ---")
+    weak var weakRef: FakeRegisteredContext?
+    autoreleasepool {
+        let temp = FakeRegisteredContext(id: 99)
+        weakRef = temp
+        check(weakRef != nil, "instance alive while a strong reference exists")
+    }
+    check(weakRef == nil, "registering with the registry does not keep the instance alive (weak, not strong) after its only strong reference is released")
+    // Must not crash even though a dealloc'd instance was registered.
+    FakeRegisteredContext.unloadAllForTermination()
+    check(true, "unloadAllForTermination() does not crash when a registered instance has already been deallocated")
+}
+
+// Exercises the REAL WhisperContext (not a fake) end-to-end: does
+// `WhisperContext.unloadAllForTermination()` actually reach a non-shared
+// instance? Asserts on `isShutDown` directly (module-internal read, see its
+// doc comment) rather than round-tripping through `loadModel` with a bogus
+// path — `loadModel` would return `false` either way (refused early because
+// shut down, OR because the bogus path genuinely fails to open), so it can't
+// tell "termination reached this instance" apart from "this instance was
+// never going to load anyway". No real model file is needed either way.
+//
+// NOTE: this permanently shuts down the real `WhisperContext.shared`
+// singleton (isShutDown latches forever) for the remainder of this test
+// process — intentional (it mirrors real app termination) and harmless
+// here since no other test in this suite loads a real model into `.shared`.
+// Keep this test last among WhisperContext-touching tests if more are added.
+func testWhisperContextUnloadAllForTerminationReachesNonSharedInstance() {
+    print("\n--- WhisperContext.unloadAllForTermination(): reaches a real non-shared instance ---")
+    // `.shared` is a `static let` — lazily created on first access. Touch it
+    // explicitly first so it is registered before we snapshot the registry
+    // (otherwise this test's assertion about `.shared` would be vacuous).
+    let sharedCtx = WhisperContext.shared
+    // Simulates SettingsWindowController.rerecognizeEntry's `let ctx = WhisperContext()`.
+    let nonShared = WhisperContext()
+
+    check(!sharedCtx.isShutDown, ".shared is not shut down before termination")
+    check(!nonShared.isShutDown, "a freshly-created non-shared instance is not shut down before termination")
+
+    WhisperContext.unloadAllForTermination()
+
+    check(sharedCtx.isShutDown, ".shared is shut down after unloadAllForTermination()")
+    check(nonShared.isShutDown,
+          "a separately-created, non-shared WhisperContext is ALSO shut down after unloadAllForTermination() — proves termination isn't limited to .shared")
+}
+
+// ══════════════════════════════════════
 // Run all tests
 // ══════════════════════════════════════
 func runAllTests() {
@@ -418,6 +519,10 @@ func runAllTests() {
     testModelLoaderShutdownRefusesFutureLoads()
     testModelLoaderGenerateAfterUnloadReturnsNil()
     testAgentCommandProperties()
+    testWeakInstanceRegistryReachesNonSharedInstances()
+    testWeakInstanceRegistryDropsDeallocatedInstances()
+    // Must run last: permanently shuts down the real WhisperContext.shared singleton.
+    testWhisperContextUnloadAllForTerminationReachesNonSharedInstance()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }
 }

@@ -6,6 +6,29 @@ import CLlama
 final class LlamaContext {
     static let shared = LlamaContext()
 
+    /// プロセス内で生成された全 LlamaContext を弱参照で追跡するレジストリ。
+    /// 現状 `.shared` 以外の非共有インスタンスは作られていないが、
+    /// `WhisperContext` と同じ理由 (`InstanceRegistry.swift` 参照) で
+    /// 将来非共有インスタンスが増えても取りこぼさないよう用意しておく。
+    private static let registry = WeakInstanceRegistry<LlamaContext>()
+
+    /// プロセス内の全 LlamaContext インスタンス (`.shared` 含む) に対して
+    /// `unloadForTermination()` を呼ぶ。`AppDelegate.applicationWillTerminate`
+    /// はこれを呼ぶこと。挙動は `WhisperContext.unloadAllForTermination` と同じ
+    /// (bounded wait — 1インスタンスあたり `timeout` 秒までしか待たない)。
+    static func unloadAllForTermination(timeout: TimeInterval = 5) {
+        for ctx in registry.snapshot() {
+            let sem = DispatchSemaphore(value: 0)
+            DispatchQueue.global(qos: .userInitiated).async {
+                ctx.unloadForTermination()
+                sem.signal()
+            }
+            if sem.wait(timeout: .now() + timeout) == .timedOut {
+                klog("LlamaContext: unloadForTermination timed out for one instance during termination (best-effort, giving up)")
+            }
+        }
+    }
+
     private var model: OpaquePointer?   // llama_model*
     private var ctx: OpaquePointer?     // llama_context*
     /// unload() を deinit/queue 内から呼んでも自己 dispatch_sync でデッドロック
@@ -23,6 +46,10 @@ final class LlamaContext {
     private var generation = 0
     /// アプリ終了専用の恒久フラグ。`unloadForTermination()` だけが立てる。
     private var isShutDown = false
+
+    init() {
+        Self.registry.register(self)
+    }
 
     // MARK: - Model catalog
 

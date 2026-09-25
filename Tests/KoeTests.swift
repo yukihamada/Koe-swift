@@ -1,5 +1,6 @@
 // Tests/KoeTests.swift — Standalone test runner (assert-based, no XCTest)
 import Foundation
+import AVFoundation
 
 var passed = 0
 var failed = 0
@@ -206,17 +207,9 @@ func testDictationNotificationPoster() {
 // ══════════════════════════════════════
 // AppDelegate recording start/stop → dictation notifier wiring
 //
-// NOTE: this deliberately does NOT call the real startRecording()/
-// stopAndRecognize()/cancelRecording() — those grab the mic, register
-// global Carbon hotkeys, and duck system volume, none of which belong in a
-// headless unit test run possibly alongside the real, live Koe.app. Instead
-// it exercises notifyDictationBegan()/notifyDictationEnded() — the exact,
-// only functions those code paths call to reach the notifier (verified by
-// reading AppDelegate.swift: startRecording() calls notifyDictationBegan()
-// right after isRecording=true; stopAndRecognize()/cancelRecording()/
-// applicationWillTerminate() call notifyDictationEnded() right after
-// isRecording=false) — with an injected fake in place of
-// DictationNotificationPoster.shared.
+// notifyDictationBegan()/notifyDictationEnded() are the only functions that
+// ever touch DistributedNotificationCenter — this checks the injected fake
+// is reached through them without needing a real recorder.
 // ══════════════════════════════════════
 final class FakeDictationNotifier: DictationLifecycleNotifying {
     var beganCount = 0
@@ -236,6 +229,211 @@ func testAppDelegateDictationNotifierWiring() {
 
     ad.notifyDictationEnded()
     check(fake.beganCount == 1 && fake.endedCount == 1, "notifyDictationEnded() calls the injected notifier's postDictationEnded()")
+}
+
+// ══════════════════════════════════════
+// AppDelegate recording lifecycle — began/ended pairing and ordering
+//
+// These drive the REAL startRecording()/stopAndRecognize()/cancelRecording()/
+// applicationWillTerminate() on a real AppDelegate() instance, with a fake
+// AudioRecorder (never touches AVAudioRecorder/the real mic — every method
+// is overridden) and a fake notifier (never touches
+// DistributedNotificationCenter), sharing one ordered EventLog so the
+// interleaving between "the mic actually stopped" and "Second was told" can
+// be asserted directly, not just that each fake was called.
+//
+// Known residual side effect: startRecording()/stopAndRecognize()/
+// cancelRecording() still call the real registerRecordingHotKeys()/
+// unregisterRecordingHotKeys() (global Carbon hotkeys for Space/ESC,
+// registered only for the instant each test call takes) and the real
+// WakeWordDetector.shared/duckSystemVolume() (both no-ops by default:
+// wakeWordEnabled/duckingMode default to false/"off"). This mirrors exactly
+// what a real recording session does and was judged an acceptable, momentary
+// cost for testing the actual code path rather than a re-implementation of
+// it — see PR description for the full reasoning.
+// ══════════════════════════════════════
+final class EventLog {
+    private(set) var events: [String] = []
+    func record(_ e: String) { events.append(e) }
+    func reset() { events.removeAll() }
+}
+
+final class LoggingDictationNotifier: DictationLifecycleNotifying {
+    let log: EventLog
+    init(log: EventLog) { self.log = log }
+    func postDictationBegan() { log.record("notifier.began") }
+    func postDictationEnded() { log.record("notifier.ended") }
+}
+
+/// Every method that could touch a real `AVAudioRecorder` (and therefore the
+/// mic) is overridden — the inherited base-class implementation is never
+/// reached, so no permission prompt, no real recording, no real file I/O
+/// beyond what `tempURL` (a plain property) happens to point at.
+final class LoggingAudioRecorder: AudioRecorder {
+    let log: EventLog
+    var startResult = true
+    /// what stop()/cancel() should look like they returned/left behind
+    var stopReturnsURL: URL? = URL(fileURLWithPath: "/tmp/koe-test-fake.wav")
+
+    init(log: EventLog) {
+        self.log = log
+        super.init()
+    }
+
+    override func start() -> Bool {
+        log.record("recorder.start")
+        if startResult { tempURL = stopReturnsURL }
+        return startResult
+    }
+    override func stop() -> URL? {
+        log.record("recorder.stop")
+        return stopReturnsURL
+    }
+    override func cancel() {
+        log.record("recorder.cancel")
+    }
+    override func shutdown() {
+        log.record("recorder.shutdown")
+    }
+    override func prepare() {
+        // no-op: applicationDidFinishLaunching()/parallel-recording restarts
+        // call this — never let it reach a real AVAudioRecorder in a test.
+    }
+}
+
+func indexOf(_ events: [String], _ e: String) -> Int? { events.firstIndex(of: e) }
+
+func testRecordingLifecycleHappyPath() {
+    print("\n--- Recording lifecycle: start → normal stop ---")
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    ad.recorder = LoggingAudioRecorder(log: log)
+
+    ad.startRecording()
+    check(log.events == ["recorder.start", "notifier.began"],
+          "startRecording(): began fires exactly once, after the mic actually starts (got \(log.events))")
+
+    ad.stopAndRecognize()
+    let iStop = indexOf(log.events, "recorder.stop")
+    let iEnded = indexOf(log.events, "notifier.ended")
+    check(iStop != nil && iEnded != nil && iStop! < iEnded!,
+          "stopAndRecognize(): ended fires exactly once, after recorder.stop() releases the mic (got \(log.events))")
+    check(log.events.filter { $0 == "notifier.began" }.count == 1 && log.events.filter { $0 == "notifier.ended" }.count == 1,
+          "exactly one began and one ended across the whole start→stop cycle")
+}
+
+func testRecordingLifecycleFailedStart() {
+    print("\n--- Recording lifecycle: failed recorder.start() ---")
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    let rec = LoggingAudioRecorder(log: log)
+    rec.startResult = false
+    ad.recorder = rec
+
+    ad.startRecording()
+    check(log.events == ["recorder.start"],
+          "failed recorder.start() posts no began and leaves no dangling state (got \(log.events))")
+
+    // isRecording must have stayed false — a second start attempt must be a
+    // fresh, successful attempt, not blocked by a stuck re-entrancy guard.
+    rec.startResult = true
+    ad.startRecording()
+    check(log.events == ["recorder.start", "recorder.start", "notifier.began"],
+          "a later successful start still works after a prior failed one (got \(log.events))")
+}
+
+func testRecordingLifecycleCancel() {
+    print("\n--- Recording lifecycle: start → cancel (ESC) ---")
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    ad.recorder = LoggingAudioRecorder(log: log)
+
+    ad.startRecording()
+    ad.cancelRecording()
+    let iCancel = indexOf(log.events, "recorder.cancel")
+    let iEnded = indexOf(log.events, "notifier.ended")
+    check(iCancel != nil && iEnded != nil && iCancel! < iEnded!,
+          "cancelRecording(): ended fires after recorder.cancel() releases the mic (got \(log.events))")
+    check(log.events.filter { $0 == "notifier.ended" }.count == 1,
+          "cancelRecording() posts ended exactly once (got \(log.events))")
+}
+
+func testRecordingLifecycleCancelWhileOnlyRecognizing() {
+    print("\n--- Recording lifecycle: cancel while only recognizing (no double ended) ---")
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    ad.recorder = LoggingAudioRecorder(log: log)
+
+    ad.startRecording()
+    ad.stopAndRecognize()  // already posts one "ended"
+    log.reset()
+    ad.cancelRecording()   // ESC during recognition — isRecording is already false
+    check(!log.events.contains("notifier.ended"),
+          "cancelRecording() while not recording does not post a second ended (got \(log.events))")
+}
+
+func testRecordingLifecycleReentrancyGuard() {
+    print("\n--- Recording lifecycle: re-entrant startRecording() is a no-op ---")
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    ad.recorder = LoggingAudioRecorder(log: log)
+
+    ad.startRecording()
+    ad.startRecording()  // re-entrant while already recording
+    check(log.events == ["recorder.start", "notifier.began"],
+          "re-entrant startRecording() while already recording does not restart or re-post began (got \(log.events))")
+}
+
+func testRecordingLifecycleUnexpectedStop() {
+    print("\n--- Recording lifecycle: encode error / unexpected finish ---")
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    let rec = LoggingAudioRecorder(log: log)
+    ad.recorder = rec
+
+    ad.startRecording()
+    // Simulate AVAudioRecorderDelegate firing on an OS-forced stop (not one
+    // we called stop()/cancel() for) — this must reset state and post ended
+    // exactly once, even though no explicit recorder.stop()/cancel() ran.
+    let dummy = try! AVAudioRecorder(
+        url: FileManager.default.temporaryDirectory.appendingPathComponent("koe-test-dummy.wav"),
+        settings: [AVFormatIDKey: Int(kAudioFormatLinearPCM), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1]
+    )
+    rec.audioRecorderDidFinishRecording(dummy, successfully: false)
+    check(log.events == ["recorder.start", "notifier.began", "notifier.ended"],
+          "unexpected finish (successfully=false) resets state and posts ended exactly once (got \(log.events))")
+
+    // State must be fully reset — a fresh start right after must succeed
+    // again (not blocked by a stuck isRecording=true).
+    ad.startRecording()
+    check(log.events.suffix(2) == ["recorder.start", "notifier.began"],
+          "recording can start again after an unexpected stop (got \(log.events))")
+}
+
+func testRecordingLifecycleTermination() {
+    print("\n--- Recording lifecycle: termination mid-recording ---")
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    ad.recorder = LoggingAudioRecorder(log: log)
+
+    ad.startRecording()
+    // stopRecordingForTermination() is the exact logic applicationWillTerminate()
+    // calls for the recording teardown — exercised directly (not through the
+    // full applicationWillTerminate()) so this test never touches
+    // HistoryStore.shared.flushSync(), which persists to the same history
+    // file the real, live Koe.app also reads/writes.
+    ad.stopRecordingForTermination()
+    let iShutdown = indexOf(log.events, "recorder.shutdown")
+    let iEnded = indexOf(log.events, "notifier.ended")
+    check(iShutdown != nil && iEnded != nil && iShutdown! < iEnded!,
+          "stopRecordingForTermination(): ended fires after recorder.shutdown() releases the mic (got \(log.events))")
 }
 
 // ══════════════════════════════════════
@@ -264,6 +462,13 @@ func runAllTests() {
     testLLMSanitization()
     testDictationNotificationPoster()
     testAppDelegateDictationNotifierWiring()
+    testRecordingLifecycleHappyPath()
+    testRecordingLifecycleFailedStart()
+    testRecordingLifecycleCancel()
+    testRecordingLifecycleCancelWhileOnlyRecognizing()
+    testRecordingLifecycleReentrancyGuard()
+    testRecordingLifecycleUnexpectedStop()
+    testRecordingLifecycleTermination()
     testAgentCommandProperties()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }

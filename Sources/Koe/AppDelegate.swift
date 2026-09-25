@@ -13,7 +13,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWC: SettingsWindowController?
     private var setupWindow: SetupWindow?
     private var transcriptionWindow: TranscriptionWindow?
-    private let recorder  = AudioRecorder()
+    /// テストが `AudioRecorder` のサブクラス (fake) に差し替えられるよう `private let` に
+    /// しない。差し替え時も `didSet` で `onUnexpectedStop` の配線を維持する。
+    var recorder: AudioRecorder = AudioRecorder() {
+        didSet { wireRecorderCallbacks() }
+    }
     private var speech    = SpeechEngine()
     private let typer     = AutoTyper()
     private var eventMonitor: Any?
@@ -114,6 +118,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var seamlessModeActive = false
     // 並行録音時の bundleID 保護: stopAndRecognize() で確定し、認識完了まで保持
     private var recognitionBundleID = ""
+
+    /// `applicationDidFinishLaunching`（NSApplication.run() 経由でのみ呼ばれ、テストでは
+    /// 呼ばれない）ではなく init 側で配線する — テストが `AppDelegate()` を直接生成して
+    /// `recorder` に fake を差し替えるケースでも `onUnexpectedStop` が必ず有効になるように。
+    override init() {
+        super.init()
+        wireRecorderCallbacks()
+    }
+
+    private func wireRecorderCallbacks() {
+        recorder.onUnexpectedStop = { [weak self] in self?.handleRecorderUnexpectedStop() }
+    }
+
+    /// エンコードエラー等、`stopAndRecognize()`/`cancelRecording()` を経由しない
+    /// 想定外の録音停止を AudioRecorder から受け取る。正規の停止経路を通らないため
+    /// ここで確実に isRecording をリセットし、.ended を一度だけ送る。
+    func handleRecorderUnexpectedStop() {
+        guard isRecording else { return }
+        klog("handleRecorderUnexpectedStop: resetting recording state")
+        unregisterRecordingHotKeys()
+        levelTimer?.invalidate(); levelTimer = nil
+        streamingTimer?.invalidate(); streamingTimer = nil
+        isRecording = false
+        isRecognizing = false
+        setIcon(recording: false)
+        restoreSystemVolume()
+        overlay?.hide()
+        // マイクは AudioRecorder 側で既に解放済み（この通知はそれより後に届く）
+        notifyDictationEnded()
+        if AppSettings.shared.wakeWordEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppDelegate.shared = self
@@ -409,17 +446,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // 口述中に終了した場合、Second 側が .began の120秒失効を待たず即座に
-        // 音声操作を再開できるよう先に .ended を送る（他の cleanup より前）。
-        if isRecording {
-            isRecording = false
-            notifyDictationEnded()
-        }
         HistoryStore.shared.flushSync()
-        // 録音中の終了でもデータを失わない: cancel() はファイルを削除するため使わない。
-        // shutdown() は録音を止めてファイルを残し (次回起動の CrashRecovery が回収)、
-        // システムデフォルト入力デバイスも復元する
-        recorder.shutdown()
+        stopRecordingForTermination()
         // 常時録音の現在チャンクを確定保存
         AlwaysOnRecorder.shared.stop()
         WhisperServer.shared.stop()
@@ -428,6 +456,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // (deinit はアプリ終了時に確実には呼ばれない)
         unregisterAllCarbonHotKeys()
         if let m = eventMonitor { NSEvent.removeMonitor(m); eventMonitor = nil }
+    }
+
+    /// `applicationWillTerminate` から切り出した、録音まわりの終了処理だけ。
+    /// テストが `HistoryStore`/`AlwaysOnRecorder`/`WhisperServer`/`WakeWordDetector`/
+    /// Carbon hotkey 解除といった他の実シングルトンに触れず、このメソッドだけを
+    /// 直接叩いて .ended の送信順序を検証できるようにするための分離。
+    func stopRecordingForTermination() {
+        // 口述中に終了した場合、Second 側が .began の120秒失効を待たず即座に
+        // 音声操作を再開できるようここで .ended を送る。ただし送るのは
+        // recorder.shutdown() でマイクを実際に手放した後 — 停止前に送ると
+        // Second がまだ Koe が握っているマイクを奪いに行ってしまう。
+        let wasRecording = isRecording
+        isRecording = false
+        // 録音中の終了でもデータを失わない: cancel() はファイルを削除するため使わない。
+        // shutdown() は録音を止めてファイルを残し (次回起動の CrashRecovery が回収)、
+        // システムデフォルト入力デバイスも復元する
+        recorder.shutdown()
+        if wasRecording { notifyDictationEnded() }
     }
 
     // MARK: - Status Bar
@@ -1228,7 +1274,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func notifyDictationBegan() { dictationNotifier.postDictationBegan() }
     func notifyDictationEnded() { dictationNotifier.postDictationEnded() }
 
-    private func startRecording() {
+    /// テストが fake recorder/notifier を注入して直接叩けるよう `private` にしない
+    /// (`stopAndRecognize`/`cancelRecording` も同様)。
+    func startRecording() {
+        // 再入防止: 既に録音中なら二重に .began を送らない・二重録音を始めない
+        guard !isRecording else {
+            klog("startRecording: already recording, ignoring re-entrant call")
+            return
+        }
+
         // Stop wake word detector before AVAudioRecorder starts to avoid conflicts
         WakeWordDetector.shared.stop()
 
@@ -1238,6 +1292,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Capture frontmost app BEFORE recording starts
         activeAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         klog("startRecording from app: \(activeAppBundleID)")
+
+        // マイクが実際に開始できてから isRecording を立てて .began を送る —
+        // record() が失敗した (recorder.start() == false) のに .began だけ飛んで
+        // .ended が来ない、という壊れたペアを防ぐ。
+        guard recorder.start() else {
+            klog("startRecording: recorder.start() failed, aborting")
+            restoreSystemVolume()
+            if AppSettings.shared.wakeWordEnabled {
+                WakeWordDetector.shared.start()
+            }
+            return
+        }
+
         isRecording    = true
         notifyDictationBegan()
         lastStreamingResult = nil
@@ -1262,7 +1329,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             overlay?.setSeamless(seamlessModeActive)
             overlay?.show(state: .recording)
         }
-        recorder.start()
         // 途中認識結果の逐次永続化を開始（強制終了しても次回起動時に復旧できる）
         PartialTranscriptStore.shared.begin(audioPath: recorder.tempURL?.path)
         registerRecordingHotKeys()  // Space/ESC を Carbon Hot Key で登録
@@ -1276,7 +1342,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startStreamingPreview()
     }
 
-    private func stopAndRecognize() {
+    func stopAndRecognize() {
         guard isRecording else { return }  // 二重呼び出し防止
         unregisterRecordingHotKeys()  // Space/ESC 解除
         levelTimer?.invalidate(); levelTimer = nil
@@ -1298,7 +1364,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.clearStreamingText()
         klog("stopAndRecognize")
         isRecording = false
-        notifyDictationEnded()
         setIcon(recording: false)
         restoreSystemVolume()
 
@@ -1306,7 +1371,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // begin しても、このスナップショットで正しいファイルだけを後で削除できる）
         recognitionPartialID = PartialTranscriptStore.shared.currentSessionID
 
-        guard let audioURL = recorder.stop() else {
+        let audioURL = recorder.stop()
+        // マイクは recorder.stop() が返った時点で確実に解放されている（同期呼び出し）。
+        // .ended はここで初めて送る — 録音停止より前に送ると、Second がまだ Koe が
+        // 握っているマイクを奪いに行ってしまう。
+        notifyDictationEnded()
+        guard let audioURL else {
             klog("stopAndRecognize: recorder.stop() returned nil")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
             overlay?.hide()
@@ -2201,7 +2271,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func cancelRecording() {
+    func cancelRecording() {
         // ESC は録音中だけでなく認識中(isRecording==false)にも呼ばれる — その場合は
         // 録音自体は既に stopAndRecognize 側で .ended 送信済みなので二重送信しない
         let wasRecording = isRecording
@@ -2227,7 +2297,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             typer.cancelStreaming()
         }
         isRecording = false
-        if wasRecording { notifyDictationEnded() }
         isRecognizing = false
         isTranslateMode = false
         overlay?.setTranslateMode(false)
@@ -2239,6 +2308,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         PartialTranscriptStore.shared.finish(id: recognitionPartialID)
         recognitionPartialID = nil
         recorder.cancel()
+        // マイクは recorder.cancel() が返った時点で確実に解放されている。ここで初めて
+        // .ended を送る — 停止より前に送ると Second がまだ握っているマイクを奪いに行く。
+        if wasRecording { notifyDictationEnded() }
         speech.cancel()
         overlay?.hide()
         if AppSettings.shared.wakeWordEnabled {

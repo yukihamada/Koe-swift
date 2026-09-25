@@ -65,7 +65,12 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         klog("AudioRecorder prepared")
     }
 
-    func start() {
+    /// マイクの録音が実際に開始できたかを返す。呼び出し側 (AppDelegate) はこれを見て
+    /// `isRecording`/dictation `.began` 通知を出すかどうかを決める — record() が
+    /// 失敗したのに「録音中」扱いにして `.began` だけ飛ばすと、対になる `.ended` が
+    /// 来ないまま Second 側の 120 秒失効待ちになってしまう。
+    @discardableResult
+    func start() -> Bool {
         // P5 指摘の prepare-order バグ対策: applySelectedInputDevice() で
         // システムデフォルト入力を選択 UID に切り替えてから AVAudioRecorder を生成する。
         // AVAudioRecorder は init 時点のデフォルトにバインドされるため、デバイス切替前に
@@ -79,11 +84,11 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             prepare()
             guard let r2 = recorder else {
                 klog("AudioRecorder: failed to create recorder")
-                return
+                return false
             }
             let ok = r2.record()
             klog("Recording started (retry), ok=\(ok) deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
-            return
+            return ok
         }
         // recorderが前回のセッションから残っている場合、明示的にリセット
         if r.isRecording {
@@ -97,8 +102,10 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             prepare()
             let retryOk = recorder?.record() ?? false
             klog("Recording started (re-prepare), ok=\(retryOk) deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
+            return retryOk
         } else {
             klog("Recording started, ok=true deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
+            return true
         }
     }
 
@@ -283,7 +290,29 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         return 44
     }
 
+    /// `stopAndRecognize()`/`cancelRecording()`/`shutdown()` を経由しない、想定外の
+    /// 録音停止（エンコードエラー・OS都合の中断等）を AppDelegate に伝える。
+    /// AppDelegate 側はこれで isRecording をリセットし、dictation `.ended` を送る —
+    /// でないと Koe が「録音中」のつもりのまま Second が 120 秒間マイクを奪えなくなる。
+    var onUnexpectedStop: (() -> Void)?
+
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         klog("Encode error: \(error?.localizedDescription ?? "nil")")
+        handleUnexpectedStop()
+    }
+
+    /// AVAudioRecorderDelegate: 自前の `stop()` 呼び出しでも発火するが、その場合
+    /// `flag == true` で届く（`AVAudioRecorder.stop()` は成功として delegate に通知する）。
+    /// ここで拾いたいのは `flag == false` — OS都合の中断等、こちらが呼んでいない停止。
+    func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
+        guard !flag else { return }
+        klog("AudioRecorder: unexpected finish (successfully=false)")
+        handleUnexpectedStop()
+    }
+
+    private func handleUnexpectedStop() {
+        recorder = nil
+        restoreDefaultInputDevice()
+        onUnexpectedStop?()
     }
 }

@@ -12,18 +12,61 @@ protocol AudioRecordingBackend: AnyObject {
 }
 extension AVAudioRecorder: AudioRecordingBackend {}
 
-class AudioRecorder: NSObject, AVAudioRecorderDelegate {
-    private var recorder: AVAudioRecorder? {
-        didSet { activeSessionRecorder = recorder }
+/// 1 録音セッション (= 1 `AVAudioRecorder` インスタンス) につき 1 つ生成する
+/// immutable な context。「どの recorder のものか」(`backend`) と「その
+/// recorder 用の想定外停止ハンドラ」(`onUnexpectedStop`) を生成時に一度だけ
+/// 結び付ける。
+///
+/// **2026-09-26 round-7 review**: 以前は `handleUnexpectedStop(_:)` が
+/// `recorder === activeSessionRecorder` (identity) を判定した*後*で、
+/// 別の独立した mutable プロパティ `onUnexpectedStop` を改めて読んでいた。
+/// 実際の `startRecording()` は「`bindUnexpectedStopHandler()` で
+/// `recorder.onUnexpectedStop` を rebind → その後に `recorder.start()`
+/// (内部で `prepare()` が `activeSessionRecorder` を更新)」という順序で
+/// 呼ばれるため、この2つの更新の間には短いが実在する隙間がある。セッションA
+/// の real `AVAudioRecorderDelegate` コールバックがちょうどこの隙間
+/// (B の `onUnexpectedStop` は既に rebind 済みだが、B の
+/// `activeSessionRecorder` 登録はまだ) で発火すると、identity チェックは
+/// (まだ更新されていない) A の値と一致してしまうのに、実際に読んで呼び出す
+/// のは既に書き換わった B の closure — セッションをまたいだ誤発火
+/// (TOCTOU) が構造的に起こり得た。
+///
+/// `RecordingContext` はこの2つを1つの immutable オブジェクトに束ねることで、
+/// `handleUnexpectedStop`/`checkWatchdog`/`handleInputDeviceChange` が
+/// 「今のセッション」を `currentContext` という**単一**の参照から1回だけ
+/// スナップショットし、identity チェックと closure 呼び出しの両方をその
+/// 同じスナップショットに対して行うようにする。`onUnexpectedStop` が後から
+/// 別セッション用に rebind されても、既に生成済みの `RecordingContext` が
+/// 焼き込んだ closure 自体は変わらないため、A の callback が B の closure
+/// を呼ぶ経路がそもそも存在しない。
+private final class RecordingContext {
+    let backend: AudioRecordingBackend
+    let onUnexpectedStop: (() -> Void)?
+
+    init(backend: AudioRecordingBackend, onUnexpectedStop: (() -> Void)?) {
+        self.backend = backend
+        self.onUnexpectedStop = onUnexpectedStop
     }
-    /// `recorder` の「現在の値」を弱参照で追跡する identity 比較用のポインタ
-    /// (上の `didSet` で自動的に同期される)。`handleUnexpectedStop`/
-    /// `checkWatchdog` はこれを使って「このコールバックは今のセッションの
-    /// recorder から来たものか」を判定する — 型を `AVAudioRecorder?` ではなく
-    /// `AnyObject?` にしているのは、テストが `AVAudioRecorder` ではない
-    /// `FakeAudioRecordingBackend` を「現在のセッション」として
-    /// `setActiveSessionForTesting` 経由で注入できるようにするため。
-    private weak var activeSessionRecorder: AnyObject?
+}
+
+class AudioRecorder: NSObject, AVAudioRecorderDelegate {
+    /// 「今のセッション」を表す、たった1つの参照。`recorder` はこれを
+    /// バッキングストアとする computed property — 新しい `AVAudioRecorder`
+    /// を設定するたびに、その時点の `onUnexpectedStop` を焼き込んだ新しい
+    /// `RecordingContext` が生成される (下記 setter)。テスト用の
+    /// `setActiveSessionForTesting` も同じ規則 (生成時点の値を焼き込む) に
+    /// 従う。
+    private var currentContext: RecordingContext?
+    private var recorder: AVAudioRecorder? {
+        get { currentContext?.backend as? AVAudioRecorder }
+        set {
+            if let newValue {
+                currentContext = RecordingContext(backend: newValue, onUnexpectedStop: onUnexpectedStop)
+            } else {
+                currentContext = nil
+            }
+        }
+    }
     var tempURL: URL?
 
     private let settings: [String: Any] = [
@@ -64,9 +107,9 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// `handleUnexpectedStop()` 経由にすることで、この経路自身がその「最後に
     /// 気づいた者」になり、確実に ended を出してから recorder を握り潰す。
     func handleInputDeviceChange() {
-        guard let r = recorder else { return }
-        if r.isRecording { return }  // 録音中は触らない（次回 start() まで待つ）
-        handleUnexpectedStop(r)
+        guard let context = currentContext else { return }
+        if context.backend.isRecording { return }  // 録音中は触らない（次回 start() まで待つ）
+        handleUnexpectedStop(context.backend)
         klog("AudioRecorder: input device changed while recorder was already stopped — routed through handleUnexpectedStop")
     }
 
@@ -377,11 +420,17 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// 「セッションA停止 → セッションB開始」の間に挟まって届く、Aの遅延した
     /// 失敗コールバック。ここで identity チェックをせずに進むと、Bがまだ
     /// 録音中なのに `self.recorder = nil` で B を握り潰し、誤って `.ended`
-    /// (onUnexpectedStop) を発火してしまう。渡された `recorder` が
-    /// `activeSessionRecorder` (= 現在の `self.recorder`) と同一でなければ、
-    /// 古いセッションのコールバックとして黙って無視する。
+    /// (onUnexpectedStop) を発火してしまう。
+    ///
+    /// **round-7 review**: identity チェックと「呼び出す closure」を
+    /// `currentContext` という単一の参照から1回だけスナップショットして
+    /// 両方に使う (`RecordingContext` のドキュメント参照) — 別々の mutable
+    /// プロパティ (旧 `activeSessionRecorder` と `onUnexpectedStop`) を
+    /// 別々のタイミングで読むと、その間に別セッションへの rebind が挟まった
+    /// 場合に「識別は古いセッションのものだが、実際に呼ぶのは新しい
+    /// セッションの closure」という誤発火が起こり得た。
     func handleUnexpectedStop(_ recorder: AudioRecordingBackend) {
-        guard recorder === activeSessionRecorder else {
+        guard let context = currentContext, context.backend === recorder else {
             klog("AudioRecorder: ignoring unexpected-stop callback from a stale/previous session's recorder")
             return
         }
@@ -389,18 +438,24 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         if recorder.isRecording {
             recorder.stop()
         }
-        self.recorder = nil
+        currentContext = nil
         restoreDefaultInputDevice()
-        onUnexpectedStop?()
+        context.onUnexpectedStop?()
     }
 
     /// テスト専用: identity ガード用の「現在のセッション」を直接注入する。
-    /// 本体コードは `recorder` の `didSet` 経由でのみ更新するが (常に
-    /// `AVAudioRecorder`)、テストは実マイクなしで動く `FakeAudioRecordingBackend`
-    /// を「今のセッション」として扱いたいことがあるため、独立して差し替え
-    /// られるようにする。
+    /// 本番の `recorder` セッター (`prepare()` 経由) と全く同じ規則——
+    /// 呼び出し時点の `onUnexpectedStop` を焼き込んだ `RecordingContext` を
+    /// 生成して `currentContext` に差し替える——を通る。`recorder` セッター
+    /// 自身は `AVAudioRecorder` 型にしか代入できないため、実マイクなしで
+    /// 動く `FakeAudioRecordingBackend` を「今のセッション」として注入
+    /// したいテストのためにここで直接組み立てる。
     func setActiveSessionForTesting(_ session: AnyObject?) {
-        activeSessionRecorder = session
+        guard let backend = session as? AudioRecordingBackend else {
+            currentContext = nil
+            return
+        }
+        currentContext = RecordingContext(backend: backend, onUnexpectedStop: onUnexpectedStop)
     }
 
     // MARK: - Watchdog (AirPods 切断等、AVAudioRecorderDelegate が発火しない停止の検出)
@@ -430,8 +485,8 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// `recorder` が存在するのに `isRecording` が false になっていたら、
     /// システムによる無音の強制停止 (デバイス消失・中断等) とみなして拾う。
     func checkWatchdog() {
-        guard let r = recorder, !r.isRecording else { return }
+        guard let context = currentContext, !context.backend.isRecording else { return }
         klog("AudioRecorder: watchdog detected recording stopped unexpectedly (device loss / interruption)")
-        handleUnexpectedStop(r)
+        handleUnexpectedStop(context.backend)
     }
 }

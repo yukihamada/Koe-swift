@@ -3,15 +3,6 @@ import AVFoundation
 import Accelerate
 import CWhisper
 
-/// `whisper_full_params.abort_callback` に直接渡す C 呼び出し規約の関数
-/// (`transcribeWithSpeakers` 用 — `transcribe()` は C bridge 経由で同じ
-/// フラグを渡す)。`userData` は `WhisperContext.terminationAbortFlag`
-/// (`Bool` へのポインタ)。
-private func whisperTerminationAbortCallback(_ userData: UnsafeMutableRawPointer?) -> Bool {
-    guard let userData else { return false }
-    return userData.assumingMemoryBound(to: Bool.self).pointee
-}
-
 /// whisper.cpp C API の Swift ラッパー。
 /// モデルをプロセス内メモリに保持し、HTTP/subprocess オーバーヘッドなしで推論。
 final class WhisperContext {
@@ -45,21 +36,29 @@ final class WhisperContext {
     /// が返ってきたら `_exit(0)` で即座にプロセスを終了させ、C++ の
     /// 静的デストラクタが未解放の Metal context に触れて abort する
     /// (2026-09-19 の元クラッシュ) 前にプロセスごと消し去るべき。
+    /// **2026-09-26 round-5 review**: 以前はインスタンスごとに順番に abort flag を
+    /// 立てて `timeout` 秒待つ、を繰り返していた — インスタンス数が増えるほど
+    /// 待ち時間の上限が線形に伸びてしまう (N個なら最大 N×timeout 秒)。
+    /// まず全インスタンスに打ち切りシグナルを送ってから、実際の解放を
+    /// "全体で1つ" の締め切りで並行に待つように変更した。
     @discardableResult
     static func unloadAllForTermination(timeout: TimeInterval = 5) -> Bool {
-        var allSucceeded = true
-        for ctx in registry.snapshot() {
-            let sem = DispatchSemaphore(value: 0)
+        let instances = registry.snapshot()
+        for ctx in instances { ctx.requestTerminationAbort() }
+
+        let group = DispatchGroup()
+        for ctx in instances {
+            group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 ctx.unloadForTermination()
-                sem.signal()
-            }
-            if sem.wait(timeout: .now() + timeout) == .timedOut {
-                klog("WhisperContext: unloadForTermination timed out for one instance during termination (best-effort, giving up)")
-                allSucceeded = false
+                group.leave()
             }
         }
-        return allSucceeded
+        let result = group.wait(timeout: .now() + timeout)
+        if result == .timedOut {
+            klog("WhisperContext: unloadAllForTermination timed out waiting for one or more instances (best-effort, giving up)")
+        }
+        return result == .success
     }
 
     private var ctx: OpaquePointer?  // whisper_context*
@@ -117,7 +116,7 @@ final class WhisperContext {
         return ptr
     }()
     /// アプリ終了専用の abort フラグ (2026-09-26 round-4)。`unloadForTermination()`
-    /// が **queue を経由せず** 直ちに true にする — `transcribe`/
+    /// が **queue を経由せず** 直ちに立てる — `transcribe`/
     /// `transcribeWithSpeakers` が whisper_full に渡す abort_callback がこれを
     /// ポーリングするので、queue 上で重い推論が実行中でも `unloadForTermination()`
     /// の `rq.syncOrInline` (= 実質 queue.sync) がキューの順番待ちでブロックされて
@@ -126,11 +125,25 @@ final class WhisperContext {
     /// — あちらは新しい `transcribe()` 呼び出しのたびに false へリセットされる
     /// ため、終了処理のフラグと兼用すると「終了直前に別の transcribe が走って
     /// リセットしてしまう」レースになる。
-    private var terminationAbortFlag: UnsafeMutablePointer<Bool> = {
-        let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
-        ptr.initialize(to: false)
-        return ptr
-    }()
+    ///
+    /// **2026-09-26 round-5 review**: 以前は `cancelFlag` と同じ、素の
+    /// `UnsafeMutablePointer<Bool>` だった — 書き込み側 (終了処理スレッド) と
+    /// 読み取り側 (whisper_full の worker thread) の間に同期が一切なく、
+    /// ThreadSanitizer が実際のデータレースとして検出した。`koe_abort_flag`
+    /// (C11 `atomic_bool` + release/acquire、`Sources/CWhisper/whisper_bridge.c`
+    /// 参照) に置き換えて解消する — Swift 側からは opaque pointer としてしか
+    /// 触らない (`koe_abort_flag_set/get/destroy` 経由)。
+    private var terminationAbortFlag: OpaquePointer = koe_abort_flag_create()
+
+    /// `terminationAbortFlag` だけを立てる軽量な操作。`unloadAllForTermination()`
+    /// が「まず全インスタンスに打ち切りシグナルを送ってから、実際の解放を
+    /// "全体で1つ" の締め切りで待つ」ための最初のステップとして使う
+    /// (2026-09-26 round-5 — 以前はインスタンスごとに順番に
+    /// 立てて`timeout`秒待つを繰り返していたため、インスタンス数に比例して
+    /// 待ち時間が伸びてしまっていた)。
+    private func requestTerminationAbort() {
+        koe_abort_flag_set(terminationAbortFlag, true)
+    }
 
     init() {
         Self.registry.register(self)
@@ -280,7 +293,7 @@ final class WhisperContext {
         // 待ちでブロックされている間も、queue 上で今まさに走っている
         // whisper_full (abort_callback 経由) がこれを見て自分から打ち切れる
         // ようにするため (詳細は terminationAbortFlag のコメント参照)。
-        terminationAbortFlag.pointee = true
+        requestTerminationAbort()
         rq.syncOrInline {
             isShutDown = true
             generation += 1
@@ -480,6 +493,10 @@ final class WhisperContext {
                     nThreads,
                     1,  // best_of=1 for speed (was ws.bestOf=5)
                     flagPtr,
+                    // 2026-09-26 round-5: 投機実行も app termination で
+                    // 打ち切れるようにする (cancelFlag は新しい transcribe()
+                    // によるキャンセル専用のまま、両方を or で見る)。
+                    self.terminationAbortFlag,
                     &outputBuf, Int32(bufSize)
                 )
             }
@@ -530,8 +547,10 @@ final class WhisperContext {
             // tinydiarize 有効化
             params.tdrz_enable = true
             // アプリ終了時に長い話者分離認識を打ち切れるようにする
-            // (transcribe() と同じ terminationAbortFlag — 詳細はその宣言のコメント参照)
-            params.abort_callback = whisperTerminationAbortCallback
+            // (transcribe() と同じ terminationAbortFlag — 詳細はその宣言のコメント参照)。
+            // koe_whisper_abort_callback は koe_abort_flag* を受け取る C 関数
+            // (whisper_bridge.h/.c) — atomic な実体を Swift 側からは触らない。
+            params.abort_callback = koe_whisper_abort_callback
             params.abort_callback_user_data = UnsafeMutableRawPointer(self.terminationAbortFlag)
 
             let langCStr = language == "auto" ? nil : strdup(language)
@@ -776,6 +795,6 @@ final class WhisperContext {
     deinit {
         unload()
         cancelFlag.deallocate()
-        terminationAbortFlag.deallocate()
+        koe_abort_flag_destroy(terminationAbortFlag)
     }
 }

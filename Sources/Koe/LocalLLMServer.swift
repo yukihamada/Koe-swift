@@ -1,5 +1,12 @@
 import Foundation
 import CLlama
+// koe_abort_flag_* (2026-09-26 round-5) is declared in CWhisper's
+// whisper_bridge.h, not CLlama's shim.h (which isn't part of the CLlama
+// module — see module.modulemap; ggml_backend_load_all resolves via
+// ggml-backend.h instead). Importing CWhisper here too just to reuse that
+// one shared atomic-flag helper — whisper_bridge.o is always linked into
+// the same binary as this file regardless.
+import CWhisper
 
 /// llama.cpp C API のSwiftラッパー（WhisperContextと同じパターン）。
 /// モデルをプロセス内メモリに保持し、Metal GPU で高速推論。
@@ -22,21 +29,29 @@ final class LlamaContext {
     /// 戻り値は「全インスタンスが `timeout` 以内に解放できたか」— false なら
     /// 呼び出し側 (AppDelegate) は `_exit(0)` で即座にプロセスを終了させるべき
     /// (詳細は `WhisperContext.unloadAllForTermination` のコメント参照)。
+    ///
+    /// **2026-09-26 round-5**: `WhisperContext.unloadAllForTermination` と同じ
+    /// 理由で「全インスタンスに先に abort flag を立ててから、全体で1つの
+    /// 締め切りで並行に待つ」方式にした (以前はインスタンスごとに順番に
+    /// `timeout` 秒待っていた)。
     @discardableResult
     static func unloadAllForTermination(timeout: TimeInterval = 5) -> Bool {
-        var allSucceeded = true
-        for ctx in registry.snapshot() {
-            let sem = DispatchSemaphore(value: 0)
+        let instances = registry.snapshot()
+        for ctx in instances { ctx.requestTerminationAbort() }
+
+        let group = DispatchGroup()
+        for ctx in instances {
+            group.enter()
             DispatchQueue.global(qos: .userInitiated).async {
                 ctx.unloadForTermination()
-                sem.signal()
-            }
-            if sem.wait(timeout: .now() + timeout) == .timedOut {
-                klog("LlamaContext: unloadForTermination timed out for one instance during termination (best-effort, giving up)")
-                allSucceeded = false
+                group.leave()
             }
         }
-        return allSucceeded
+        let result = group.wait(timeout: .now() + timeout)
+        if result == .timedOut {
+            klog("LlamaContext: unloadAllForTermination timed out waiting for one or more instances (best-effort, giving up)")
+        }
+        return result == .success
     }
 
     private var model: OpaquePointer?   // llama_model*
@@ -68,11 +83,22 @@ final class LlamaContext {
     /// アプリ終了専用の abort フラグ (2026-09-26 round-4)。詳細は
     /// `WhisperContext.terminationAbortFlag` のコメント参照 — `generate()` の
     /// トークン生成ループがこれをポーリングして自主的に打ち切る。
-    private var terminationAbortFlag: UnsafeMutablePointer<Bool> = {
-        let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
-        ptr.initialize(to: false)
-        return ptr
-    }()
+    ///
+    /// **2026-09-26 round-5**: `WhisperContext.terminationAbortFlag` と同じ
+    /// 理由 (ThreadSanitizer が検出した実データレース) で、素の
+    /// `UnsafeMutablePointer<Bool>` から `koe_abort_flag` (C11 atomic_bool、
+    /// `Sources/CWhisper/whisper_bridge.c` に実体) に置き換えた。
+    /// `koe_abort_flag_*` は CWhisper モジュールの `whisper_bridge.h` で
+    /// 宣言されている (CLlama の `shim.h` はモジュールに含まれておらず
+    /// `ggml_backend_load_all` も実際には `ggml-backend.h` 経由で解決されて
+    /// いる) — このファイルの先頭で `import CWhisper` しているのはそのため。
+    private var terminationAbortFlag: OpaquePointer = koe_abort_flag_create()
+
+    /// `terminationAbortFlag` だけを立てる軽量な操作 — 詳細は
+    /// `WhisperContext.requestTerminationAbort()` のコメント参照。
+    private func requestTerminationAbort() {
+        koe_abort_flag_set(terminationAbortFlag, true)
+    }
 
     init() {
         Self.registry.register(self)
@@ -283,8 +309,21 @@ final class LlamaContext {
 
             DispatchQueue.main.async {
                 self.isLoading = false
-                klog("Llama: model loaded (Metal GPU)")
-                completion(true)
+                // 2026-09-26 round-5 review: このブロックはここで終わっており
+                // queue は空いている — completion(true) が main で実際に実行
+                // される前に、別スレッドから unload()/unloadForTermination()
+                // が割り込んで上で publish した ctx/model を既に free して
+                // しまっている可能性がある (WhisperContext.loadModel() の
+                // round-4 修正と同じ理由)。true を報告する直前に
+                // `self.isLoaded` (isLoadedLock 越しの atomic read) を
+                // 読み直し、その時点でまだロードされたままかを確認する。
+                if self.isLoaded {
+                    klog("Llama: model loaded (Metal GPU)")
+                    completion(true)
+                } else {
+                    klog("Llama: model was unloaded before completion ran")
+                    completion(false)
+                }
             }
         }
     }
@@ -316,7 +355,7 @@ final class LlamaContext {
         // 待ちでブロックされている間も、queue 上で今まさに走っている
         // generate() のトークン生成ループがこれを見て自分から打ち切れる
         // ようにするため (詳細は terminationAbortFlag のコメント参照)。
-        terminationAbortFlag.pointee = true
+        requestTerminationAbort()
         rq.syncOrInline {
             isShutDown = true
             generation += 1
@@ -397,7 +436,7 @@ final class LlamaContext {
                 // アプリ終了中なら speculative/長い生成でも即座に打ち切る —
                 // トークン1個分 (数十ms) 以内に抜けられるので
                 // unloadForTermination() の bounded wait をほぼ使わずに済む。
-                if self.terminationAbortFlag.pointee {
+                if koe_abort_flag_get(self.terminationAbortFlag) {
                     klog("Llama: generate aborted by app termination")
                     break
                 }
@@ -531,6 +570,6 @@ final class LlamaContext {
 
     deinit {
         unload()
-        terminationAbortFlag.deallocate()
+        koe_abort_flag_destroy(terminationAbortFlag)
     }
 }

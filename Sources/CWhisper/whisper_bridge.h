@@ -14,11 +14,40 @@ extern "C" {
 // Opaque context type
 struct whisper_context;
 
+// Thread-safe (real C11 atomic) boolean flag, for signals that get written
+// from one thread (e.g. the app-termination path) and read from a different
+// thread (e.g. the whisper_full worker thread) without any other
+// synchronization between them.
+//
+// Opaque from Swift's side: Swift's ClangImporter can't cleanly expose C11
+// _Atomic-qualified struct fields, so the real definition (atomic_bool)
+// lives privately in whisper_bridge.c — every other translation unit /
+// Swift file only ever holds and passes the pointer around via these
+// functions.
+//
+// 2026-09-26 round-5: replaces a plain `UnsafeMutablePointer<Bool>` that
+// ThreadSanitizer flagged as a genuine data race (written from the
+// termination thread, read from the whisper_full worker thread with no
+// synchronization at all).
+typedef struct koe_abort_flag koe_abort_flag;
+
+koe_abort_flag *koe_abort_flag_create(void);
+void koe_abort_flag_set(koe_abort_flag *flag, bool value);
+bool koe_abort_flag_get(koe_abort_flag *flag);
+void koe_abort_flag_destroy(koe_abort_flag *flag);
+
+// whisper_full_params.abort_callback-compatible function that checks a
+// koe_abort_flag — for callers that build whisper_full_params directly in
+// Swift (e.g. WhisperContext.transcribeWithSpeakers) instead of going
+// through one of the whisper_bridge_transcribe* helpers below.
+bool koe_whisper_abort_callback(void *user_data);
+
 // Simple transcription: returns number of segments, fills output buffer with text
-// abort_flag: optional (NULL = no abort support). Set *abort_flag = true from
-// another thread (e.g. app termination) to make whisper_full return early —
-// this is what lets AppDelegate.applicationWillTerminate interrupt a long
-// in-flight recognition within ~100ms instead of waiting for it to finish.
+// abort_flag: optional (NULL = no abort support). Set it via
+// koe_abort_flag_set() from another thread (e.g. app termination) to make
+// whisper_full return early — this is what lets
+// AppDelegate.applicationWillTerminate interrupt a long in-flight
+// recognition within ~100ms instead of waiting for it to finish.
 int whisper_bridge_transcribe(
     struct whisper_context *ctx,
     const float *samples,
@@ -33,12 +62,22 @@ int whisper_bridge_transcribe(
     float entropy_thold,
     float logprob_thold,
     float no_speech_thold,
-    bool *abort_flag,        // optional; NULL = no abort support
+    koe_abort_flag *abort_flag,  // optional; NULL = no abort support
     char *output,            // output buffer for transcribed text
     int output_size          // size of output buffer
 );
 
-// Transcribe with abort callback support (for speculative execution)
+// Transcribe with abort callback support (for speculative execution).
+// cancel_flag: plain, non-atomic bool* — written and read by the SAME
+// thread pair every time (the caller thread that starts/cancels a
+// speculative transcribe, and this function's own worker queue), reset at
+// the start of every transcribe() call, so it intentionally stays a plain
+// pointer (see WhisperContext.cancelFlag's doc comment for why it must NOT
+// be shared with termination_flag).
+// termination_flag: optional koe_abort_flag* — honored in ADDITION to
+// cancel_flag, so a long-running speculative transcribe can also be
+// interrupted by app termination, not just by a newer recognition
+// cancelling it.
 int whisper_bridge_transcribe_abortable(
     struct whisper_context *ctx,
     const float *samples,
@@ -47,7 +86,8 @@ int whisper_bridge_transcribe_abortable(
     const char *prompt,
     int n_threads,
     int best_of,
-    bool *abort_flag,        // set to true to abort
+    bool *cancel_flag,               // set to true to abort
+    koe_abort_flag *termination_flag, // optional; NULL = not honored
     char *output,
     int output_size
 );

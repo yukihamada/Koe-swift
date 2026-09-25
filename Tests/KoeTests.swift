@@ -1,5 +1,6 @@
 // Tests/KoeTests.swift — Standalone test runner (assert-based, no XCTest)
 import Foundation
+import CWhisper  // koe_abort_flag_* (2026-09-26 round-5, used by FakeAbortableWorker)
 
 var passed = 0
 var failed = 0
@@ -518,11 +519,12 @@ func testWhisperContextUnloadAllForTerminationReachesNonSharedInstance() {
 // needing a real whisper/llama model.
 // ══════════════════════════════════════
 final class FakeAbortableWorker {
-    private var abortFlag: UnsafeMutablePointer<Bool> = {
-        let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
-        ptr.initialize(to: false)
-        return ptr
-    }()
+    // 2026-09-26 round-5: uses the same real koe_abort_flag (C11 atomic_bool,
+    // see Sources/CWhisper/whisper_bridge.c) that WhisperContext/LlamaContext
+    // use in production — a plain UnsafeMutablePointer<Bool> here would be
+    // the exact data race ThreadSanitizer flagged in production code, just
+    // reproduced in the test mirror instead of fixed.
+    private var abortFlag: OpaquePointer = koe_abort_flag_create()
     let rq = ReentrantSerialQueue(label: "test.fake-abortable-worker")
 
     /// Mirrors LlamaContext.generate()'s token loop / a whisper_full call
@@ -532,7 +534,7 @@ final class FakeAbortableWorker {
             guard let self else { return }
             var completedSteps = 0
             for _ in 0..<steps {
-                if self.abortFlag.pointee { break }
+                if koe_abort_flag_get(self.abortFlag) { break }
                 Thread.sleep(forTimeInterval: stepDuration)
                 completedSteps += 1
             }
@@ -543,10 +545,10 @@ final class FakeAbortableWorker {
     /// Mirrors unloadForTermination(): sets the flag synchronously, without
     /// ever touching (or waiting on) the worker's own queue.
     func requestAbort() {
-        abortFlag.pointee = true
+        koe_abort_flag_set(abortFlag, true)
     }
 
-    deinit { abortFlag.deallocate() }
+    deinit { koe_abort_flag_destroy(abortFlag) }
 }
 
 func testAbortFlagStopsLongRunningWorkQuickly() {

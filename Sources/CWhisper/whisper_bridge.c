@@ -4,11 +4,56 @@
 #include "shim.h"
 #include "whisper_bridge.h"
 #include <string.h>
+#include <stdatomic.h>
+#include <stdlib.h>
 
-// Abort callback for speculative execution
-static bool whisper_bridge_abort_cb(void *user_data) {
+// Real definition of koe_abort_flag (see whisper_bridge.h for why this is
+// kept private to this translation unit / opaque from Swift's side).
+struct koe_abort_flag {
+    atomic_bool value;
+};
+
+koe_abort_flag *koe_abort_flag_create(void) {
+    koe_abort_flag *f = (koe_abort_flag *)malloc(sizeof(koe_abort_flag));
+    if (f) atomic_init(&f->value, false);
+    return f;
+}
+
+void koe_abort_flag_set(koe_abort_flag *flag, bool value) {
+    if (!flag) return;
+    atomic_store_explicit(&flag->value, value, memory_order_release);
+}
+
+bool koe_abort_flag_get(koe_abort_flag *flag) {
+    if (!flag) return false;
+    return atomic_load_explicit(&flag->value, memory_order_acquire);
+}
+
+void koe_abort_flag_destroy(koe_abort_flag *flag) {
+    free(flag);
+}
+
+bool koe_whisper_abort_callback(void *user_data) {
     if (!user_data) return false;
-    return *((bool *)user_data);
+    return koe_abort_flag_get((koe_abort_flag *)user_data);
+}
+
+// Combines a plain (non-atomic, single-thread-pair) speculative-cancel flag
+// with an (atomic, cross-thread) termination flag — used by
+// whisper_bridge_transcribe_abortable so a long speculative transcribe can
+// be interrupted by EITHER a newer recognition cancelling it OR the app
+// terminating.
+typedef struct {
+    bool *cancel_flag;
+    koe_abort_flag *termination_flag;
+} koe_dual_abort_ctx;
+
+static bool koe_dual_abort_callback(void *user_data) {
+    if (!user_data) return false;
+    koe_dual_abort_ctx *ctx = (koe_dual_abort_ctx *)user_data;
+    if (ctx->cancel_flag && *ctx->cancel_flag) return true;
+    if (ctx->termination_flag && koe_abort_flag_get(ctx->termination_flag)) return true;
+    return false;
 }
 
 int whisper_bridge_transcribe(
@@ -25,7 +70,7 @@ int whisper_bridge_transcribe(
     float entropy_thold,
     float logprob_thold,
     float no_speech_thold,
-    bool *abort_flag,
+    koe_abort_flag *abort_flag,
     char *output,
     int output_size
 ) {
@@ -62,7 +107,7 @@ int whisper_bridge_transcribe(
     }
 
     if (abort_flag) {
-        params.abort_callback = whisper_bridge_abort_cb;
+        params.abort_callback = koe_whisper_abort_callback;
         params.abort_callback_user_data = abort_flag;
     }
 
@@ -99,7 +144,8 @@ int whisper_bridge_transcribe_abortable(
     const char *prompt,
     int n_threads,
     int best_of,
-    bool *abort_flag,
+    bool *cancel_flag,
+    koe_abort_flag *termination_flag,
     char *output,
     int output_size
 ) {
@@ -131,9 +177,13 @@ int whisper_bridge_transcribe_abortable(
         params.initial_prompt = prompt;
     }
 
-    if (abort_flag) {
-        params.abort_callback = whisper_bridge_abort_cb;
-        params.abort_callback_user_data = abort_flag;
+    // `ctx_dual` is stack-local but whisper_full() below is synchronous —
+    // it (and anything it calls, including abort_callback) never outlives
+    // this function call, so pointing abort_callback_user_data at it is safe.
+    koe_dual_abort_ctx ctx_dual = { cancel_flag, termination_flag };
+    if (cancel_flag || termination_flag) {
+        params.abort_callback = koe_dual_abort_callback;
+        params.abort_callback_user_data = &ctx_dual;
     }
 
     int ret = whisper_full(ctx, params, samples, n_samples);

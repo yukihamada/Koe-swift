@@ -160,6 +160,85 @@ func testLLMSanitization() {
 }
 
 // ══════════════════════════════════════
+// DictationNotificationPoster — real DistributedNotificationCenter round-trip
+// ══════════════════════════════════════
+func testDictationNotificationPoster() {
+    print("\n--- DictationNotificationPoster ---")
+    let dnc = DistributedNotificationCenter.default()
+
+    // DistributedNotificationCenter delivery (even to self) is routed through
+    // the run loop, so a plain DispatchSemaphore.wait() on the main thread
+    // (which never spins the run loop) would hang/timeout here. Pump the
+    // main run loop in short slices until the observer fires instead.
+    func waitForRunLoop(_ received: () -> Bool, timeoutSec: TimeInterval = 2) -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSec)
+        while !received(), Date() < deadline {
+            RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.05))
+        }
+        return received()
+    }
+
+    var beganReceived = false
+    let beganObserver = dnc.addObserver(
+        forName: Notification.Name(DictationNotificationPoster.beganNotificationName),
+        object: nil, queue: .main
+    ) { _ in beganReceived = true }
+    DictationNotificationPoster.shared.postDictationBegan()
+    check(waitForRunLoop({ beganReceived }), "postDictationBegan() delivers io.atsume.voice.dictation.began")
+    dnc.removeObserver(beganObserver)
+
+    var endedReceived = false
+    let endedObserver = dnc.addObserver(
+        forName: Notification.Name(DictationNotificationPoster.endedNotificationName),
+        object: nil, queue: .main
+    ) { _ in endedReceived = true }
+    DictationNotificationPoster.shared.postDictationEnded()
+    check(waitForRunLoop({ endedReceived }), "postDictationEnded() delivers io.atsume.voice.dictation.ended")
+    dnc.removeObserver(endedObserver)
+
+    // Second 側 VoiceArbiter とのハードコード契約 — 文字列がずれると無音で壊れるので固定する
+    check(DictationNotificationPoster.beganNotificationName == "io.atsume.voice.dictation.began",
+          "began notification name matches Second's VoiceArbiter contract")
+    check(DictationNotificationPoster.endedNotificationName == "io.atsume.voice.dictation.ended",
+          "ended notification name matches Second's VoiceArbiter contract")
+}
+
+// ══════════════════════════════════════
+// AppDelegate recording start/stop → dictation notifier wiring
+//
+// NOTE: this deliberately does NOT call the real startRecording()/
+// stopAndRecognize()/cancelRecording() — those grab the mic, register
+// global Carbon hotkeys, and duck system volume, none of which belong in a
+// headless unit test run possibly alongside the real, live Koe.app. Instead
+// it exercises notifyDictationBegan()/notifyDictationEnded() — the exact,
+// only functions those code paths call to reach the notifier (verified by
+// reading AppDelegate.swift: startRecording() calls notifyDictationBegan()
+// right after isRecording=true; stopAndRecognize()/cancelRecording()/
+// applicationWillTerminate() call notifyDictationEnded() right after
+// isRecording=false) — with an injected fake in place of
+// DictationNotificationPoster.shared.
+// ══════════════════════════════════════
+final class FakeDictationNotifier: DictationLifecycleNotifying {
+    var beganCount = 0
+    var endedCount = 0
+    func postDictationBegan() { beganCount += 1 }
+    func postDictationEnded() { endedCount += 1 }
+}
+
+func testAppDelegateDictationNotifierWiring() {
+    print("\n--- AppDelegate dictation notifier wiring ---")
+    let ad = AppDelegate()
+    let fake = FakeDictationNotifier()
+    ad.dictationNotifier = fake
+
+    ad.notifyDictationBegan()
+    check(fake.beganCount == 1 && fake.endedCount == 0, "notifyDictationBegan() calls the injected notifier's postDictationBegan()")
+
+    ad.notifyDictationEnded()
+    check(fake.beganCount == 1 && fake.endedCount == 1, "notifyDictationEnded() calls the injected notifier's postDictationEnded()")
+}
+
+// ══════════════════════════════════════
 // AgentCommand properties
 // ══════════════════════════════════════
 func testAgentCommandProperties() {
@@ -183,6 +262,8 @@ func runAllTests() {
     testSettingsDefaults()
     testL10n()
     testLLMSanitization()
+    testDictationNotificationPoster()
+    testAppDelegateDictationNotifierWiring()
     testAgentCommandProperties()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }

@@ -34,6 +34,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isRecording      = false
     private var recordingStart:  Date?
     private var activeAppBundleID = ""
+    /// テストが差し替えられるよう `private` にしない（他は DistributedNotificationCenter
+    /// を叩かず fake で検証する）。実運用では `DictationNotificationPoster.shared` 固定。
+    var dictationNotifier: DictationLifecycleNotifying = DictationNotificationPoster.shared
 
     // Silence-based auto-stop (VAD: 直近フレームの平滑化で誤検出を低減)
     private let voiceThresholdBase: Float = 0.08  // 基本閾値（環境ノイズで動的に上昇）
@@ -406,6 +409,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // 口述中に終了した場合、Second 側が .began の120秒失効を待たず即座に
+        // 音声操作を再開できるよう先に .ended を送る（他の cleanup より前）。
+        if isRecording {
+            isRecording = false
+            notifyDictationEnded()
+        }
         HistoryStore.shared.flushSync()
         // 録音中の終了でもデータを失わない: cancel() はファイルを削除するため使わない。
         // shutdown() は録音を止めてファイルを残し (次回起動の CrashRecovery が回収)、
@@ -1213,6 +1222,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Recording
 
+    /// 録音開始/終了の全経路 (fn PTT / メインホットキー / ESC キャンセル / アプリ終了) から
+    /// 必ずここを通す。Second の VoiceArbiter が購読する DistributedNotificationCenter
+    /// 通知はここでのみ送信する — 呼び出し側で直接 `dictationNotifier` を叩かない。
+    func notifyDictationBegan() { dictationNotifier.postDictationBegan() }
+    func notifyDictationEnded() { dictationNotifier.postDictationEnded() }
+
     private func startRecording() {
         // Stop wake word detector before AVAudioRecorder starts to avoid conflicts
         WakeWordDetector.shared.stop()
@@ -1224,6 +1239,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         activeAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         klog("startRecording from app: \(activeAppBundleID)")
         isRecording    = true
+        notifyDictationBegan()
         lastStreamingResult = nil
         streamingAccumulated = ""
         streamingSegmentText = ""
@@ -1282,6 +1298,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         overlay?.clearStreamingText()
         klog("stopAndRecognize")
         isRecording = false
+        notifyDictationEnded()
         setIcon(recording: false)
         restoreSystemVolume()
 
@@ -2185,6 +2202,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func cancelRecording() {
+        // ESC は録音中だけでなく認識中(isRecording==false)にも呼ばれる — その場合は
+        // 録音自体は既に stopAndRecognize 側で .ended 送信済みなので二重送信しない
+        let wasRecording = isRecording
         unregisterRecordingHotKeys()  // Space/ESC 解除
         klog("cancelRecording (recording=\(isRecording) recognizing=\(isRecognizing))")
         // ESCでシームレスモードも終了
@@ -2207,6 +2227,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             typer.cancelStreaming()
         }
         isRecording = false
+        if wasRecording { notifyDictationEnded() }
         isRecognizing = false
         isTranslateMode = false
         overlay?.setTranslateMode(false)

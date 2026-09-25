@@ -15,6 +15,10 @@ extern "C" {
 struct whisper_context;
 
 // Simple transcription: returns number of segments, fills output buffer with text
+// abort_flag: optional (NULL = no abort support). Set *abort_flag = true from
+// another thread (e.g. app termination) to make whisper_full return early —
+// this is what lets AppDelegate.applicationWillTerminate interrupt a long
+// in-flight recognition within ~100ms instead of waiting for it to finish.
 int whisper_bridge_transcribe(
     struct whisper_context *ctx,
     const float *samples,
@@ -29,6 +33,7 @@ int whisper_bridge_transcribe(
     float entropy_thold,
     float logprob_thold,
     float no_speech_thold,
+    bool *abort_flag,        // optional; NULL = no abort support
     char *output,            // output buffer for transcribed text
     int output_size          // size of output buffer
 );

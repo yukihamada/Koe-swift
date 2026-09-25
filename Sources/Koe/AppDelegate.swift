@@ -423,13 +423,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // SettingsWindowController の再認識機能が作る非共有インスタンスも含めて
         // プロセス内の全インスタンスを解放する (unloadAllForTermination はレジストリ
         // 経由で登録済みの全インスタンスを対象にする — 詳細は InstanceRegistry.swift)。
-        WhisperContext.unloadAllForTermination()
+        // それぞれ unloadForTermination() が terminationAbortFlag を即座に立てる
+        // ので、実行中の長い認識/生成があっても ~100ms 程度で自主的に打ち切られ、
+        // 通常は bounded wait (既定5秒) 以内に完了する。
+        let whisperUnloadedInTime = WhisperContext.unloadAllForTermination()
         // LLM後処理用のローカル llama.cpp モデル（ロードされていれば）も同じ理由で解放
-        LlamaContext.unloadAllForTermination()
+        let llamaUnloadedInTime = LlamaContext.unloadAllForTermination()
         // Carbon の global hotkey / event handler を確実に解放
         // (deinit はアプリ終了時に確実には呼ばれない)
         unregisterAllCarbonHotKeys()
         if let m = eventMonitor { NSEvent.removeMonitor(m); eventMonitor = nil }
+
+        // 2026-09-26 round-4 review: 最後の砦。abort_callback + bounded wait
+        // を尽くしてもなお context が期限内に解放できなかった場合、通常の
+        // exit() 経路に進むと、後で走る C++ の静的デストラクタが未解放の
+        // Metal context に触れて abort する可能性が残る (2026-09-19 の元
+        // クラッシュ)。ここに来るまでに履歴・録音周りの永続化は完了している
+        // (この関数の先頭の HistoryStore.flushSync()/recorder.shutdown()/
+        // AlwaysOnRecorder.stop() — いずれも上で既に実行済み) ので、
+        // `_exit(0)` でプロセスを即座に終了させ、C++ の静的デストラクタを
+        // 一切実行させない。abort する余地そのものをなくす最終防衛ライン。
+        if !whisperUnloadedInTime || !llamaUnloadedInTime {
+            klog("AppDelegate: a WhisperContext/LlamaContext instance did not unload within the timeout — calling _exit(0) to skip C++ static destructors and avoid the exit-time Metal teardown crash")
+            _exit(0)
+        }
     }
 
     // MARK: - Status Bar

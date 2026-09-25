@@ -3,6 +3,15 @@ import AVFoundation
 import Accelerate
 import CWhisper
 
+/// `whisper_full_params.abort_callback` に直接渡す C 呼び出し規約の関数
+/// (`transcribeWithSpeakers` 用 — `transcribe()` は C bridge 経由で同じ
+/// フラグを渡す)。`userData` は `WhisperContext.terminationAbortFlag`
+/// (`Bool` へのポインタ)。
+private func whisperTerminationAbortCallback(_ userData: UnsafeMutableRawPointer?) -> Bool {
+    guard let userData else { return false }
+    return userData.assumingMemoryBound(to: Bool.self).pointee
+}
+
 /// whisper.cpp C API の Swift ラッパー。
 /// モデルをプロセス内メモリに保持し、HTTP/subprocess オーバーヘッドなしで推論。
 final class WhisperContext {
@@ -23,7 +32,22 @@ final class WhisperContext {
     /// 1つの認識が異常に長引いていても、アプリ終了処理全体を無期限に
     /// ブロックしないための保険 (bounded wait)。タイムアウトした場合は
     /// そのインスタンスの解放をベストエフォートで諦めてログを残す。
-    static func unloadAllForTermination(timeout: TimeInterval = 5) {
+    ///
+    /// **2026-09-26 round-4 review**: bounded wait だけでは不十分 —
+    /// `unloadForTermination()` 自体は queue が空くのを待つだけなので、
+    /// 実行中の長い `whisper_full` (再認識等) がある限り `timeout` 秒
+    /// 経っても解放されない可能性がある。`unloadForTermination()` は
+    /// 呼ばれた瞬間に (queue を経由せず) `terminationAbortFlag` を
+    /// 立てるので、実行中の推論は abort_callback 経由で ~100ms 程度で
+    /// 自主的に打ち切られ、queue はすぐ空く想定 — が、それでも `timeout`
+    /// 以内に終わらない最悪ケースのために戻り値で「全インスタンスが
+    /// 期限内に解放できたか」を返す。呼び出し側 (AppDelegate) は false
+    /// が返ってきたら `_exit(0)` で即座にプロセスを終了させ、C++ の
+    /// 静的デストラクタが未解放の Metal context に触れて abort する
+    /// (2026-09-19 の元クラッシュ) 前にプロセスごと消し去るべき。
+    @discardableResult
+    static func unloadAllForTermination(timeout: TimeInterval = 5) -> Bool {
+        var allSucceeded = true
         for ctx in registry.snapshot() {
             let sem = DispatchSemaphore(value: 0)
             DispatchQueue.global(qos: .userInitiated).async {
@@ -32,8 +56,10 @@ final class WhisperContext {
             }
             if sem.wait(timeout: .now() + timeout) == .timedOut {
                 klog("WhisperContext: unloadForTermination timed out for one instance during termination (best-effort, giving up)")
+                allSucceeded = false
             }
         }
+        return allSucceeded
     }
 
     private var ctx: OpaquePointer?  // whisper_context*
@@ -86,6 +112,21 @@ final class WhisperContext {
     private var cancelSpeculation = false
     /// abort_callback用: C関数からアクセス可能なポインタ
     private var cancelFlag: UnsafeMutablePointer<Bool> = {
+        let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
+        ptr.initialize(to: false)
+        return ptr
+    }()
+    /// アプリ終了専用の abort フラグ (2026-09-26 round-4)。`unloadForTermination()`
+    /// が **queue を経由せず** 直ちに true にする — `transcribe`/
+    /// `transcribeWithSpeakers` が whisper_full に渡す abort_callback がこれを
+    /// ポーリングするので、queue 上で重い推論が実行中でも `unloadForTermination()`
+    /// の `rq.syncOrInline` (= 実質 queue.sync) がキューの順番待ちでブロックされて
+    /// いる間に、その推論自身が ~100ms 程度で自主的に打ち切られる。
+    /// `cancelFlag`/`cancelSpeculation` (投機実行キャンセル用) とは別物にしている
+    /// — あちらは新しい `transcribe()` 呼び出しのたびに false へリセットされる
+    /// ため、終了処理のフラグと兼用すると「終了直前に別の transcribe が走って
+    /// リセットしてしまう」レースになる。
+    private var terminationAbortFlag: UnsafeMutablePointer<Bool> = {
         let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
         ptr.initialize(to: false)
         return ptr
@@ -144,11 +185,18 @@ final class WhisperContext {
             }
             DispatchQueue.main.async {
                 self.isLoading = false
-                if ptr != nil {
+                // 2026-09-26 round-4 review: この queue.async ブロックはここで
+                // 終わっており queue は空いている — この completion(true) が
+                // main で実際に実行される前に、別スレッドから
+                // unload()/unloadForTermination() が割り込んで上で publish した
+                // ctx を既に free してしまっている可能性がある。true を報告する
+                // 直前に `self.isLoaded` (isLoadedLock 越しの atomic read) を
+                // 読み直し、その時点でまだロードされたままかを確認する。
+                if ptr != nil && self.isLoaded {
                     klog("WhisperContext: model loaded (GPU enabled)")
                     completion(true)
                 } else {
-                    klog("WhisperContext: failed to load model")
+                    klog("WhisperContext: failed to load model (or unloaded before completion ran)")
                     completion(false)
                 }
             }
@@ -228,6 +276,11 @@ final class WhisperContext {
     /// `__cxa_finalize` 経由でそれが走ると `ggml_metal_device_free` で abort する
     /// — 2026-09-19 の終了時クラッシュの原因）。
     func unloadForTermination() {
+        // queue を経由せず直ちに立てる — 下の rq.syncOrInline がキューの順番
+        // 待ちでブロックされている間も、queue 上で今まさに走っている
+        // whisper_full (abort_callback 経由) がこれを見て自分から打ち切れる
+        // ようにするため (詳細は terminationAbortFlag のコメント参照)。
+        terminationAbortFlag.pointee = true
         rq.syncOrInline {
             isShutDown = true
             generation += 1
@@ -379,6 +432,7 @@ final class WhisperContext {
                     ws.entropyThreshold,
                     -1.0,   // logprob_thold
                     0.6,    // no_speech_thold
+                    self.terminationAbortFlag,  // app termination can abort a long recognition (~100ms)
                     &outputBuf, Int32(bufSize)
                 )
             }
@@ -475,6 +529,10 @@ final class WhisperContext {
 
             // tinydiarize 有効化
             params.tdrz_enable = true
+            // アプリ終了時に長い話者分離認識を打ち切れるようにする
+            // (transcribe() と同じ terminationAbortFlag — 詳細はその宣言のコメント参照)
+            params.abort_callback = whisperTerminationAbortCallback
+            params.abort_callback_user_data = UnsafeMutableRawPointer(self.terminationAbortFlag)
 
             let langCStr = language == "auto" ? nil : strdup(language)
             defer { langCStr.map { free($0) } }
@@ -718,5 +776,6 @@ final class WhisperContext {
     deinit {
         unload()
         cancelFlag.deallocate()
+        terminationAbortFlag.deallocate()
     }
 }

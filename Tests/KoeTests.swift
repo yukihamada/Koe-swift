@@ -495,11 +495,78 @@ func testWhisperContextUnloadAllForTerminationReachesNonSharedInstance() {
     check(!sharedCtx.isShutDown, ".shared is not shut down before termination")
     check(!nonShared.isShutDown, "a freshly-created non-shared instance is not shut down before termination")
 
-    WhisperContext.unloadAllForTermination()
+    let allSucceeded = WhisperContext.unloadAllForTermination()
 
+    check(allSucceeded, "unloadAllForTermination() reports success — neither instance was busy/timed out")
     check(sharedCtx.isShutDown, ".shared is shut down after unloadAllForTermination()")
     check(nonShared.isShutDown,
           "a separately-created, non-shared WhisperContext is ALSO shut down after unloadAllForTermination() — proves termination isn't limited to .shared")
+}
+
+// ══════════════════════════════════════
+// abort-flag pattern (2026-09-26 round-4 review)
+//
+// unloadForTermination()'s bounded wait alone isn't enough if a long
+// transcribe()/generate() is in flight — waiting for it to finish naturally
+// could exceed the timeout. The real fix: unloadForTermination() sets a
+// plain UnsafeMutablePointer<Bool> SYNCHRONOUSLY (not via the serial queue)
+// the instant it's called, and the in-flight work (whisper_full's
+// abort_callback / LlamaContext.generate()'s per-token loop check) polls
+// that same flag and bails out within about one "step" — not the full
+// remaining duration. FakeAbortableWorker mirrors this exact shape (a
+// worker loop on its own serial queue, polling a raw pointer flag) without
+// needing a real whisper/llama model.
+// ══════════════════════════════════════
+final class FakeAbortableWorker {
+    private var abortFlag: UnsafeMutablePointer<Bool> = {
+        let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
+        ptr.initialize(to: false)
+        return ptr
+    }()
+    let rq = ReentrantSerialQueue(label: "test.fake-abortable-worker")
+
+    /// Mirrors LlamaContext.generate()'s token loop / a whisper_full call
+    /// whose abort_callback is polled between internal steps.
+    func runLongWork(steps: Int, stepDuration: TimeInterval, completion: @escaping (Int) -> Void) {
+        rq.async { [weak self] in
+            guard let self else { return }
+            var completedSteps = 0
+            for _ in 0..<steps {
+                if self.abortFlag.pointee { break }
+                Thread.sleep(forTimeInterval: stepDuration)
+                completedSteps += 1
+            }
+            DispatchQueue.main.async { completion(completedSteps) }
+        }
+    }
+
+    /// Mirrors unloadForTermination(): sets the flag synchronously, without
+    /// ever touching (or waiting on) the worker's own queue.
+    func requestAbort() {
+        abortFlag.pointee = true
+    }
+
+    deinit { abortFlag.deallocate() }
+}
+
+func testAbortFlagStopsLongRunningWorkQuickly() {
+    print("\n--- abort-flag pattern: requestAbort() lets in-flight work stop quickly instead of running to completion ---")
+    let worker = FakeAbortableWorker()
+    var completedSteps: Int?
+    // 20 steps * 0.05s = up to 1s of work if the abort flag is never observed.
+    worker.runLongWork(steps: 20, stepDuration: 0.05) { steps in completedSteps = steps }
+
+    // Give it a moment to actually start, then request abort almost
+    // immediately — well before all 20 steps could possibly finish.
+    Thread.sleep(forTimeInterval: 0.08)
+    worker.requestAbort()
+
+    drainMainQueue(1)
+    check(completedSteps != nil, "the work completes (aborted, not hung) within the drain window")
+    if let completedSteps {
+        check(completedSteps < 20,
+              "requestAbort() interrupts the loop well before all 20 steps finish (got \(completedSteps) steps — would be 20 if the flag were ignored)")
+    }
 }
 
 // ══════════════════════════════════════
@@ -523,6 +590,7 @@ func runAllTests() {
     testWeakInstanceRegistryDropsDeallocatedInstances()
     // Must run last: permanently shuts down the real WhisperContext.shared singleton.
     testWhisperContextUnloadAllForTerminationReachesNonSharedInstance()
+    testAbortFlagStopsLongRunningWorkQuickly()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }
 }

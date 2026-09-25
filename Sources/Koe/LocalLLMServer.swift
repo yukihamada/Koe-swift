@@ -16,7 +16,15 @@ final class LlamaContext {
     /// `unloadForTermination()` を呼ぶ。`AppDelegate.applicationWillTerminate`
     /// はこれを呼ぶこと。挙動は `WhisperContext.unloadAllForTermination` と同じ
     /// (bounded wait — 1インスタンスあたり `timeout` 秒までしか待たない)。
-    static func unloadAllForTermination(timeout: TimeInterval = 5) {
+    /// `unloadForTermination()` が queue を経由せず即座に `terminationAbortFlag`
+    /// を立てるので、実行中の `generate()` ループはトークン生成の合間にそれを
+    /// 見て自主的に打ち切られる (詳細は `terminationAbortFlag` のコメント参照)。
+    /// 戻り値は「全インスタンスが `timeout` 以内に解放できたか」— false なら
+    /// 呼び出し側 (AppDelegate) は `_exit(0)` で即座にプロセスを終了させるべき
+    /// (詳細は `WhisperContext.unloadAllForTermination` のコメント参照)。
+    @discardableResult
+    static func unloadAllForTermination(timeout: TimeInterval = 5) -> Bool {
+        var allSucceeded = true
         for ctx in registry.snapshot() {
             let sem = DispatchSemaphore(value: 0)
             DispatchQueue.global(qos: .userInitiated).async {
@@ -25,8 +33,10 @@ final class LlamaContext {
             }
             if sem.wait(timeout: .now() + timeout) == .timedOut {
                 klog("LlamaContext: unloadForTermination timed out for one instance during termination (best-effort, giving up)")
+                allSucceeded = false
             }
         }
+        return allSucceeded
     }
 
     private var model: OpaquePointer?   // llama_model*
@@ -36,7 +46,16 @@ final class LlamaContext {
     /// 詳細は ReentrantSerialQueue.swift 参照。
     private let rq = ReentrantSerialQueue(label: "com.yuki.koe.llama")
     private var queue: DispatchQueue { rq.queue }
-    private(set) var isLoaded = false
+    /// `loadModel()` の冒頭 (`guard !isLoading, !isLoaded else {...}`) は queue の
+    /// 外・呼び出し元のスレッドから読む — `WhisperContext.isLoaded` と全く同じ
+    /// 理由・同じ仕組みで `isLoadedLock` 越しの atomic read/write にする
+    /// (2026-09-26 round-4 review: 以前はここが lock 保護されていなかった)。
+    private let isLoadedLock = NSLock()
+    private var _isLoaded = false
+    private(set) var isLoaded: Bool {
+        get { isLoadedLock.lock(); defer { isLoadedLock.unlock() }; return _isLoaded }
+        set { isLoadedLock.lock(); _isLoaded = newValue; isLoadedLock.unlock() }
+    }
     private(set) var isLoading = false
     /// `ctx`/`model` と同じく `queue` 上でのみ読み書きする (queue-confined)。
     /// 通常の `unload()`/恒久的な `unloadForTermination()` のどちらが呼ばれても
@@ -46,6 +65,14 @@ final class LlamaContext {
     private var generation = 0
     /// アプリ終了専用の恒久フラグ。`unloadForTermination()` だけが立てる。
     private var isShutDown = false
+    /// アプリ終了専用の abort フラグ (2026-09-26 round-4)。詳細は
+    /// `WhisperContext.terminationAbortFlag` のコメント参照 — `generate()` の
+    /// トークン生成ループがこれをポーリングして自主的に打ち切る。
+    private var terminationAbortFlag: UnsafeMutablePointer<Bool> = {
+        let ptr = UnsafeMutablePointer<Bool>.allocate(capacity: 1)
+        ptr.initialize(to: false)
+        return ptr
+    }()
 
     init() {
         Self.registry.register(self)
@@ -285,6 +312,11 @@ final class LlamaContext {
     /// 走る保証がなく、llama.cpp が抱える ggml Metal backend が free されないまま
     /// 終了すると `ggml_metal_device_free` が __cxa_finalize 時に abort しうる)。
     func unloadForTermination() {
+        // queue を経由せず直ちに立てる — 下の rq.syncOrInline がキューの順番
+        // 待ちでブロックされている間も、queue 上で今まさに走っている
+        // generate() のトークン生成ループがこれを見て自分から打ち切れる
+        // ようにするため (詳細は terminationAbortFlag のコメント参照)。
+        terminationAbortFlag.pointee = true
         rq.syncOrInline {
             isShutDown = true
             generation += 1
@@ -362,6 +394,13 @@ final class LlamaContext {
             var answerTokenCount = 0
 
             for _ in 0..<maxTokens {
+                // アプリ終了中なら speculative/長い生成でも即座に打ち切る —
+                // トークン1個分 (数十ms) 以内に抜けられるので
+                // unloadForTermination() の bounded wait をほぼ使わずに済む。
+                if self.terminationAbortFlag.pointee {
+                    klog("Llama: generate aborted by app termination")
+                    break
+                }
                 let tokenID = llama_sampler_sample(smpl, ctx, -1)
                 if tokenID == eosToken { break }
 
@@ -490,5 +529,8 @@ final class LlamaContext {
         task.resume()
     }
 
-    deinit { unload() }
+    deinit {
+        unload()
+        terminationAbortFlag.deallocate()
+    }
 }

@@ -25,6 +25,7 @@ int whisper_bridge_transcribe(
     float entropy_thold,
     float logprob_thold,
     float no_speech_thold,
+    bool *abort_flag,
     char *output,
     int output_size
 ) {
@@ -58,6 +59,11 @@ int whisper_bridge_transcribe(
 
     if (prompt && prompt[0] != '\0') {
         params.initial_prompt = prompt;
+    }
+
+    if (abort_flag) {
+        params.abort_callback = whisper_bridge_abort_cb;
+        params.abort_callback_user_data = abort_flag;
     }
 
     int ret = whisper_full(ctx, params, samples, n_samples);

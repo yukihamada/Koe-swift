@@ -73,10 +73,24 @@ final class WhisperContext {
         return true
     }
 
+    /// `ctx` を明示的に解放する。`AppDelegate.applicationWillTerminate` から必ず
+    /// 呼ぶこと — `WhisperContext.shared` は `static let` なので、プロセス終了時に
+    /// Swift の `deinit` が確実に呼ばれる保証はない（呼ばれなければ `whisper_free`
+    /// が一度も走らず、whisper が保持する ggml Metal backend の解放は C++ 側の
+    /// 静的デストラクタ任せになる。Metal デバイスが既にティアダウンされた後に
+    /// `__cxa_finalize` 経由でそれが走ると `ggml_metal_device_free` で abort する
+    /// — 2026-09-19 の終了時クラッシュの原因）。
+    ///
+    /// `transcribe`/`transcribeBuffer`/`transcribeWithSpeakers` はすべて `queue`
+    /// 上で `ctx` を読んで `whisper_full` を実行する。ここでも `queue.sync` を
+    /// 使い、実行中/キュー待ちの推論が完了してから free することで、実行中の
+    /// 推論に対する use-after-free を防ぐ。
     func unload() {
-        if let ctx { whisper_free(ctx) }
-        ctx = nil
-        isLoaded = false
+        queue.sync {
+            if let ctx { whisper_free(ctx) }
+            ctx = nil
+            isLoaded = false
+        }
         klog("WhisperContext: unloaded")
     }
 

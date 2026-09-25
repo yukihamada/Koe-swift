@@ -197,12 +197,20 @@ final class LlamaContext {
         }
     }
 
+    /// アプリ終了時に明示的に呼ぶこと — `WhisperContext.unload()` と同じ理由
+    /// (`LlamaContext.shared` も static let のため deinit がプロセス終了時に確実に
+    /// 走る保証がなく、llama.cpp が抱える ggml Metal backend が free されないまま
+    /// 終了すると `ggml_metal_device_free` が __cxa_finalize 時に abort しうる)。
+    /// `generate()` は `queue` 上で `ctx`/`model` を使うため、ここも `queue.sync`
+    /// で直列化して実行中/キュー待ちの生成が終わってから free する。
     func unload() {
-        if let ctx { llama_free(ctx) }
-        if let model { llama_model_free(model) }
-        ctx = nil
-        model = nil
-        isLoaded = false
+        queue.sync {
+            if let ctx { llama_free(ctx) }
+            if let model { llama_model_free(model) }
+            ctx = nil
+            model = nil
+            isLoaded = false
+        }
         klog("Llama: unloaded")
     }
 

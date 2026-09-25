@@ -748,6 +748,73 @@ func testAudioRecorderStartIgnoresStaleCallbackFromADiscardedPriorRecorder() {
           "A's stale callback on its own discarded recorder produces NO delivery at all — not to A (nothing to end), not to B (untouched) (got \(deliveries))")
 }
 
+func testAudioRecorderHandleUnexpectedStopHoppingSurvivesInterleavedMainThreadSessionTransition() {
+    print("\n--- AudioRecorder.handleUnexpectedStop: a delegate callback delivered from a BACKGROUND thread hops to main, so main-thread A-stop/B-start that happens BEFORE the hop drains still resolves correctly (round-9) ---")
+    // 2026-09-26 round-9 review: AVAudioRecorderDelegate callbacks can
+    // genuinely arrive on an AVFoundation-internal (non-main) thread. Before
+    // this fix, handleUnexpectedStop(_:reason:) ran its ENTIRE body —
+    // identity check, stop(), clearing recorder/currentContext, and the
+    // callback — synchronously on whatever thread called it. If main
+    // thread's own start()/stop() calls interleaved with that background
+    // execution (specifically: main stops A and starts B while the
+    // background thread's handleUnexpectedStop for A is still in flight),
+    // the background thread's unconditional `self.recorder = nil;
+    // currentContext = nil` at the end could clobber session B's freshly
+    // registered state — this data race is exactly what a real
+    // ThreadSanitizer run would flag (unsynchronized read/write of the same
+    // properties from two threads).
+    //
+    // The fix: the delegate/timer/CoreAudio entry points only ever ENQUEUE
+    // work onto main (`dispatchToMain`) — they never touch `recorder`/
+    // `currentContext` themselves. This test proves that property directly:
+    // deliver a stale event from a REAL background thread, then — BEFORE
+    // draining the main run loop (i.e. before the enqueued work actually
+    // runs) — perform legitimate main-thread work (stop A, start B). Only
+    // after that do we drain the queue. Session B must be completely
+    // untouched.
+    let ar = AudioRecorder()
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
+
+    var deliveries: [(UUID, AudioRecorder.Reason)] = []
+    let sessionA = UUID()
+    check(ar.start(sessionID: sessionA, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+          "session A starts")
+    guard let recorderA = ar.currentRecorderForTesting else {
+        check(false, "session A has a current recorder"); return
+    }
+
+    // Deliver A's real AVAudioRecorderDelegate callback from a genuine
+    // background thread. Under the fix, this call only enqueues a hop to
+    // main and returns quickly — it must NOT mutate recorder/currentContext
+    // on this (background) thread.
+    let bg = DispatchQueue(label: "koe-test-round9-background")
+    let backgroundCallReturned = DispatchSemaphore(value: 0)
+    bg.async {
+        ar.audioRecorderDidFinishRecording(recorderA, successfully: false)
+        backgroundCallReturned.signal()
+    }
+    backgroundCallReturned.wait()
+
+    // BEFORE draining the main run loop (i.e. before the hopped block from
+    // the background thread gets a chance to run), do legitimate main-thread
+    // work: end A properly, then start B.
+    _ = ar.stop()
+    let sessionB = UUID()
+    check(ar.start(sessionID: sessionB, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+          "session B starts on main, before the background-originated hop has drained")
+    guard let recorderB = ar.currentRecorderForTesting else {
+        check(false, "session B has a current recorder"); return
+    }
+
+    // NOW let the hopped block (from A's background callback) actually run.
+    drainMainQueue(0.5)
+
+    check(deliveries.isEmpty,
+          "A's background-thread callback, resolved on main AFTER B already started, produces no delivery at all (got \(deliveries))")
+    check(ar.currentRecorderForTesting === recorderB,
+          "B's registration is completely intact — untouched by A's late background-thread callback (still \(String(describing: ar.currentRecorderForTesting)), expected \(recorderB))")
+}
+
 func testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan() {
     print("\n--- Recording lifecycle: unexpected stop firing synchronously inside recorder.start() prevents began ---")
     // 2026-09-26 round-6 review: startRecording() now allocates the
@@ -1114,6 +1181,7 @@ func runAllTests() {
     testAudioRecorderStartDeliversFirstSessionUnexpectedStopToThatSession()
     testAudioRecorderStartRebuildsContextForReusedRecorderPrepFromPreWarm()
     testAudioRecorderStartIgnoresStaleCallbackFromADiscardedPriorRecorder()
+    testAudioRecorderHandleUnexpectedStopHoppingSurvivesInterleavedMainThreadSessionTransition()
     testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan()
     testAudioRecorderHandleUnexpectedStopOrdering()
     testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped()

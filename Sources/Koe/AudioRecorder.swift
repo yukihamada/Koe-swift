@@ -65,10 +65,46 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         case inputDeviceChangedWhileStopped
     }
 
+    /// **2026-09-26 round-9 review**: `recorder`/`currentContext`/watchdog
+    /// タイマーは全て main thread 専属の mutable state とする —
+    /// `AVAudioRecorderDelegate` のコールバックは AVFoundation の内部
+    /// スレッドから来ることがあり、これらのプロパティを off-main で
+    /// 読み書きするとデータ競合になる。以前は `handleUnexpectedStop(_:)`
+    /// が呼ばれたスレッドでそのまま identity チェック→stop→クリア→
+    /// callback を実行していた — main thread が (別スレッドの) この
+    /// メソッドの実行途中に割り込んで `stop()`→`start()` (セッションA終了
+    /// →セッションB開始) を行うと、後から実行が再開したこのメソッドが
+    /// 「もう存在しない (あるいは既にBに置き換わった)」状態を無条件に
+    /// nil で上書きし、Bの登録を握り潰してしまう可能性があった。
+    ///
+    /// 修正: mutable state を書き換える全ての入口 (delegate コールバック・
+    /// watchdog タイマー・CoreAudio/Combine リスナー) は、まず
+    /// `dispatchToMain(_:)` で確実に main に乗せてから、実際の状態変更
+    /// (`performUnexpectedStopOnMain` 等) を行う。main はシリアルキュー
+    /// なので、一度乗ってしまえば他の main 上の操作 (`start()`/`stop()` 等)
+    /// と競合する余地がない — 「間に合わなかった」場合は単に、hop が実際に
+    /// 実行される時点での最新の `currentContext` を見て判定するだけになる。
+    private func dispatchToMain(_ work: @escaping () -> Void) {
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
+        }
+    }
+
+    /// mutable state を書き換えるメソッドの先頭に置く自己文書化アサート。
+    /// Release ビルドでは `assert` は no-op になるため、本番の挙動は変えない
+    /// — 開発/テスト時に「main 以外から呼ばれた」ことを早期に検知するための
+    /// tripwire。
+    private func assertMainThreadForMutation(_ function: StaticString = #function) {
+        assert(Thread.isMainThread, "AudioRecorder.\(function) must only mutate state on the main thread")
+    }
+
     /// 生の `AVAudioRecorder`。「今のセッションの登録」(`currentContext`) とは
     /// 別軸 — `start()` は `recorder == nil` の時しか `prepare()` を呼ばない
     /// ため、同じインスタンスが複数の `start()` 呼び出しにまたがって再利用
-    /// されることがある (round-8 review)。
+    /// されることがある (round-8 review)。main thread からのみ読み書きする
+    /// (round-9 review)。
     private var recorder: AVAudioRecorder?
     /// 「今のセッション」の登録。`start(sessionID:onUnexpectedStop:)` が
     /// 呼ばれる度に必ず新しく作り直す — `recorder` インスタンスの再利用の
@@ -126,9 +162,14 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// `handleUnexpectedStop()` 経由にすることで、この経路自身がその「最後に
     /// 気づいた者」になり、確実に ended を出してから recorder を握り潰す。
     func handleInputDeviceChange() {
+        // 2026-09-26 round-9 review: Combine の `.receive(on: DispatchQueue.main)`
+        // が既に main へ運んでくれているので、ここは既に main のはず —
+        // mutable state (`currentContext` 等) に触れる全ての入口の不変条件を
+        // 明示するため assert しておく (詳細は `assertMainThreadForMutation()`)。
+        assertMainThreadForMutation()
         guard let context = currentContext else { return }
         if context.backend.isRecording { return }  // 録音中は触らない（次回 start() まで待つ）
-        handleUnexpectedStop(context.backend, reason: .inputDeviceChangedWhileStopped)
+        performUnexpectedStopOnMain(context.backend, reason: .inputDeviceChangedWhileStopped)
         klog("AudioRecorder: input device changed while recorder was already stopped — routed through handleUnexpectedStop")
     }
 
@@ -155,6 +196,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     // 自身が行う。`prepare()` は「使える recorder インスタンスを用意する」
     // だけの責務に限定する。
     func prepare() {
+        assertMainThreadForMutation()
         let url = Self.audioDir.appendingPathComponent("rec_\(UUID().uuidString.prefix(8)).wav")
         tempURL = url
         streamingDataOffset = nil
@@ -185,6 +227,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// なくす。
     @discardableResult
     func start(sessionID: UUID, onUnexpectedStop: @escaping (UUID, Reason) -> Void) -> Bool {
+        assertMainThreadForMutation()
         // P5 指摘の prepare-order バグ対策: applySelectedInputDevice() で
         // システムデフォルト入力を選択 UID に切り替えてから AVAudioRecorder を生成する。
         // AVAudioRecorder は init 時点のデフォルトにバインドされるため、デバイス切替前に
@@ -249,6 +292,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func stop() -> URL? {
+        assertMainThreadForMutation()
         stopWatchdog()
         // 2026-09-26 round-3 review: 以前はファイル move 失敗時などの早期
         // return が restoreDefaultInputDevice() をスキップしていた —
@@ -300,6 +344,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func cancel() {
+        assertMainThreadForMutation()
         stopWatchdog()
         recorder?.stop()
         recorder = nil
@@ -314,6 +359,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// アプリ終了時用: 録音を止めるがファイルは**削除しない**（cancel と違い、
     /// 録音中に終了しても次回起動時に CrashRecovery が rec_*.wav を回収できる）。
     func shutdown() {
+        assertMainThreadForMutation()
         stopWatchdog()
         if let r = recorder, r.isRecording {
             r.stop()
@@ -455,8 +501,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     /// テストが `AudioRecordingBackend` の fake を渡して直接呼べるよう
-    /// `private` にしない。stop() → onUnexpectedStop の順序はここで保証する
-    /// (この2行は同期・単一スレッドで隣接しており、間に非同期の隙間はない)。
+    /// `private` にしない。
     ///
     /// **identity ガード (2026-09-26 round-3 review)**: `AVAudioRecorderDelegate`
     /// のコールバックや watchdog の tick は、呼ばれた時点で本当に「今の
@@ -468,12 +513,36 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     ///
     /// **round-7/round-8 review**: identity チェックと「呼び出す closure」を
     /// `currentContext` という単一の参照から1回だけスナップショットして
-    /// 両方に使う (`RecordingContext` のドキュメント参照)。この
-    /// `RecordingContext` は `start(sessionID:onUnexpectedStop:)` 自身が
-    /// 「実際に使う recorder インスタンス」に対して毎回作り直すため、
-    /// recorder の使い回しの有無に関わらず、常に「今回 start() されたセッション」
-    /// の sessionID/ハンドラだけが呼ばれる。
+    /// 両方に使う (`RecordingContext` のドキュメント参照)。
+    ///
+    /// **round-9 review**: `AVAudioRecorderDelegate` のコールバックは
+    /// AVFoundation の内部スレッドから来ることがあり、以前はこのメソッド
+    /// 自体が identity チェック〜クリア〜callback 呼び出しまで全てそのスレッド
+    /// 上で実行していた — main thread がその実行の「途中」(identity チェック
+    /// は通った後、`self.recorder`/`currentContext` を nil にする前) に
+    /// 割り込んで A の `stop()` → B の `start()` を行うと、後から再開した
+    /// この off-main の実行が無条件に nil クリアして、既に登録されたはずの
+    /// B の `recorder`/`currentContext`/watchdog を握り潰してしまうデータ
+    /// 競合があった。
+    ///
+    /// 修正: このメソッド自身は「main に確実に乗せる」ことだけを行い、
+    /// 実際の状態変更 (`performUnexpectedStopOnMain`) は必ず main 上で
+    /// 実行する。main はシリアルキューなので、一度そこに乗ってしまえば
+    /// `start()`/`stop()` 等の他の mutator と割り込みなく直列に実行される
+    /// — 「間に合わなかった」場合でも、実行時点の最新の `currentContext` を
+    /// 見て安全に無視するだけになる。
     func handleUnexpectedStop(_ recorder: AudioRecordingBackend, reason: Reason) {
+        dispatchToMain { [weak self] in
+            self?.performUnexpectedStopOnMain(recorder, reason: reason)
+        }
+    }
+
+    /// `handleUnexpectedStop(_:reason:)`/`checkWatchdog()`/
+    /// `handleInputDeviceChange()` が main に乗った**後**に呼ぶ、実際の
+    /// identity チェック・stop・クリア・callback 呼び出し本体。main 以外
+    /// から直接呼ばない (`assertMainThreadForMutation()` が tripwire)。
+    private func performUnexpectedStopOnMain(_ recorder: AudioRecordingBackend, reason: Reason) {
+        assertMainThreadForMutation()
         guard let context = currentContext, context.backend === recorder else {
             klog("AudioRecorder: ignoring unexpected-stop callback from a stale/previous session's recorder")
             return
@@ -524,9 +593,21 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// タイマーが毎秒呼ぶ本体。テストからも直接呼べるよう `private` にしない。
     /// `recorder` が存在するのに `isRecording` が false になっていたら、
     /// システムによる無音の強制停止 (デバイス消失・中断等) とみなして拾う。
+    ///
+    /// **round-9 review**: `Timer` は `startWatchdog()` を呼んだスレッドの
+    /// run loop 上で発火する契約だが (`start()`/`prepare()` は main 専属な
+    /// ので通常は main)、他の入口と同じ不変条件を保つため、ここも念のため
+    /// `dispatchToMain` を経由してから `currentContext` を読む。
     func checkWatchdog() {
+        dispatchToMain { [weak self] in
+            self?.performWatchdogCheckOnMain()
+        }
+    }
+
+    private func performWatchdogCheckOnMain() {
+        assertMainThreadForMutation()
         guard let context = currentContext, !context.backend.isRecording else { return }
         klog("AudioRecorder: watchdog detected recording stopped unexpectedly (device loss / interruption)")
-        handleUnexpectedStop(context.backend, reason: .watchdogSilentStop)
+        performUnexpectedStopOnMain(context.backend, reason: .watchdogSilentStop)
     }
 }

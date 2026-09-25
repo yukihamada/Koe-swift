@@ -8,9 +8,18 @@ final class LlamaContext {
 
     private var model: OpaquePointer?   // llama_model*
     private var ctx: OpaquePointer?     // llama_context*
-    private let queue = DispatchQueue(label: "com.yuki.koe.llama", qos: .userInitiated)
+    /// unload() を deinit/queue 内から呼んでも自己 dispatch_sync でデッドロック
+    /// しないための共有ラッパー。WhisperContext と共通実装 —
+    /// 詳細は ReentrantSerialQueue.swift 参照。
+    private let rq = ReentrantSerialQueue(label: "com.yuki.koe.llama")
+    private var queue: DispatchQueue { rq.queue }
     private(set) var isLoaded = false
     private(set) var isLoading = false
+    /// `ctx`/`model` と同じく `queue` 上でのみ読み書きする (queue-confined)。
+    /// `unload()` がこれを立てた後は、その時点で走っていた/後から来た `loadModel`
+    /// が作り終えた ctx/model を publish せず即座に free する — 同じ理由は
+    /// `WhisperContext.terminating` のコメント参照。
+    private var terminating = false
 
     // MARK: - Model catalog
 
@@ -186,10 +195,27 @@ final class LlamaContext {
                 return
             }
 
+            // ctx/model の publish は queue 上でここで行う (queue-confined
+            // state) — unload() の teardown も同じ queue 上で直列に走るため、
+            // 順序の食い違い (load完了後にunloadが古いctxをfreeし損ねる /
+            // unload後にloadがctxを再publishしてしまう) が起きない。
+            if self.terminating {
+                // 終了処理が既に始まっていた — 今作ったばかりの ctx/model を
+                // publish せずその場で free する。
+                llama_free(context)
+                llama_model_free(mdl)
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(false)
+                }
+                return
+            }
+
+            self.model = mdl
+            self.ctx = context
+            self.isLoaded = true
+
             DispatchQueue.main.async {
-                self.model = mdl
-                self.ctx = context
-                self.isLoaded = true
                 self.isLoading = false
                 klog("Llama: model loaded (Metal GPU)")
                 completion(true)
@@ -201,10 +227,11 @@ final class LlamaContext {
     /// (`LlamaContext.shared` も static let のため deinit がプロセス終了時に確実に
     /// 走る保証がなく、llama.cpp が抱える ggml Metal backend が free されないまま
     /// 終了すると `ggml_metal_device_free` が __cxa_finalize 時に abort しうる)。
-    /// `generate()` は `queue` 上で `ctx`/`model` を使うため、ここも `queue.sync`
-    /// で直列化して実行中/キュー待ちの生成が終わってから free する。
+    /// `generate()` は `queue` 上で `ctx`/`model` を使うため、ここも同じ `queue`
+    /// 上で直列化して実行中/キュー待ちの生成が終わってから free する。
     func unload() {
-        queue.sync {
+        rq.syncOrInline {
+            terminating = true
             if let ctx { llama_free(ctx) }
             if let model { llama_model_free(model) }
             ctx = nil
@@ -219,12 +246,17 @@ final class LlamaContext {
     /// system + user メッセージからテキスト生成
     func generate(system: String, user: String, maxTokens: Int = 1024,
                   completion: @escaping (String?) -> Void) {
-        guard isLoaded, let model = model, let ctx = ctx else {
-            completion(nil); return
-        }
-
         queue.async { [weak self] in
-            guard self != nil else { completion(nil); return }
+            // isLoaded/model/ctx はここで queue 上から読む — 呼び出し時点
+            // (queue.async に積む前) に読んで捕まえると、その後キュー待ちの
+            // 間に unload() が先に走って free した生ポインタを使うことになる
+            // (use-after-free)。queue は直列なので、ここまで来た時点で
+            // unload() がまだ走っていなければ ctx/model は確実に生きている。
+            guard let self, self.isLoaded, !self.terminating,
+                  let model = self.model, let ctx = self.ctx else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
 
             let vocab = llama_model_get_vocab(model)!
 

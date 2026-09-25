@@ -9,10 +9,21 @@ final class WhisperContext {
     static let shared = WhisperContext()
 
     private var ctx: OpaquePointer?  // whisper_context*
-    private let queue = DispatchQueue(label: "com.yuki.koe.whisper", qos: .userInitiated)
+    /// unload() を deinit/queue 内から呼んでも自己 dispatch_sync でデッドロック
+    /// しないための共有ラッパー。WhisperContext/LlamaContext で共通実装 —
+    /// 詳細は ReentrantSerialQueue.swift 参照。
+    private let rq = ReentrantSerialQueue(label: "com.yuki.koe.whisper")
+    private var queue: DispatchQueue { rq.queue }
     // 投機実行は同じqueueを使用（whisper_contextは並行アクセス不可）
     private(set) var isLoaded = false
     private(set) var isLoading = false
+    /// `ctx`/`isLoaded` と同じく `queue` 上でのみ読み書きする (queue-confined)。
+    /// `unload()` がこれを立てた後は、その時点で走っていた/後から来た `loadModel`
+    /// が作り終えた ctx を publish せず即座に free する — でないと
+    /// 「unload が古い(まだnilの) ctx を見て何も free しない」→「その後 load が
+    /// 今作ったばかりの ctx を publish してしまう」という順序で、終了処理後に
+    /// 生きた ctx が残り、結局 __cxa_finalize 時のクラッシュが再発する。
+    private var terminating = false
     /// 直前の認識にかかった時間（秒）
     private(set) var lastTranscriptionTime: Double = 0
     /// 投機実行をキャンセルするフラグ
@@ -42,11 +53,26 @@ final class WhisperContext {
             cparams.flash_attn = true
 
             let ptr = whisper_init_from_file_with_params(path, cparams)
+
+            // ctx/isLoaded の publish は queue 上でここで行う (queue-confined
+            // state) — unload() の teardown も同じ queue 上で直列に走るため、
+            // 「load完了後にunloadが古いctxをfreeし損ねる」「unload後にloadが
+            // ctxを再publishしてしまう」という順序の食い違いが起きない。
+            if self.terminating {
+                if let ptr { whisper_free(ptr) }
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(false)
+                }
+                return
+            }
+            if let ptr {
+                self.ctx = ptr
+                self.isLoaded = true
+            }
             DispatchQueue.main.async {
                 self.isLoading = false
-                if let ptr {
-                    self.ctx = ptr
-                    self.isLoaded = true
+                if ptr != nil {
                     klog("WhisperContext: model loaded (GPU enabled)")
                     completion(true)
                 } else {
@@ -67,10 +93,20 @@ final class WhisperContext {
             klog("WhisperContext: sync load failed")
             return false
         }
-        ctx = ptr
-        isLoaded = true
-        klog("WhisperContext: model loaded sync (GPU enabled)")
-        return true
+        var published = false
+        rq.syncOrInline {
+            if terminating {
+                whisper_free(ptr)
+            } else {
+                ctx = ptr
+                isLoaded = true
+                published = true
+            }
+        }
+        if published {
+            klog("WhisperContext: model loaded sync (GPU enabled)")
+        }
+        return published
     }
 
     /// `ctx` を明示的に解放する。`AppDelegate.applicationWillTerminate` から必ず
@@ -82,11 +118,12 @@ final class WhisperContext {
     /// — 2026-09-19 の終了時クラッシュの原因）。
     ///
     /// `transcribe`/`transcribeBuffer`/`transcribeWithSpeakers` はすべて `queue`
-    /// 上で `ctx` を読んで `whisper_full` を実行する。ここでも `queue.sync` を
-    /// 使い、実行中/キュー待ちの推論が完了してから free することで、実行中の
+    /// 上で `ctx` を読んで `whisper_full` を実行する。ここでも同じ `queue` 上で
+    /// 直列化して、実行中/キュー待ちの推論が完了してから free することで、実行中の
     /// 推論に対する use-after-free を防ぐ。
     func unload() {
-        queue.sync {
+        rq.syncOrInline {
+            terminating = true
             if let ctx { whisper_free(ctx) }
             ctx = nil
             isLoaded = false

@@ -174,6 +174,195 @@ func testAgentCommandProperties() {
 }
 
 // ══════════════════════════════════════
+// ReentrantSerialQueue — the real, shared teardown-synchronization helper
+// used by both WhisperContext.unload() and LlamaContext.unload() (extracted
+// during the 2026-09-19 exit-crash fix). This exercises the ACTUAL
+// production type directly — no fake/mirror needed here.
+// ══════════════════════════════════════
+func testReentrantSerialQueueSyncFromOutside() {
+    print("\n--- ReentrantSerialQueue: syncOrInline from another thread ---")
+    let rq = ReentrantSerialQueue(label: "test.reentrant.outside")
+    var order: [String] = []
+    let group = DispatchGroup()
+    group.enter()
+    rq.async {
+        Thread.sleep(forTimeInterval: 0.05)
+        order.append("async-block")
+        group.leave()
+    }
+    rq.syncOrInline { order.append("sync-call") }  // must wait for the async block first (FIFO)
+    check(group.wait(timeout: .now() + 2) == .success, "async block completed")
+    check(order == ["async-block", "sync-call"],
+          "syncOrInline from outside the queue waits its turn behind a running async block (got \(order))")
+}
+
+func testReentrantSerialQueueSyncFromInsideDoesNotDeadlock() {
+    print("\n--- ReentrantSerialQueue: syncOrInline called FROM the queue itself (no deadlock) ---")
+    let rq = ReentrantSerialQueue(label: "test.reentrant.inside")
+    var ranInline = false
+    let sem = DispatchSemaphore(value: 0)
+    rq.async {
+        // A plain `queue.sync` here would deadlock (dispatch_sync onto the
+        // queue it's already running on) — this is exactly the scenario
+        // WhisperContext/LlamaContext's unload() must survive if it's ever
+        // invoked while already "on" their queue (e.g. from a completion
+        // callback, or deinit firing mid-block).
+        rq.syncOrInline { ranInline = true }
+        sem.signal()
+    }
+    let completed = sem.wait(timeout: .now() + 2) == .success
+    check(completed, "syncOrInline called from inside the queue's own block completes (no deadlock/hang)")
+    check(ranInline, "the inline block actually ran")
+}
+
+// ══════════════════════════════════════
+// WhisperContext/LlamaContext "terminating flag" race — simulated
+//
+// WhisperContext/LlamaContext themselves wrap real whisper.cpp/llama.cpp C
+// contexts (whisper_init_from_file_with_params/llama_model_load_from_file)
+// and can't be unit-tested without a real, multi-hundred-MB model file — not
+// something to require for a headless test run. FakeModelLoader below
+// mirrors their exact control-flow shape (build off to the side, publish
+// INSIDE the same queue block that checks `terminating`, unload() sets
+// `terminating` and frees under the same queue) using a fake resource
+// instead — it is a simulation of the pattern, not the production code
+// itself. The ReentrantSerialQueue tests above are what exercise the real,
+// shared code directly.
+final class FakeGGMLResource {
+    let id: Int
+    private(set) var freed = false
+    init(id: Int) { self.id = id }
+    func free() { freed = true }
+}
+
+final class FakeModelLoader {
+    let rq = ReentrantSerialQueue(label: "test.fake-model-loader")
+    private var resource: FakeGGMLResource?
+    private var terminating = false
+    private(set) var freedIDs: [Int] = []
+    private(set) var publishedIDs: [Int] = []
+
+    /// Mirrors WhisperContext.loadModel/LlamaContext.loadModel: the "slow
+    /// build" happens on `rq`'s queue, and publishing (or, if `terminating`
+    /// was already set, disposing the freshly-built resource instead) also
+    /// happens inside that SAME queue block — never split across a hop to
+    /// another queue, which is exactly what let the original bug happen
+    /// (publish-after-unload / unload-sees-nil-and-frees-nothing).
+    func load(id: Int, buildDelay: TimeInterval = 0, completion: @escaping (Bool) -> Void) {
+        rq.async { [weak self] in
+            guard let self else { return }
+            if buildDelay > 0 { Thread.sleep(forTimeInterval: buildDelay) }
+            let built = FakeGGMLResource(id: id)
+            if self.terminating {
+                built.free()
+                self.freedIDs.append(id)
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+            self.resource = built
+            self.publishedIDs.append(id)
+            DispatchQueue.main.async { completion(true) }
+        }
+    }
+
+    /// Mirrors LlamaContext.generate(): reads the resource from INSIDE the
+    /// queue block, not before submitting to it.
+    func generate(completion: @escaping (Int?) -> Void) {
+        rq.async { [weak self] in
+            guard let self, !self.terminating, let r = self.resource, !r.freed else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            DispatchQueue.main.async { completion(r.id) }
+        }
+    }
+
+    func unload() {
+        rq.syncOrInline {
+            terminating = true
+            if let r = resource {
+                r.free()
+                freedIDs.append(r.id)
+            }
+            resource = nil
+        }
+    }
+}
+
+func drainMainQueue(_ seconds: TimeInterval = 1) {
+    let deadline = Date().addingTimeInterval(seconds)
+    while Date() < deadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+    }
+}
+
+func testModelLoaderUnloadDuringInFlightLoad() {
+    print("\n--- FakeModelLoader: unload() called while a load's build is still in-flight ---")
+    // Because `rq` is a single serial queue, a load's build that has already
+    // been dequeued and started running always finishes (and makes its
+    // publish-or-discard decision) BEFORE a concurrently-called unload()
+    // gets its turn — unload() is submitted after the load and must wait in
+    // line (FIFO). So in this exact interleaving the load sees
+    // `terminating == false` and legitimately publishes; the invariant this
+    // test actually protects is what happens next: unload() must still find
+    // and free that just-published resource — not see a stale nil and leave
+    // it dangling (the original bug: publish deferred to a *different*
+    // queue could let it happen strictly after unload() had already run).
+    let loader = FakeModelLoader()
+    var loadCompletedSuccessfully: Bool?
+    loader.load(id: 1, buildDelay: 0.2) { ok in loadCompletedSuccessfully = ok }
+    Thread.sleep(forTimeInterval: 0.05)  // let the load's block actually start running
+    loader.unload()
+    drainMainQueue(1)
+    check(loadCompletedSuccessfully == true,
+          "a load already running when unload() is called still completes and reports success (got \(String(describing: loadCompletedSuccessfully)))")
+    check(loader.freedIDs == [1],
+          "unload() finds and frees exactly the resource that load just published — no leak (got freed=\(loader.freedIDs) published=\(loader.publishedIDs))")
+
+    // The real invariant: no revival after unload() returns.
+    var afterUnload: Int?
+    var afterUnloadSet = false
+    loader.generate { id in afterUnload = id; afterUnloadSet = true }
+    drainMainQueue(1)
+    check(afterUnloadSet && afterUnload == nil,
+          "generate() after this sequence returns nil — the resource is gone, not silently revived")
+}
+
+func testModelLoaderLoadAfterUnloadIsAlwaysDiscarded() {
+    print("\n--- FakeModelLoader: load() called after unload() already completed ---")
+    let loader = FakeModelLoader()
+    loader.unload()  // nothing was ever loaded — a no-op teardown, but sets terminating
+    var result: Bool?
+    loader.load(id: 2) { ok in result = ok }
+    drainMainQueue(1)
+    check(result == false, "load() after unload() reports failure")
+    check(loader.freedIDs == [2] && loader.publishedIDs.isEmpty,
+          "its resource is freed immediately instead of published (got freed=\(loader.freedIDs) published=\(loader.publishedIDs))")
+}
+
+func testModelLoaderGenerateAfterUnloadReturnsNil() {
+    print("\n--- FakeModelLoader: generate() after unload() (no use-after-free) ---")
+    let loader = FakeModelLoader()
+    var loadOK: Bool?
+    loader.load(id: 3) { ok in loadOK = ok }
+    drainMainQueue(1)
+    check(loadOK == true, "initial load succeeds")
+
+    var firstResult: Int?
+    loader.generate { id in firstResult = id }
+    drainMainQueue(1)
+    check(firstResult == 3, "generate() works while loaded")
+
+    loader.unload()
+    var secondResult: Int?
+    var secondResultSet = false
+    loader.generate { id in secondResult = id; secondResultSet = true }
+    drainMainQueue(1)
+    check(secondResultSet && secondResult == nil,
+          "generate() after unload() returns nil instead of touching the freed resource")
+}
+
+// ══════════════════════════════════════
 // Run all tests
 // ══════════════════════════════════════
 func runAllTests() {
@@ -183,6 +372,11 @@ func runAllTests() {
     testSettingsDefaults()
     testL10n()
     testLLMSanitization()
+    testReentrantSerialQueueSyncFromOutside()
+    testReentrantSerialQueueSyncFromInsideDoesNotDeadlock()
+    testModelLoaderUnloadDuringInFlightLoad()
+    testModelLoaderLoadAfterUnloadIsAlwaysDiscarded()
+    testModelLoaderGenerateAfterUnloadReturnsNil()
     testAgentCommandProperties()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }

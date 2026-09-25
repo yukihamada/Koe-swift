@@ -165,7 +165,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // 通常停止経路と生で競合すると二重 ended の原因になる。main へ
             // hop してから触ることで、AppDelegate 状態は常にメインスレッド
             // 上でだけ変化する。
-            DispatchQueue.main.async { self?.handleRecorderUnexpectedStop(sessionID: sessionID) }
+            //
+            // 2026-09-26 round-6 review: 既に main スレッド上ならインラインで
+            // 即座に処理する — `recorder.start()` 実行中に (main 上で) 同期的に
+            // 発火するケースでは、`DispatchQueue.main.async` による1ターン分の
+            // 遅延の間に `confirmStarted()` が先に走ってしまい、「本来一度も
+            // 始まらないはずのセッション」に began が出てしまう
+            // (`startRecording()` の `dictationSession.confirmStarted()` 呼び出し
+            // 参照)。main 上にいる限りどのみち直列に実行されるので、
+            // インライン実行でも「常にメインスレッド上でだけ状態が変化する」
+            // という round-4 の保証は変わらない — 変わるのは実行タイミング
+            // (即時 vs 次の run loop ターン) だけ。
+            if Thread.isMainThread {
+                self?.handleRecorderUnexpectedStop(sessionID: sessionID)
+            } else {
+                DispatchQueue.main.async { self?.handleRecorderUnexpectedStop(sessionID: sessionID) }
+            }
         }
     }
 
@@ -178,24 +193,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// 生成時に捕まえた「本来このイベントがどのセッションについてのものか」。
     /// 今アクティブなセッションと一致しなければ、状態リセット・UI操作・
     /// 通知のどれも一切行わず無視する (2026-09-26 round-5)。
+    ///
+    /// **2026-09-26 round-6 review**: 対象セッションが `.starting` (まだ
+    /// `recorder.start()` の結果を待っている最中 = began をまだ出していない)
+    /// の場合は、`isRecording`/UI/通知のどれにも触らず
+    /// `dictationSession.cancelStarting()` だけ行う — 何も始まっていない
+    /// ので何も戻す必要がない。`.recording` (began 済み) の場合だけ、
+    /// 従来通りフルの状態リセット + `ended` 送信を行う。
     func handleRecorderUnexpectedStop(sessionID: Int?) {
-        guard isRecording, let sessionID, sessionID == dictationSession.currentSessionID else {
+        guard let sessionID else { return }
+        switch dictationSession.state {
+        case .starting(let id) where id == sessionID:
+            klog("handleRecorderUnexpectedStop: unexpected stop while still starting (before began) — cancelling, no notification needed")
+            dictationSession.cancelStarting(sessionID: sessionID)
+        case .recording(let id) where id == sessionID:
+            klog("handleRecorderUnexpectedStop: resetting recording state")
+            unregisterRecordingHotKeys()
+            levelTimer?.invalidate(); levelTimer = nil
+            streamingTimer?.invalidate(); streamingTimer = nil
+            isRecording = false
+            isRecognizing = false
+            setIcon(recording: false)
+            restoreSystemVolume()
+            overlay?.hide()
+            // マイクは AudioRecorder 側で既に解放済み（この通知はそれより後に届く）
+            endDictationSession(reason: "unexpected stop")
+            if AppSettings.shared.wakeWordEnabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
+            }
+        default:
             klog("handleRecorderUnexpectedStop: ignoring stale event for a session that is no longer current")
-            return
-        }
-        klog("handleRecorderUnexpectedStop: resetting recording state")
-        unregisterRecordingHotKeys()
-        levelTimer?.invalidate(); levelTimer = nil
-        streamingTimer?.invalidate(); streamingTimer = nil
-        isRecording = false
-        isRecognizing = false
-        setIcon(recording: false)
-        restoreSystemVolume()
-        overlay?.hide()
-        // マイクは AudioRecorder 側で既に解放済み（この通知はそれより後に届く）
-        endDictationSession(reason: "unexpected stop")
-        if AppSettings.shared.wakeWordEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
         }
     }
 
@@ -1357,11 +1384,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         activeAppBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
         klog("startRecording from app: \(activeAppBundleID)")
 
+        // 2026-09-26 round-6 review: sessionID は recorder.start() を呼ぶ
+        // **前**に確保し、ハンドラもここで先にバインドする。でないと
+        // start() 実行中に (同期的に、あるいは早いタイミングで) 発火した
+        // 想定外の停止が「セッションがまだ存在しない」ため宛先を持てず
+        // 握りつぶされ、その後 start() が true を返すと「誰も ended を
+        // 送らない began」が生まれてしまう。
+        guard let sessionID = dictationSession.beginStarting() else {
+            klog("startRecording: dictationSession already active, ignoring re-entrant call")
+            return
+        }
+        bindUnexpectedStopHandler(forSessionID: sessionID)
+
         // マイクが実際に開始できてから isRecording を立てて .began を送る —
         // record() が失敗した (recorder.start() == false) のに .began だけ飛んで
         // .ended が来ない、という壊れたペアを防ぐ。
         guard recorder.start() else {
             klog("startRecording: recorder.start() failed, aborting")
+            dictationSession.cancelStarting(sessionID: sessionID)
+            restoreSystemVolume()
+            if AppSettings.shared.wakeWordEnabled {
+                WakeWordDetector.shared.start()
+            }
+            return
+        }
+
+        // recorder.start() は成功したが、その最中に想定外の停止が発火して
+        // 既に cancelStarting 済み (= starting(sessionID) から動いてしまって
+        // いる) 可能性がある — その場合 confirmStarted は false を返すので、
+        // began は絶対に出さない (2026-09-26 round-6)。
+        guard dictationSession.confirmStarted(sessionID: sessionID) else {
+            klog("startRecording: session was cancelled during start() (unexpected stop raced recorder.start()) — not posting began")
+            recorder.cancel()
             restoreSystemVolume()
             if AppSettings.shared.wakeWordEnabled {
                 WakeWordDetector.shared.start()
@@ -1370,15 +1424,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         isRecording    = true
-        // dictationSession が「今 idle か」の唯一の判定役 — 二重 began の
-        // 最終防衛 (通常は上の再入防止ガードで既に弾かれている)。
-        if let sessionID = dictationSession.begin() {
-            // このセッション専用の sessionID を捕まえた状態で
-            // onUnexpectedStop を再バインドする (2026-09-26 round-5) —
-            // 詳細は bindUnexpectedStopHandler() のコメント参照。
-            bindUnexpectedStopHandler(forSessionID: sessionID)
-            notifyDictationBegan()
-        }
+        notifyDictationBegan()
         lastStreamingResult = nil
         streamingAccumulated = ""
         streamingSegmentText = ""

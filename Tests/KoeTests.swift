@@ -310,6 +310,11 @@ final class LoggingAudioRecorder: AudioRecorder {
     var startResult = true
     /// what stop()/cancel() should look like they returned/left behind
     var stopReturnsURL: URL? = URL(fileURLWithPath: "/tmp/koe-test-fake.wav")
+    /// When true, `start()` calls `onUnexpectedStop?()` synchronously from
+    /// within its own body, before returning — simulates an unexpected
+    /// stop (e.g. encode error) racing `recorder.start()` itself, for the
+    /// 2026-09-26 round-6 starting-window fix.
+    var fireUnexpectedStopDuringStart = false
     /// A real (never `.record()`-called, so no mic permission needed)
     /// `AVAudioRecorder` standing in for "this session's" recorder, for the
     /// identity guard `handleUnexpectedStop`/`checkWatchdog` added in the
@@ -334,6 +339,9 @@ final class LoggingAudioRecorder: AudioRecorder {
         if startResult {
             tempURL = stopReturnsURL
             setActiveSessionForTesting(sessionRecorder)
+        }
+        if fireUnexpectedStopDuringStart {
+            onUnexpectedStop?()
         }
         return startResult
     }
@@ -574,6 +582,40 @@ func testRecordingLifecycleStaleUnexpectedStopAfterSessionTransitionIsIgnored() 
           "A's stale unexpected-stop produces no new events at all — no extra ended, B's backend untouched (got \(log.events), expected unchanged from \(eventsBeforeStaleDelivery))")
 }
 
+func testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan() {
+    print("\n--- Recording lifecycle: unexpected stop firing synchronously inside recorder.start() prevents began ---")
+    // 2026-09-26 round-6 review: startRecording() now allocates the
+    // sessionID and binds onUnexpectedStop to it BEFORE calling
+    // recorder.start() — so a synchronous unexpected-stop fired from
+    // WITHIN start() (simulated by LoggingAudioRecorder.fireUnexpectedStopDuringStart)
+    // is correctly attributed to this session and cancels it via
+    // DictationSession.cancelStarting(), even though recorder.start() goes
+    // on to return true right afterward (as if nothing had happened).
+    // `began` must never be posted for a session that will never get an
+    // `ended`.
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    let rec = LoggingAudioRecorder(log: log)
+    rec.fireUnexpectedStopDuringStart = true
+    ad.recorder = rec
+
+    ad.startRecording()
+    drainMainQueue(0.5)  // let any main.async work run, in case the fix regresses to deferring it
+
+    check(!log.events.contains("notifier.began"),
+          "began is never posted when an unexpected stop fires synchronously during recorder.start() (got \(log.events))")
+    check(ad.dictationSession.currentSessionID == nil,
+          "the session is fully cancelled back to idle, not left dangling in `starting` or `recording` (got \(String(describing: ad.dictationSession.currentSessionID)))")
+
+    // A later, uneventful start must still work normally — the cancelled
+    // attempt must not leave dictationSession stuck.
+    rec.fireUnexpectedStopDuringStart = false
+    ad.startRecording()
+    check(log.events.suffix(2) == ["recorder.start", "notifier.began"],
+          "a later start (without the race) still succeeds normally afterward (got \(log.events))")
+}
+
 // ══════════════════════════════════════
 // AudioRecorder — handleUnexpectedStop ordering, encode error, watchdog
 //
@@ -792,6 +834,41 @@ func testDictationSessionNewSessionAfterEndGetsFreshID() {
     check(session.currentSessionID == secondID, "the new session is still active after the stale old-ID end() call")
 }
 
+func testDictationSessionUnexpectedStopDuringStartingWindowPreventsBegan() {
+    print("\n--- DictationSession: an unexpected stop during the starting() window cancels before began ---")
+    // 2026-09-26 round-6 review: recorder.start() can fail/emit an
+    // unexpected-stop WHILE it's still in flight — before the session would
+    // otherwise transition to recording(). If that happens, confirmStarted()
+    // (called after recorder.start() returns, regardless of what it
+    // returns) must refuse, so `began` is never posted for a session that
+    // will never get an `ended`.
+    let session = DictationSession()
+    guard let id = session.beginStarting() else { check(false, "beginStarting() succeeded"); return }
+    check(session.currentSessionID == id, "currentSessionID reflects the starting session even before it's confirmed")
+
+    // Simulates: an unexpected-stop fires WHILE recorder.start() is still
+    // running (before confirmStarted() would be called).
+    check(session.cancelStarting(sessionID: id), "cancelStarting() succeeds for the still-starting session")
+    check(session.currentSessionID == nil, "session is back to idle after cancelStarting()")
+
+    // recorder.start() returning `true` afterward (as if nothing had
+    // happened) must NOT be able to retroactively confirm this session.
+    check(!session.confirmStarted(sessionID: id),
+          "confirmStarted() for a session that was already cancelled during starting() fails — began must never be posted")
+    check(!session.end(sessionID: id),
+          "end() for a session that never reached recording() is also a no-op — nothing to send `ended` for")
+}
+
+func testDictationSessionCancelStartingIsNoOpOnceRecording() {
+    print("\n--- DictationSession: cancelStarting() cannot touch a session that already reached recording() ---")
+    let session = DictationSession()
+    guard let id = session.beginStarting() else { check(false, "beginStarting() succeeded"); return }
+    check(session.confirmStarted(sessionID: id), "confirmStarted() succeeds normally (recorder.start() succeeded, no race)")
+    check(!session.cancelStarting(sessionID: id),
+          "cancelStarting() is a no-op once the session already reached recording() — it must not silently swallow a fully-started session")
+    check(session.currentSessionID == id, "the recording session is untouched")
+}
+
 // ══════════════════════════════════════
 // AudioRecorder.handleInputDeviceChange — device change after unexpected stop
 // (2026-09-26 round-4)
@@ -855,6 +932,7 @@ func runAllTests() {
     testRecordingLifecycleTermination()
     testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce()
     testRecordingLifecycleStaleUnexpectedStopAfterSessionTransitionIsIgnored()
+    testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan()
     testAudioRecorderHandleUnexpectedStopOrdering()
     testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped()
     testAudioRecorderHandleUnexpectedStopIgnoresStaleSession()
@@ -868,6 +946,8 @@ func runAllTests() {
     testDictationSessionDoubleBeginIsRejected()
     testDictationSessionConcurrentNormalStopAndFailureCallbackEndsExactlyOnce()
     testDictationSessionNewSessionAfterEndGetsFreshID()
+    testDictationSessionUnexpectedStopDuringStartingWindowPreventsBegan()
+    testDictationSessionCancelStartingIsNoOpOnceRecording()
     testAgentCommandProperties()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }

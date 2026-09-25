@@ -2,6 +2,16 @@ import AVFoundation
 import Combine
 import CoreAudio
 
+/// `handleUnexpectedStop` が受け取る最小のインターフェース。テストが
+/// `AVAudioRecorder` を経由せず「stop() が onUnexpectedStop より先に呼ばれるか」
+/// を直接検証できるように — `AVAudioRecorder` は録音中 (`isRecording == true`)
+/// の状態をマイク権限無しで安全に作れないため、fake を挟めるようにする。
+protocol AudioRecordingBackend: AnyObject {
+    var isRecording: Bool { get }
+    func stop()
+}
+extension AVAudioRecorder: AudioRecordingBackend {}
+
 class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     private var recorder: AVAudioRecorder?
     var tempURL: URL?
@@ -84,10 +94,12 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             prepare()
             guard let r2 = recorder else {
                 klog("AudioRecorder: failed to create recorder")
+                rollbackFailedStart()
                 return false
             }
             let ok = r2.record()
             klog("Recording started (retry), ok=\(ok) deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
+            if ok { startWatchdog() } else { rollbackFailedStart() }
             return ok
         }
         // recorderが前回のセッションから残っている場合、明示的にリセット
@@ -102,14 +114,26 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             prepare()
             let retryOk = recorder?.record() ?? false
             klog("Recording started (re-prepare), ok=\(retryOk) deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
+            if retryOk { startWatchdog() } else { rollbackFailedStart() }
             return retryOk
         } else {
             klog("Recording started, ok=true deviceUID=\(AppSettings.shared.audioInputDeviceUID)")
+            startWatchdog()
             return true
         }
     }
 
+    /// `start()` が最終的に失敗した時の後始末。中途半端に `prepare()` 済みの
+    /// recorder を残さず、`applySelectedInputDevice()` で切り替えたデフォルト
+    /// 入力デバイスも元に戻す — 録音しないと決まった以上、システムのデフォルト
+    /// 入力を切り替えたままにしない。
+    private func rollbackFailedStart() {
+        recorder = nil
+        restoreDefaultInputDevice()
+    }
+
     func stop() -> URL? {
+        stopWatchdog()
         guard let r = recorder else {
             klog("AudioRecorder: stop called but recorder is nil")
             return nil
@@ -157,6 +181,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     func cancel() {
+        stopWatchdog()
         recorder?.stop()
         recorder = nil
         if let url = tempURL { try? FileManager.default.removeItem(at: url) }
@@ -169,6 +194,7 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// アプリ終了時用: 録音を止めるがファイルは**削除しない**（cancel と違い、
     /// 録音中に終了しても次回起動時に CrashRecovery が rec_*.wav を回収できる）。
     func shutdown() {
+        stopWatchdog()
         if let r = recorder, r.isRecording {
             r.stop()
             klog("AudioRecorder: shutdown — in-progress recording preserved for recovery")
@@ -291,14 +317,18 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     }
 
     /// `stopAndRecognize()`/`cancelRecording()`/`shutdown()` を経由しない、想定外の
-    /// 録音停止（エンコードエラー・OS都合の中断等）を AppDelegate に伝える。
-    /// AppDelegate 側はこれで isRecording をリセットし、dictation `.ended` を送る —
-    /// でないと Koe が「録音中」のつもりのまま Second が 120 秒間マイクを奪えなくなる。
+    /// 録音停止（エンコードエラー・OS都合の中断・ウォッチドッグ検出等）を AppDelegate
+    /// に伝える。AppDelegate 側はこれで isRecording をリセットし、dictation `.ended`
+    /// を送る — でないと Koe が「録音中」のつもりのまま Second が 120 秒間マイクを
+    /// 奪えなくなる。
     var onUnexpectedStop: (() -> Void)?
 
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
         klog("Encode error: \(error?.localizedDescription ?? "nil")")
-        handleUnexpectedStop()
+        // エンコードエラー発生後もレコーダーが録音中のままな場合があるため、
+        // 明示的に stop() してマイクを解放してから .ended を送る（stop → ended
+        // の順序を保証する）。
+        handleUnexpectedStop(recorder)
     }
 
     /// AVAudioRecorderDelegate: 自前の `stop()` 呼び出しでも発火するが、その場合
@@ -307,12 +337,51 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         guard !flag else { return }
         klog("AudioRecorder: unexpected finish (successfully=false)")
-        handleUnexpectedStop()
+        handleUnexpectedStop(recorder)
     }
 
-    private func handleUnexpectedStop() {
-        recorder = nil
+    /// テストが `AudioRecordingBackend` の fake を渡して直接呼べるよう
+    /// `private` にしない。stop() → onUnexpectedStop の順序はここで保証する
+    /// (この2行は同期・単一スレッドで隣接しており、間に非同期の隙間はない)。
+    func handleUnexpectedStop(_ recorder: AudioRecordingBackend) {
+        stopWatchdog()
+        if recorder.isRecording {
+            recorder.stop()
+        }
+        self.recorder = nil
         restoreDefaultInputDevice()
         onUnexpectedStop?()
+    }
+
+    // MARK: - Watchdog (AirPods 切断等、AVAudioRecorderDelegate が発火しない停止の検出)
+
+    /// AirPods 切断など、入力デバイスが消えて録音が止まっても
+    /// `AVAudioRecorderDelegate` のどのコールバックも発火しないことがある
+    /// (macOS では AVAudioSession の割り込み通知に相当するものが無い)。
+    /// `start()` 成功中はこのタイマーで `recorder.isRecording` を定期的に
+    /// ポーリングし、こちらが呼んでいないのに false になっていたら「最後の砦」
+    /// として拾う。
+    private var watchdogTimer: Timer?
+    private let watchdogInterval: TimeInterval = 1.0
+
+    private func startWatchdog() {
+        stopWatchdog()
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: watchdogInterval, repeats: true) { [weak self] _ in
+            self?.checkWatchdog()
+        }
+    }
+
+    private func stopWatchdog() {
+        watchdogTimer?.invalidate()
+        watchdogTimer = nil
+    }
+
+    /// タイマーが毎秒呼ぶ本体。テストからも直接呼べるよう `private` にしない。
+    /// `recorder` が存在するのに `isRecording` が false になっていたら、
+    /// システムによる無音の強制停止 (デバイス消失・中断等) とみなして拾う。
+    func checkWatchdog() {
+        guard let r = recorder, !r.isRecording else { return }
+        klog("AudioRecorder: watchdog detected recording stopped unexpectedly (device loss / interruption)")
+        handleUnexpectedStop(r)
     }
 }

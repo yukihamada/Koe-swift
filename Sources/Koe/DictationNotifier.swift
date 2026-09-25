@@ -24,6 +24,23 @@ protocol DictationLifecycleNotifying {
     func postDictationEnded()
 }
 
+/// `DistributedNotificationCenter` そのものへの依存を1点に閉じ込めるための薄い
+/// 抜け穴。テストは `DistributedNotificationCenter.default()` の実配送に頼らず
+/// (サンドボックス化/ヘッドレス環境では配送されずタイムアウトすることがある —
+/// 2026-09-26 レビューで検証環境での実タイムアウトを確認)、ここを fake に
+/// 差し替えて「正しい名前で post を呼んだか」だけを検証する。
+protocol DistributedNotificationPosting {
+    func post(name: String)
+}
+
+final class RealDistributedNotificationPosting: DistributedNotificationPosting {
+    func post(name: String) {
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name(name), object: nil, userInfo: nil, deliverImmediately: true
+        )
+    }
+}
+
 /// 実装本体。テスト以外では `AppDelegate.dictationNotifier` にこれだけが刺さる。
 final class DictationNotificationPoster: DictationLifecycleNotifying {
     static let shared = DictationNotificationPoster()
@@ -31,17 +48,14 @@ final class DictationNotificationPoster: DictationLifecycleNotifying {
     static let beganNotificationName = "io.atsume.voice.dictation.began"
     static let endedNotificationName = "io.atsume.voice.dictation.ended"
 
+    /// テストが差し替えられるよう `private`/`let` にしない。
+    var posting: DistributedNotificationPosting = RealDistributedNotificationPosting()
+
     func postDictationBegan() {
-        DistributedNotificationCenter.default().postNotificationName(
-            Notification.Name(Self.beganNotificationName),
-            object: nil, userInfo: nil, deliverImmediately: true
-        )
+        posting.post(name: Self.beganNotificationName)
     }
 
     func postDictationEnded() {
-        DistributedNotificationCenter.default().postNotificationName(
-            Notification.Name(Self.endedNotificationName),
-            object: nil, userInfo: nil, deliverImmediately: true
-        )
+        posting.post(name: Self.endedNotificationName)
     }
 }

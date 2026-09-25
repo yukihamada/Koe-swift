@@ -688,9 +688,12 @@ func testAudioRecorderStartRebuildsContextForReusedRecorderPrepFromPreWarm() {
     _ = ar.stop()  // session A ends normally, clearing recorder/currentContext
 
     // Pre-warm the next recorder AHEAD of session B's start() — this is the
-    // real production call shape from AppDelegate.
+    // real production call shape from AppDelegate. round-10 review:
+    // pre-warm now lives in a separate `prewarmedRecorder` slot, not
+    // `currentContext` (nothing is "active" yet), hence
+    // `prewarmedRecorderForTesting` here rather than `currentRecorderForTesting`.
     ar.prepare()
-    guard let preWarmedRecorder = ar.currentRecorderForTesting else {
+    guard let preWarmedRecorder = ar.prewarmedRecorderForTesting else {
         check(false, "prepare() produced a recorder ahead of start()"); return
     }
 
@@ -813,6 +816,68 @@ func testAudioRecorderHandleUnexpectedStopHoppingSurvivesInterleavedMainThreadSe
           "A's background-thread callback, resolved on main AFTER B already started, produces no delivery at all (got \(deliveries))")
     check(ar.currentRecorderForTesting === recorderB,
           "B's registration is completely intact — untouched by A's late background-thread callback (still \(String(describing: ar.currentRecorderForTesting)), expected \(recorderB))")
+}
+
+func testAudioRecorderPreWarmDoesNotClobberActiveSessionRecorder() {
+    print("\n--- AudioRecorder: an async pre-warm prepare() that resolves AFTER the next session already started must not replace or stop the wrong recorder (round-10) ---")
+    // 2026-09-26 round-10 review: AppDelegate.stopAndRecognize() enqueues
+    // `DispatchQueue.main.async { self.recorder.prepare() }` right after
+    // stop() returns, to pre-warm the NEXT session's recorder ahead of time.
+    // If, for any reason (a fast re-press, seamless mode, etc.), the NEXT
+    // session's own start() call is ALSO queued on main and happens to run
+    // BEFORE that queued pre-warm resolves, the pre-warm's prepare() used to
+    // unconditionally overwrite the single `recorder` property — even
+    // though the new session was already actively recording through a
+    // DIFFERENT AVAudioRecorder instance tracked separately in
+    // `currentContext`. stop() then stopped the wrong (idle, pre-warmed)
+    // recorder while the REAL one kept recording silently forever, yet
+    // `.ended` was still posted as if everything were fine.
+    //
+    // This test reproduces that exact ordering: start A, stop A, then queue
+    // session B's start() and the pre-warm prepare() on main IN THAT ORDER
+    // (start first), then drain. B's real recorder must remain untouched by
+    // the pre-warm, and stop() must release THAT recorder, not a stray one.
+    let ar = AudioRecorder()
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
+
+    let sessionA = UUID()
+    check(ar.start(sessionID: sessionA, onUnexpectedStop: { _, _ in }), "session A starts")
+    _ = ar.stop()
+
+    var deliveries: [(UUID, AudioRecorder.Reason)] = []
+    var recorderBAtStartTime: FakeRecordingAVAudioRecorder?
+    let sessionB = UUID()
+
+    // Queued FIRST: session B's start() (e.g. a fast re-press/seamless mode).
+    DispatchQueue.main.async {
+        check(ar.start(sessionID: sessionB, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+              "session B starts (queued first, before the pre-warm resolves)")
+        recorderBAtStartTime = ar.currentRecorderForTesting as? FakeRecordingAVAudioRecorder
+    }
+    // Queued SECOND: the pre-warm prepare() from A's stopAndRecognize(),
+    // which therefore resolves AFTER B is already actively recording.
+    DispatchQueue.main.async {
+        ar.prepare()
+    }
+    drainMainQueue(0.5)
+
+    guard let recorderB = recorderBAtStartTime else {
+        check(false, "session B's real recorder was captured right when start() returned"); return
+    }
+    check(recorderB.isRecording, "B's real recorder is genuinely recording right after B's own start() call")
+
+    check(ar.currentRecorderForTesting === recorderB,
+          "after the interleaved pre-warm resolves, the ACTIVE recorder is still B's real one — not silently replaced by an idle pre-warmed instance (got \(String(describing: ar.currentRecorderForTesting)), expected \(recorderB))")
+    check(recorderB.isRecording,
+          "B's real recorder is STILL recording after the interleaved pre-warm — no stray/orphaned recording was created")
+
+    // Now stop B for real.
+    let dest = ar.stop()
+
+    check(!recorderB.isRecording,
+          "stop() actually released B's REAL recording backend (mic stopped) — not a stray idle pre-warmed instance")
+    check(dest != nil, "stop() reports success (a destination file) for B's real session")
+    check(deliveries.isEmpty, "no unexpected-stop delivery occurred for B during this normal start→stop flow")
 }
 
 func testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan() {
@@ -1182,6 +1247,7 @@ func runAllTests() {
     testAudioRecorderStartRebuildsContextForReusedRecorderPrepFromPreWarm()
     testAudioRecorderStartIgnoresStaleCallbackFromADiscardedPriorRecorder()
     testAudioRecorderHandleUnexpectedStopHoppingSurvivesInterleavedMainThreadSessionTransition()
+    testAudioRecorderPreWarmDoesNotClobberActiveSessionRecorder()
     testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan()
     testAudioRecorderHandleUnexpectedStopOrdering()
     testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped()

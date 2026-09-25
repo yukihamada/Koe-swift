@@ -14,10 +14,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupWindow: SetupWindow?
     private var transcriptionWindow: TranscriptionWindow?
     /// テストが `AudioRecorder` のサブクラス (fake) に差し替えられるよう `private let` に
-    /// しない。差し替え時も `didSet` で `onUnexpectedStop` の配線を維持する。
-    var recorder: AudioRecorder = AudioRecorder() {
-        didSet { wireRecorderCallbacks() }
-    }
+    /// しない。
+    ///
+    /// **2026-09-26 round-8 review**: 以前はここに差し替わるたび `didSet` で
+    /// `recorder.onUnexpectedStop` を事前 bind し直していたが、その mutable
+    /// property 自体が round-8 のバグの温床だったため廃止した。ハンドラは
+    /// `startRecording()` が `recorder.start(sessionID:onUnexpectedStop:)`
+    /// の引数として直接渡す — 事前バインドという概念自体が無くなった。
+    var recorder: AudioRecorder = AudioRecorder()
     private var speech    = SpeechEngine()
     private let typer     = AutoTyper()
     private var eventMonitor: Any?
@@ -124,42 +128,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 並行録音時の bundleID 保護: stopAndRecognize() で確定し、認識完了まで保持
     private var recognitionBundleID = ""
 
-    /// `applicationDidFinishLaunching`（NSApplication.run() 経由でのみ呼ばれ、テストでは
-    /// 呼ばれない）ではなく init 側で配線する — テストが `AppDelegate()` を直接生成して
-    /// `recorder` に fake を差し替えるケースでも `onUnexpectedStop` が必ず有効になるように。
     override init() {
         super.init()
-        wireRecorderCallbacks()
     }
 
-    private func wireRecorderCallbacks() {
-        // 録音中でない時点 (init / recorder 差し替え時) の既定バインド。
-        // 実際のセッションが始まったら startRecording() が sessionID 付きで
-        // 再バインドする — 詳細は bindUnexpectedStopHandler() のコメント参照。
-        bindUnexpectedStopHandler(forSessionID: dictationSession.currentSessionID)
-    }
-
-    /// `recorder.onUnexpectedStop` を「このクロージャは本来どのセッションに
-    /// ついてのものか」を値として捕まえた状態で (再) バインドする。
-    /// `wireRecorderCallbacks()` (recorder 差し替え時) と `startRecording()`
-    /// (新しいセッション開始時) の両方から呼ぶ。
+    /// `AudioRecorder.start(sessionID:onUnexpectedStop:)` に渡す、この
+    /// セッション専用のハンドラを組み立てる。`startRecording()` が
+    /// `recorder.start()` を呼ぶ**直前**に、その場で毎回新しく作る。
     ///
-    /// **2026-09-26 round-5 review**: 以前は `sessionID` を一切持たず、
-    /// main への hop 中に別のセッションが始まっていても
-    /// `handleRecorderUnexpectedStop()` は「今 isRecording かどうか」しか
-    /// 見ていなかった — Aの遅延した想定外停止イベントが、A→B の切り替え
-    /// (main hop の間に発生) の後に main で実際に処理されると、
-    /// `isRecording` は (Bが録音中なので) true のままで通過してしまい、
-    /// Bの isRecording/UI/ended 通知を誤って握り潰していた
-    /// (Bのバックエンド自体は AudioRecorder 側の identity ガード
-    /// (round-3) で守られているので止まらないが、AppDelegate 側の状態と
-    /// 通知が壊れる)。ここでクロージャ生成時点の `sessionID` を値として
-    /// 捕まえておけば、後で `recorder.onUnexpectedStop` が新しいセッション用
-    /// に再バインドされても、既に作られた (未実行の) 古いクロージャの
-    /// 中身は変わらない — 実行時に `handleRecorderUnexpectedStop(sessionID:)`
-    /// が現在のセッションと突き合わせて古ければ無視できる。
-    private func bindUnexpectedStopHandler(forSessionID sessionID: Int?) {
-        recorder.onUnexpectedStop = { [weak self] in
+    /// **2026-09-26 round-5 review**: `dictationSession.beginStarting()` が
+    /// 返した `sessionID` (DictationSession 側の Int) をクロージャ生成時点の
+    /// 値として捕まえておく — 後で別セッションのために新しいクロージャが
+    /// 作られても、既に作られた (未実行の) 古いクロージャの中身は変わらない。
+    ///
+    /// **2026-09-26 round-8 review**: 以前は `recorder.onUnexpectedStop`
+    /// という mutable property に事前 bind していたため、
+    /// `AudioRecorder.start()` が内部で recorder インスタンスを再利用する
+    /// パスで、この事前バインドと実際の登録がズレるバグがあった。今は
+    /// このクロージャを `recorder.start(sessionID:onUnexpectedStop:)` の
+    /// 引数として直接渡す — `AudioRecorder` 側がこの closure を「今回の
+    /// start() 呼び出しに対応する RecordingContext」に不変に焼き込むため、
+    /// 事前バインドという中間状態自体が存在しない。
+    private func makeUnexpectedStopHandler(forSessionID sessionID: Int) -> (UUID, AudioRecorder.Reason) -> Void {
+        { [weak self] _, _ in
             // 2026-09-26 round-4: AVFoundation の delegate コールバックは
             // worker thread から同期的に来ることがあり、main thread 上の
             // 通常停止経路と生で競合すると二重 ended の原因になる。main へ
@@ -187,9 +178,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// エンコードエラー等、`stopAndRecognize()`/`cancelRecording()` を経由しない
     /// 想定外の録音停止を AudioRecorder から受け取る。正規の停止経路を通らないため
     /// ここで確実に isRecording をリセットし、.ended を一度だけ送る。
-    /// 必ずメインスレッドから呼ぶこと (`bindUnexpectedStopHandler()` が保証する)。
+    /// 必ずメインスレッドから呼ぶこと (`makeUnexpectedStopHandler()` が保証する)。
     ///
-    /// `sessionID`: `bindUnexpectedStopHandler(forSessionID:)` がクロージャ
+    /// `sessionID`: `makeUnexpectedStopHandler(forSessionID:)` がクロージャ
     /// 生成時に捕まえた「本来このイベントがどのセッションについてのものか」。
     /// 今アクティブなセッションと一致しなければ、状態リセット・UI操作・
     /// 通知のどれも一切行わず無視する (2026-09-26 round-5)。
@@ -1394,12 +1385,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             klog("startRecording: dictationSession already active, ignoring re-entrant call")
             return
         }
-        bindUnexpectedStopHandler(forSessionID: sessionID)
 
         // マイクが実際に開始できてから isRecording を立てて .began を送る —
         // record() が失敗した (recorder.start() == false) のに .began だけ飛んで
         // .ended が来ない、という壊れたペアを防ぐ。
-        guard recorder.start() else {
+        //
+        // 2026-09-26 round-8 review: ハンドラは recorder.start() の**引数として
+        // 直接**渡す — AudioRecorder 側がこの closure を「今回の start() 呼び出し
+        // に対応する RecordingContext」に不変に焼き込むため、事前バインドという
+        // 中間状態 (かつてのバグの温床) 自体が存在しない。
+        guard recorder.start(sessionID: UUID(), onUnexpectedStop: makeUnexpectedStopHandler(forSessionID: sessionID)) else {
             klog("startRecording: recorder.start() failed, aborting")
             dictationSession.cancelStarting(sessionID: sessionID)
             restoreSystemVolume()

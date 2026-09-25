@@ -301,78 +301,98 @@ final class LoggingDictationNotifier: DictationLifecycleNotifying {
     func postDictationEnded() { log.record("notifier.ended") }
 }
 
-/// Every method that could touch a real `AVAudioRecorder` (and therefore the
-/// mic) is overridden — the inherited base-class implementation is never
-/// reached, so no permission prompt, no real recording, no real file I/O
-/// beyond what `tempURL` (a plain property) happens to point at.
+/// `AVAudioRecorder` subclass that never actually engages the real audio
+/// engine — `record()`/`stop()`/`isRecording` are all reimplemented as plain
+/// Swift state, so no mic permission is ever needed, while still being a
+/// REAL `AVAudioRecorder` that can be `AudioRecorder.prepare()`'s
+/// `recorderFactory` result, `AVAudioRecorderDelegate`'s `recorder:`
+/// parameter, etc. — i.e. it can flow through `AudioRecorder`'s actual,
+/// unmodified production code (2026-09-26 round-8 review: this replaces
+/// directly overriding `AudioRecorder.start()`/`prepare()`, which bypassed
+/// the exact registration logic round-8's bug lived in).
+final class FakeRecordingAVAudioRecorder: AVAudioRecorder {
+    var recordResultProvider: () -> Bool = { true }
+    private(set) var recordCallCount = 0
+    private(set) var stopCallCount = 0
+    private var simulatedIsRecording = false
+    override var isRecording: Bool { simulatedIsRecording }
+    override func record() -> Bool {
+        recordCallCount += 1
+        let ok = recordResultProvider()
+        simulatedIsRecording = ok
+        return ok
+    }
+    override func stop() {
+        stopCallCount += 1
+        simulatedIsRecording = false
+    }
+}
+
+/// Routes `prepare()`/`start(sessionID:onUnexpectedStop:)` through the REAL,
+/// unmodified `AudioRecorder` implementation — only the underlying
+/// `AVAudioRecorder` construction is faked (via `recorderFactory`), so no mic
+/// permission is ever needed, but the actual session-registration logic
+/// (`currentContext`, reused-recorder handling, etc.) runs for real.
+///
+/// 2026-09-26 round-8 review: previously this subclass overrode
+/// `prepare()`/`start()` entirely, bypassing the base class's real
+/// implementation — so a test using this harness could never exercise
+/// `start()`'s own registration logic, which is exactly where the round-8
+/// bug (`RecordingContext` going stale when a prepared recorder is reused)
+/// lived. `stop()`/`cancel()`/`shutdown()` still call through to the real
+/// base implementation too (so `recorder`/`currentContext` are cleared
+/// exactly like production, and the next `start()` re-`prepare()`s fresh) —
+/// but `stop()`'s real (moved-to-disk) return value is discarded and
+/// replaced with `stopReturnsURL`, so `AppDelegate.stopAndRecognize()` never
+/// attempts real speech recognition against the near-empty fake WAV file the
+/// real move would have produced.
 final class LoggingAudioRecorder: AudioRecorder {
     let log: EventLog
     var startResult = true
-    /// what stop()/cancel() should look like they returned/left behind
+    /// what stop() should look like it returned to AppDelegate.
     var stopReturnsURL: URL? = URL(fileURLWithPath: "/tmp/koe-test-fake.wav")
-    /// When true, `start()` calls `onUnexpectedStop?()` synchronously from
-    /// within its own body, before returning — simulates an unexpected
-    /// stop (e.g. encode error) racing `recorder.start()` itself, for the
-    /// 2026-09-26 round-6 starting-window fix.
+    /// When true, `start()` calls `onUnexpectedStop(sessionID, .finishedUnsuccessfully)`
+    /// synchronously from within its own body, before returning — simulates
+    /// an unexpected stop (e.g. encode error) racing `recorder.start()`
+    /// itself, for the 2026-09-26 round-6 starting-window fix.
     var fireUnexpectedStopDuringStart = false
-    /// A real (never `.record()`-called, so no mic permission needed)
-    /// `AVAudioRecorder` standing in for "this session's" recorder, for the
-    /// identity guard `handleUnexpectedStop`/`checkWatchdog` added in the
-    /// 2026-09-26 round-3 review. This subclass overrides prepare()/start()
-    /// to no-ops and otherwise never touches the base class's real
-    /// `recorder` property, so tests that simulate a real
-    /// `AVAudioRecorderDelegate` callback must register this explicitly via
-    /// `setActiveSessionForTesting` and use this exact instance as the
-    /// callback's `recorder` argument.
-    ///
-    /// 2026-09-26 round-7 review: this used to be a single `let` reused
-    /// across every session. That's fine for tests that only care about one
-    /// session at a time, but it defeats any test of A-vs-B session
-    /// identity (the round-7 stale test) — with only one shared instance, A
-    /// and B are literally the same object, so recorder-identity comparison
-    /// can never distinguish them (real production always creates a BRAND
-    /// NEW `AVAudioRecorder` per session via `prepare()`). `start()` now
-    /// creates a fresh instance every call, exactly like real `prepare()`.
-    private(set) var sessionRecorder: AVAudioRecorder = LoggingAudioRecorder.makeSessionRecorder()
-
-    private static func makeSessionRecorder() -> AVAudioRecorder {
-        try! AVAudioRecorder(
-            url: FileManager.default.temporaryDirectory.appendingPathComponent("koe-test-logging-session-\(UUID().uuidString).wav"),
-            settings: [AVFormatIDKey: Int(kAudioFormatLinearPCM), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1]
-        )
-    }
 
     init(log: EventLog) {
         self.log = log
         super.init()
+        recorderFactory = { [weak self] url, settings in
+            let r = try FakeRecordingAVAudioRecorder(url: url, settings: settings)
+            r.recordResultProvider = { [weak self] in self?.startResult ?? true }
+            return r
+        }
     }
 
-    override func start() -> Bool {
+    override func start(sessionID: UUID, onUnexpectedStop: @escaping (UUID, Reason) -> Void) -> Bool {
         log.record("recorder.start")
-        if startResult {
-            tempURL = stopReturnsURL
-            sessionRecorder = Self.makeSessionRecorder()
-            setActiveSessionForTesting(sessionRecorder)
-        }
+        let ok = super.start(sessionID: sessionID, onUnexpectedStop: onUnexpectedStop)
         if fireUnexpectedStopDuringStart {
-            onUnexpectedStop?()
+            onUnexpectedStop(sessionID, .finishedUnsuccessfully)
         }
-        return startResult
+        return ok
     }
     override func stop() -> URL? {
         log.record("recorder.stop")
+        _ = super.stop()  // clears recorder/currentContext for real; discard the real (moved-file) URL
         return stopReturnsURL
     }
     override func cancel() {
         log.record("recorder.cancel")
+        super.cancel()
     }
     override func shutdown() {
         log.record("recorder.shutdown")
+        super.shutdown()
     }
-    override func prepare() {
-        // no-op: applicationDidFinishLaunching()/parallel-recording restarts
-        // call this — never let it reach a real AVAudioRecorder in a test.
-    }
+
+    /// テストが実際の `AVAudioRecorderDelegate` エントリポイントを直接呼べる
+    /// よう、直近に (real, base class 経由で) 使われた recorder インスタンス
+    /// を覗く。
+    var sessionRecorder: AVAudioRecorder { currentRecorderForTesting! }
 }
 
 func indexOf(_ events: [String], _ e: String) -> Int? { events.firstIndex(of: e) }
@@ -606,46 +626,126 @@ func testRecordingLifecycleStaleUnexpectedStopAfterSessionTransitionIsIgnored() 
           "A's stale unexpected-stop produces no new events at all — no extra ended, B's backend untouched (got \(log.events), expected unchanged from \(eventsBeforeStaleDelivery))")
 }
 
-func testAudioRecorderHandleUnexpectedStopIgnoresStaleCallbackEvenAfterOnUnexpectedStopWasRebound() {
-    print("\n--- AudioRecorder.handleUnexpectedStop: A's real delegate callback still invokes A's OWN handler, never B's, even after onUnexpectedStop was already rebound for B ---")
-    // 2026-09-26 round-7 review: this is the direct reproduction of the
-    // TOCTOU the coordinator described. Real startRecording() always does
-    // "bindUnexpectedStopHandler() (rebinds recorder.onUnexpectedStop) THEN
-    // recorder.start() (which is what registers the new session as the
-    // current one, via prepare())" — so there's a real window, between
-    // those two steps, where onUnexpectedStop has already been rebound to
-    // the NEW session's handler but the "current session" registration
-    // still points at the OLD one. A's real AVAudioRecorderDelegate
-    // callback firing in exactly that window used to read the (already
-    // rebound) onUnexpectedStop property directly and invoke B's handler,
-    // misattributing A's own stop event to B, even though the identity
-    // check against the (not-yet-updated) old session still passed.
-    //
-    // This test reconstructs that exact window deterministically (no real
-    // threads needed) by manually rebinding onUnexpectedStop AFTER
-    // registering A as the active session but BEFORE A's real delegate
-    // callback fires — verify it fails on the pre-round-7 code.
-    let log = EventLog()
+// ══════════════════════════════════════
+// AudioRecorder.start(sessionID:onUnexpectedStop:) — round-8 review
+//
+// round-7 replaced the shared mutable `onUnexpectedStop` property with a
+// `RecordingContext` built inside the `recorder` property's setter (i.e.
+// inside `prepare()`). But `start()` only calls `prepare()` when
+// `recorder == nil` — real production pre-warms the NEXT recorder ahead of
+// time (`AppDelegate.stopAndRecognize()`: "次の録音に備えてAVAudioRecorderを
+// 即時再準備" — `DispatchQueue.main.async { self.recorder.prepare() }` right
+// after a session ends, and `applicationDidFinishLaunching()`'s initial
+// `recorder.prepare()`), so a LATER `start()` call routinely finds
+// `recorder != nil` and skips `prepare()` — meaning `RecordingContext` was
+// never rebuilt for the new session, and the new session's unexpected stops
+// were delivered to the PREVIOUS session's handler (or a sessionID-less one
+// from app launch).
+//
+// The fix moves `RecordingContext` construction into `start()` itself, so it
+// is rebuilt on every call regardless of whether the underlying
+// `AVAudioRecorder` was freshly prepared or reused. These tests reproduce
+// the exact real-world trigger (prepare() called ahead of start(), as the
+// pre-warm code above does) using `recorderFactory` so no mic is touched.
+// ══════════════════════════════════════
+
+func testAudioRecorderStartDeliversFirstSessionUnexpectedStopToThatSession() {
+    print("\n--- AudioRecorder.start(sessionID:onUnexpectedStop:): a single session's unexpected stop is delivered for that session ---")
     let ar = AudioRecorder()
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
 
-    ar.onUnexpectedStop = { log.record("A's stop handler") }
-    let recorderA = try! AVAudioRecorder(
-        url: FileManager.default.temporaryDirectory.appendingPathComponent("koe-test-round7-A-\(UUID().uuidString).wav"),
-        settings: [AVFormatIDKey: Int(kAudioFormatLinearPCM), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1]
-    )
-    ar.setActiveSessionForTesting(recorderA)  // "session A fully started"
+    var deliveries: [(UUID, AudioRecorder.Reason)] = []
+    let sessionA = UUID()
+    check(ar.start(sessionID: sessionA, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+          "session A starts")
+    guard let recorderA = ar.currentRecorderForTesting else {
+        check(false, "session A has a real (fake-backed) recorder"); return
+    }
 
-    // AppDelegate rebinds onUnexpectedStop for session B — this always runs
-    // BEFORE recorder.start()/prepare() for B in the real startRecording().
-    ar.onUnexpectedStop = { log.record("B's stop handler") }
-
-    // A's real AVAudioRecorderDelegate callback interleaves exactly here —
-    // B's own registration (setActiveSessionForTesting/prepare() for B)
-    // hasn't happened yet.
     ar.audioRecorderDidFinishRecording(recorderA, successfully: false)
 
-    check(log.events == ["A's stop handler"],
-          "A's own real delegate callback invokes A's OWN handler — never B's, even though the raw onUnexpectedStop property had already been rebound to B's handler by the time A's callback fired (got \(log.events))")
+    check(deliveries.map { $0.0 } == [sessionA],
+          "session A's own unexpected stop is delivered for session A's own sessionID (got \(deliveries))")
+}
+
+func testAudioRecorderStartRebuildsContextForReusedRecorderPrepFromPreWarm() {
+    print("\n--- AudioRecorder.start(sessionID:onUnexpectedStop:): a session started against a PRE-WARMED (prepare()'d ahead of time) recorder still gets its OWN unexpected-stop handler, not the previous one (round-8) ---")
+    // This reproduces the exact real trigger: session A starts and stops,
+    // then the recorder is pre-warmed (prepare()) BEFORE session B's
+    // start() call — exactly what AppDelegate.stopAndRecognize()'s
+    // "次の録音に備えてAVAudioRecorderを即時再準備" does. Because
+    // `recorder != nil` after the pre-warm, `start()`'s own
+    // `if recorder == nil { prepare() }` is skipped for B — the bug was
+    // that `RecordingContext` (previously built only inside `prepare()`/the
+    // `recorder` setter) was therefore never rebuilt for B.
+    let ar = AudioRecorder()
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
+
+    var deliveries: [(UUID, AudioRecorder.Reason)] = []
+    let sessionA = UUID()
+    check(ar.start(sessionID: sessionA, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+          "session A starts")
+    _ = ar.stop()  // session A ends normally, clearing recorder/currentContext
+
+    // Pre-warm the next recorder AHEAD of session B's start() — this is the
+    // real production call shape from AppDelegate.
+    ar.prepare()
+    guard let preWarmedRecorder = ar.currentRecorderForTesting else {
+        check(false, "prepare() produced a recorder ahead of start()"); return
+    }
+
+    let sessionB = UUID()
+    check(ar.start(sessionID: sessionB, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+          "session B starts, reusing the pre-warmed recorder")
+    guard let recorderAfterB = ar.currentRecorderForTesting else {
+        check(false, "session B has a current recorder"); return
+    }
+    check(preWarmedRecorder === recorderAfterB,
+          "sanity check: start() really did reuse the pre-warmed recorder (prepare() was skipped, matching production's if recorder == nil check)")
+
+    ar.audioRecorderDidFinishRecording(recorderAfterB, successfully: false)
+
+    check(deliveries.count == 1,
+          "exactly one delivery (got \(deliveries.count): \(deliveries))")
+    check(deliveries.first?.0 == sessionB,
+          "the unexpected stop on the pre-warmed-then-reused recorder is attributed to session B (the session that actually called start()), not stale session A (got \(String(describing: deliveries.first?.0)))")
+}
+
+func testAudioRecorderStartIgnoresStaleCallbackFromADiscardedPriorRecorder() {
+    print("\n--- AudioRecorder.start(sessionID:onUnexpectedStop:): a stale callback from session A's OWN (discarded, no longer current) recorder is ignored once session B has started ---")
+    // Unlike the pre-warm case above, this is the NORMAL flow: A ends via
+    // stop() (recorder/currentContext cleared) and B's start() calls
+    // prepare() fresh (no pre-warm in between) — so A and B get genuinely
+    // DISTINCT AVAudioRecorder instances, and A's late/delayed delegate
+    // callback (delivered on A's own, no-longer-current instance) must be
+    // ignored entirely — a true no-op, not attributed to anyone.
+    let ar = AudioRecorder()
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
+
+    var deliveries: [(UUID, AudioRecorder.Reason)] = []
+    let sessionA = UUID()
+    check(ar.start(sessionID: sessionA, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+          "session A starts")
+    guard let recorderA = ar.currentRecorderForTesting else {
+        check(false, "session A has a current recorder"); return
+    }
+    _ = ar.stop()  // session A ends, clearing recorder/currentContext — no pre-warm this time
+
+    let sessionB = UUID()
+    check(ar.start(sessionID: sessionB, onUnexpectedStop: { id, reason in deliveries.append((id, reason)) }),
+          "session B starts fresh (prepare() runs again since recorder was nil)")
+    guard let recorderB = ar.currentRecorderForTesting else {
+        check(false, "session B has a current recorder"); return
+    }
+    check(recorderA !== recorderB,
+          "sanity check: A and B really do have distinct recorder instances in this (non-pre-warmed) flow")
+
+    // A's stale delegate callback arrives on A's OWN (discarded) instance,
+    // after B has already started.
+    ar.audioRecorderDidFinishRecording(recorderA, successfully: false)
+
+    check(deliveries.isEmpty,
+          "A's stale callback on its own discarded recorder produces NO delivery at all — not to A (nothing to end), not to B (untouched) (got \(deliveries))")
 }
 
 func testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan() {
@@ -693,106 +793,99 @@ func testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan() {
 // own responsibility, not AppDelegate's.
 // ══════════════════════════════════════
 
-/// Fake `AudioRecordingBackend` that can report `isRecording == true` without
-/// ever touching a real AVAudioRecorder/the mic — real `AVAudioRecorder`
-/// can't be put into that state in a test without actually calling record(),
-/// which needs mic permission this headless run must not depend on.
-final class FakeAudioRecordingBackend: AudioRecordingBackend {
-    let log: EventLog
-    private(set) var isRecording: Bool
-    init(isRecording: Bool, log: EventLog) {
-        self.isRecording = isRecording
-        self.log = log
-    }
-    func stop() {
-        log.record("backend.stop")
-        isRecording = false
-    }
-}
-
 func testAudioRecorderHandleUnexpectedStopOrdering() {
     print("\n--- AudioRecorder.handleUnexpectedStop: stop() before onUnexpectedStop ---")
     let log = EventLog()
     let ar = AudioRecorder()
-    let backend = FakeAudioRecordingBackend(isRecording: true, log: log)
-    // 2026-09-26 round-7: setActiveSessionForTesting() now bakes the
-    // CURRENT onUnexpectedStop into the context at the moment it's called
-    // (matching prepare()'s real behavior) — set the handler first, exactly
-    // like real startRecording() does (bindUnexpectedStopHandler() always
-    // runs before recorder.start()).
-    ar.onUnexpectedStop = { log.record("onUnexpectedStop") }
-    // handleUnexpectedStop now guards on identity against the "current
-    // session" — mark this backend as the active session so the ordering
-    // this test actually cares about is reached at all.
-    ar.setActiveSessionForTesting(backend)
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
+    // `capturedRecorder` is set AFTER start() returns (below) but read
+    // INSIDE the closure at invocation time — `ar.currentRecorderForTesting`
+    // can't be used for this because handleUnexpectedStop() already clears
+    // it before invoking the callback, which would read as nil rather than
+    // "stopped" (false).
+    var capturedRecorder: FakeRecordingAVAudioRecorder?
+    var sawIsRecordingInsideCallback: Bool?
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in
+        sawIsRecordingInsideCallback = capturedRecorder?.isRecording
+        log.record("onUnexpectedStop")
+    }), "session starts")
+    guard let recorder = ar.currentRecorderForTesting as? FakeRecordingAVAudioRecorder else {
+        check(false, "recorder exists and is the fake"); return
+    }
+    capturedRecorder = recorder
+    check(recorder.isRecording, "sanity: the fake reports isRecording == true after a successful start()")
 
-    ar.handleUnexpectedStop(backend)
+    ar.handleUnexpectedStop(recorder, reason: .finishedUnsuccessfully)
 
-    check(log.events == ["backend.stop", "onUnexpectedStop"],
-          "the underlying recorder is stopped BEFORE onUnexpectedStop fires (got \(log.events))")
-    check(!backend.isRecording, "the backend is confirmed stopped (isRecording == false) after handleUnexpectedStop")
+    check(log.events == ["onUnexpectedStop"], "onUnexpectedStop fires exactly once (got \(log.events))")
+    check(recorder.stopCallCount == 1, "the underlying recorder's stop() was called exactly once (got \(recorder.stopCallCount))")
+    check(sawIsRecordingInsideCallback == false,
+          "by the time onUnexpectedStop fires, the recorder is ALREADY stopped — stop() happens before the callback (saw isRecording=\(String(describing: sawIsRecordingInsideCallback)))")
 }
 
 func testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped() {
     print("\n--- AudioRecorder.handleUnexpectedStop: does not call stop() if already stopped ---")
     let log = EventLog()
     let ar = AudioRecorder()
-    let backend = FakeAudioRecordingBackend(isRecording: false, log: log)
-    // 2026-09-26 round-7: see testAudioRecorderHandleUnexpectedStopOrdering
-    // — set the handler before registering the session, matching real
-    // startRecording()'s order.
-    ar.onUnexpectedStop = { log.record("onUnexpectedStop") }
-    ar.setActiveSessionForTesting(backend)
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in log.record("onUnexpectedStop") }),
+          "session starts")
+    guard let recorder = ar.currentRecorderForTesting as? FakeRecordingAVAudioRecorder else {
+        check(false, "recorder exists and is the fake"); return
+    }
+    recorder.stop()  // simulate: already stopped (e.g. by something else) before the unexpected-stop path runs
+    check(!recorder.isRecording, "sanity: the fake is already stopped")
+    let stopCallCountBefore = recorder.stopCallCount
 
-    ar.handleUnexpectedStop(backend)
+    ar.handleUnexpectedStop(recorder, reason: .finishedUnsuccessfully)
 
     check(log.events == ["onUnexpectedStop"],
-          "stop() is not called again on an already-stopped backend, but onUnexpectedStop still fires (got \(log.events))")
+          "onUnexpectedStop still fires even though the backend was already stopped (got \(log.events))")
+    check(recorder.stopCallCount == stopCallCountBefore,
+          "stop() is not called again on an already-stopped backend (count stayed at \(recorder.stopCallCount))")
 }
 
 func testAudioRecorderHandleUnexpectedStopIgnoresStaleSession() {
     print("\n--- AudioRecorder.handleUnexpectedStop: a late callback from a PREVIOUS session is ignored ---")
-    // 2026-09-26 round-3 review: start A, stop A, start B, then deliver A's
-    // late failure callback — B must be untouched (still "recording", no
-    // stop() called on it) and no onUnexpectedStop (.ended) must fire.
+    // start A, stop A (fresh prepare(), no pre-warm), start B, then deliver
+    // A's late failure callback on A's own (discarded) recorder instance —
+    // B must be untouched and no onUnexpectedStop must fire for either.
     let log = EventLog()
     let ar = AudioRecorder()
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
 
-    let sessionA = FakeAudioRecordingBackend(isRecording: true, log: log)
-    ar.setActiveSessionForTesting(sessionA)   // "start A"
-    ar.setActiveSessionForTesting(nil)        // "stop A" (A is no longer current)
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in log.record("onUnexpectedStop") }), "session A starts")
+    guard let recorderA = ar.currentRecorderForTesting as? FakeRecordingAVAudioRecorder else {
+        check(false, "session A has a recorder"); return
+    }
+    _ = ar.stop()  // "stop A" — clears recorder/currentContext for real
 
-    let sessionB = FakeAudioRecordingBackend(isRecording: true, log: log)
-    ar.setActiveSessionForTesting(sessionB)   // "start B"
-    ar.onUnexpectedStop = { log.record("onUnexpectedStop") }
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in log.record("onUnexpectedStop") }), "session B starts")
+    guard let recorderB = ar.currentRecorderForTesting as? FakeRecordingAVAudioRecorder else {
+        check(false, "session B has a recorder"); return
+    }
+    check(recorderA !== recorderB, "sanity: A and B have distinct recorder instances")
 
     // A's late/delayed failure callback arrives after B has already started.
-    ar.handleUnexpectedStop(sessionA)
+    ar.handleUnexpectedStop(recorderA, reason: .finishedUnsuccessfully)
 
     check(log.events.isEmpty,
-          "A's stale callback has NO side effects at all — not even A's own stop() (got \(log.events))")
-    check(sessionB.isRecording,
-          "B is completely untouched and still recording (got isRecording=\(sessionB.isRecording))")
+          "A's stale callback has NO side effects at all (got \(log.events))")
+    check(recorderB.isRecording,
+          "B is completely untouched and still recording (got isRecording=\(recorderB.isRecording))")
 }
 
 func testAudioRecorderEncodeErrorDidOccurFiresUnexpectedStop() {
     print("\n--- AudioRecorder.audioRecorderEncodeErrorDidOccur: real delegate call ---")
-    // A real, harmless AVAudioRecorder — constructing one needs no mic
-    // permission (only .record() does), so this is genuinely the real
-    // AVAudioRecorderDelegate method, not a simulation.
-    let dummy = try! AVAudioRecorder(
-        url: FileManager.default.temporaryDirectory.appendingPathComponent("koe-test-encode-error.wav"),
-        settings: [AVFormatIDKey: Int(kAudioFormatLinearPCM), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1]
-    )
     let ar = AudioRecorder()
-    // 2026-09-26 round-7: set the handler before registering the session
-    // (setActiveSessionForTesting() now bakes the CURRENT onUnexpectedStop
-    // into the context, matching real startRecording()'s order).
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
     var unexpectedStopCount = 0
-    ar.onUnexpectedStop = { unexpectedStopCount += 1 }
-    ar.setActiveSessionForTesting(dummy)  // mark `dummy` as the current session (identity guard)
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in unexpectedStopCount += 1 }), "session starts")
+    guard let recorder = ar.currentRecorderForTesting else {
+        check(false, "recorder exists"); return
+    }
 
-    ar.audioRecorderEncodeErrorDidOccur(dummy, error: nil)
+    ar.audioRecorderEncodeErrorDidOccur(recorder, error: nil)
 
     check(unexpectedStopCount == 1,
           "audioRecorderEncodeErrorDidOccur triggers onUnexpectedStop exactly once (got \(unexpectedStopCount))")
@@ -805,26 +898,25 @@ func testAudioRecorderEncodeErrorDidOccurFiresUnexpectedStop() {
 
 func testAudioRecorderWatchdogDetectsSilentStop() {
     print("\n--- AudioRecorder watchdog: detects a recorder that stopped without any delegate callback ---")
-    // Real AudioRecorder.prepare() creates a real, inert AVAudioRecorder
-    // (never .record()-called, so isRecording is genuinely false) — this
-    // simulates exactly the shape of the gap being fixed: a device loss /
-    // interruption on macOS that AVAudioRecorderDelegate never reports,
-    // leaving the recorder silently not-recording while Koe still thinks a
-    // session is active. No mic permission needed since record() is never
-    // called.
+    // A session starts successfully (isRecording becomes true on the fake),
+    // then the underlying recorder silently stops WITHOUT going through any
+    // of AudioRecorder's own stop paths — simulating exactly the gap being
+    // fixed: a device loss / interruption on macOS that
+    // AVAudioRecorderDelegate never reports.
     let ar = AudioRecorder()
-    // 2026-09-26 round-7: set the handler before prepare() — prepare()'s
-    // `recorder` setter now bakes the CURRENT onUnexpectedStop into the new
-    // session's context, matching real startRecording()'s order
-    // (bindUnexpectedStopHandler() always runs before recorder.start()).
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
     var unexpectedStopCount = 0
-    ar.onUnexpectedStop = { unexpectedStopCount += 1 }
-    ar.prepare()
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in unexpectedStopCount += 1 }), "session starts")
+    guard let recorder = ar.currentRecorderForTesting as? FakeRecordingAVAudioRecorder else {
+        check(false, "recorder exists and is the fake"); return
+    }
+    recorder.stop()  // silent stop — bypasses AudioRecorder entirely (device loss)
+    check(!recorder.isRecording, "sanity: the recorder now reports isRecording == false")
 
     ar.checkWatchdog()
 
     check(unexpectedStopCount == 1,
-          "the watchdog notices the (never-started) recorder isn't recording and fires onUnexpectedStop (got \(unexpectedStopCount))")
+          "the watchdog notices the silently-stopped recorder and fires onUnexpectedStop (got \(unexpectedStopCount))")
 
     // Idempotent: calling it again after recorder is nil'd out must not fire again.
     ar.checkWatchdog()
@@ -956,17 +1048,21 @@ func testDictationSessionCancelStartingIsNoOpOnceRecording() {
 // ══════════════════════════════════════
 func testAudioRecorderInputDeviceChangeEndsAlreadyStoppedSession() {
     print("\n--- AudioRecorder.handleInputDeviceChange: ends a session that silently stopped before watchdog/delegate noticed ---")
-    // ar.prepare() creates a real, inert (never `.record()`-called) recorder
-    // — isRecording is genuinely false, simulating "the recorder already
-    // stopped (e.g. device loss) but nothing has processed it yet", exactly
-    // like testAudioRecorderWatchdogDetectsSilentStop's setup, just reached
+    // A session starts successfully, then the underlying recorder silently
+    // stops WITHOUT going through any of AudioRecorder's own stop paths —
+    // simulating "the recorder already stopped (e.g. device loss) but
+    // nothing has processed it yet", exactly like
+    // testAudioRecorderWatchdogDetectsSilentStop's setup, just reached
     // through the input-device-change path instead of the watchdog timer.
     let ar = AudioRecorder()
-    // 2026-09-26 round-7: set the handler before prepare() — see
-    // testAudioRecorderWatchdogDetectsSilentStop's round-7 comment.
+    ar.recorderFactory = { url, settings in try FakeRecordingAVAudioRecorder(url: url, settings: settings) }
     var unexpectedStopCount = 0
-    ar.onUnexpectedStop = { unexpectedStopCount += 1 }
-    ar.prepare()
+    check(ar.start(sessionID: UUID(), onUnexpectedStop: { _, _ in unexpectedStopCount += 1 }), "session starts")
+    guard let recorder = ar.currentRecorderForTesting as? FakeRecordingAVAudioRecorder else {
+        check(false, "recorder exists and is the fake"); return
+    }
+    recorder.stop()  // silent stop — bypasses AudioRecorder entirely (device loss)
+    check(!recorder.isRecording, "sanity: the recorder now reports isRecording == false")
 
     ar.handleInputDeviceChange()
 
@@ -1015,11 +1111,13 @@ func runAllTests() {
     testRecordingLifecycleTermination()
     testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce()
     testRecordingLifecycleStaleUnexpectedStopAfterSessionTransitionIsIgnored()
+    testAudioRecorderStartDeliversFirstSessionUnexpectedStopToThatSession()
+    testAudioRecorderStartRebuildsContextForReusedRecorderPrepFromPreWarm()
+    testAudioRecorderStartIgnoresStaleCallbackFromADiscardedPriorRecorder()
     testRecordingLifecycleUnexpectedStopDuringStartPreventsBegan()
     testAudioRecorderHandleUnexpectedStopOrdering()
     testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped()
     testAudioRecorderHandleUnexpectedStopIgnoresStaleSession()
-    testAudioRecorderHandleUnexpectedStopIgnoresStaleCallbackEvenAfterOnUnexpectedStopWasRebound()
     testAudioRecorderEncodeErrorDidOccurFiresUnexpectedStop()
     testAudioRecorderWatchdogDetectsSilentStop()
     testAudioRecorderInputDeviceChangeEndsAlreadyStoppedSession()

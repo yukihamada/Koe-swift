@@ -8,11 +8,102 @@ import CWhisper
 final class WhisperContext {
     static let shared = WhisperContext()
 
+    /// プロセス内で生成された全 WhisperContext を弱参照で追跡するレジストリ。
+    /// `SettingsWindowController` の再認識機能は `.shared` とは別に自前の
+    /// `WhisperContext()` を作る — 詳細は `InstanceRegistry.swift` のコメント参照。
+    private static let registry = WeakInstanceRegistry<WhisperContext>()
+
+    /// プロセス内の全 WhisperContext インスタンス (`.shared` 含む) に対して
+    /// `unloadForTermination()` を呼ぶ。`AppDelegate.applicationWillTerminate`
+    /// はこれを呼ぶこと — `.shared` だけを呼ぶと、再認識機能が作る非共有
+    /// インスタンスが取りこぼされ、その Metal context が未解放のまま残る
+    /// (2026-09-19 のクラッシュがそれらについて再発しうる)。
+    ///
+    /// 各インスタンスの解放は `timeout` 秒までしか待たない —
+    /// 1つの認識が異常に長引いていても、アプリ終了処理全体を無期限に
+    /// ブロックしないための保険 (bounded wait)。タイムアウトした場合は
+    /// そのインスタンスの解放をベストエフォートで諦めてログを残す。
+    ///
+    /// **2026-09-26 round-4 review**: bounded wait だけでは不十分 —
+    /// `unloadForTermination()` 自体は queue が空くのを待つだけなので、
+    /// 実行中の長い `whisper_full` (再認識等) がある限り `timeout` 秒
+    /// 経っても解放されない可能性がある。`unloadForTermination()` は
+    /// 呼ばれた瞬間に (queue を経由せず) `terminationAbortFlag` を
+    /// 立てるので、実行中の推論は abort_callback 経由で ~100ms 程度で
+    /// 自主的に打ち切られ、queue はすぐ空く想定 — が、それでも `timeout`
+    /// 以内に終わらない最悪ケースのために戻り値で「全インスタンスが
+    /// 期限内に解放できたか」を返す。呼び出し側 (AppDelegate) は false
+    /// が返ってきたら `_exit(0)` で即座にプロセスを終了させ、C++ の
+    /// 静的デストラクタが未解放の Metal context に触れて abort する
+    /// (2026-09-19 の元クラッシュ) 前にプロセスごと消し去るべき。
+    /// **2026-09-26 round-5 review**: 以前はインスタンスごとに順番に abort flag を
+    /// 立てて `timeout` 秒待つ、を繰り返していた — インスタンス数が増えるほど
+    /// 待ち時間の上限が線形に伸びてしまう (N個なら最大 N×timeout 秒)。
+    /// まず全インスタンスに打ち切りシグナルを送ってから、実際の解放を
+    /// "全体で1つ" の締め切りで並行に待つように変更した。
+    @discardableResult
+    static func unloadAllForTermination(timeout: TimeInterval = 5) -> Bool {
+        let instances = registry.snapshot()
+        for ctx in instances { ctx.requestTerminationAbort() }
+
+        let group = DispatchGroup()
+        for ctx in instances {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                ctx.unloadForTermination()
+                group.leave()
+            }
+        }
+        let result = group.wait(timeout: .now() + timeout)
+        if result == .timedOut {
+            klog("WhisperContext: unloadAllForTermination timed out waiting for one or more instances (best-effort, giving up)")
+        }
+        return result == .success
+    }
+
     private var ctx: OpaquePointer?  // whisper_context*
-    private let queue = DispatchQueue(label: "com.yuki.koe.whisper", qos: .userInitiated)
+    /// unload() を deinit/queue 内から呼んでも自己 dispatch_sync でデッドロック
+    /// しないための共有ラッパー。WhisperContext/LlamaContext で共通実装 —
+    /// 詳細は ReentrantSerialQueue.swift 参照。
+    private let rq = ReentrantSerialQueue(label: "com.yuki.koe.whisper")
+    private var queue: DispatchQueue { rq.queue }
     // 投機実行は同じqueueを使用（whisper_contextは並行アクセス不可）
-    private(set) var isLoaded = false
+    /// `isLoaded` は queue 上 (loadModel/loadModelSync/unload/unloadForTermination)
+    /// でのみ書き込むが、`transcribe`/`transcribeBuffer`/`transcribeWithSpeakers`
+    /// の冒頭は意図的に queue の外 (呼び出し元のスレッド) から読む — 詳細は
+    /// `transcribe()` のコメント参照。この off-queue 読み取りがデータレースに
+    /// ならないよう、`isLoaded` の読み書きは全て `isLoadedLock` 越しにする
+    /// (真の atomic read/write。work queue には一切乗らないので、
+    /// レイテンシに敏感な transcribe 呼び出しに同期キューホップを足さない)。
+    private let isLoadedLock = NSLock()
+    private var _isLoaded = false
+    private(set) var isLoaded: Bool {
+        get { isLoadedLock.lock(); defer { isLoadedLock.unlock() }; return _isLoaded }
+        set { isLoadedLock.lock(); _isLoaded = newValue; isLoadedLock.unlock() }
+    }
     private(set) var isLoading = false
+    /// `ctx`/`isLoaded` と同じく `queue` 上でのみ読み書きする (queue-confined)。
+    /// `unload()`/`loadModel`/`loadModelSync` はどれもこれを「今から作る/作った
+    /// ctx が、まだ有効な試行か」の判定に使う: `unload()`/`unloadForTermination()`
+    /// が呼ばれるたびに +1 され、ある試行の開始時に読んだ値と、公開する直前に
+    /// 読んだ値が食い違っていれば「その間に誰かが unload した」ということなので、
+    /// 作ったばかりの ctx を publish せず即座に free する。
+    ///
+    /// **重要**: これは「呼ばれたら二度とロードさせない」ための恒久フラグでは
+    /// ない（それは `isShutDown` の役目）— 通常の `unload()` はモデル切替や
+    /// 低メモリ時の解放でも使われ、その後の `loadModel` は普通に成功しなければ
+    /// ならない。恒久的な `terminating` 相当のフラグをここに置いてしまうと、
+    /// 一度でも unload するとモデルが二度とロードできなくなる不具合になる
+    /// (2026-09-26 のレビューで指摘・修正)。
+    private var generation = 0
+    /// アプリ終了専用の恒久フラグ。`unloadForTermination()` だけが立てる —
+    /// 立った後は `generation` の食い違いを待つまでもなく、以後のロードを
+    /// 全て拒否する。通常の `unload()` はこれを立てない。
+    /// 書き込みは private のまま (WhisperContext 内部のみ) だが、読み取りは
+    /// module-internal — テスト (Tests/KoeTests.swift、同一コンパイル単位) が
+    /// `whisper_init_from_file_with_params` を経由せず直接この状態を検証
+    /// できるようにするため。
+    private(set) var isShutDown = false
     /// 直前の認識にかかった時間（秒）
     private(set) var lastTranscriptionTime: Double = 0
     /// 投機実行をキャンセルするフラグ
@@ -24,6 +115,39 @@ final class WhisperContext {
         ptr.initialize(to: false)
         return ptr
     }()
+    /// アプリ終了専用の abort フラグ (2026-09-26 round-4)。`unloadForTermination()`
+    /// が **queue を経由せず** 直ちに立てる — `transcribe`/
+    /// `transcribeWithSpeakers` が whisper_full に渡す abort_callback がこれを
+    /// ポーリングするので、queue 上で重い推論が実行中でも `unloadForTermination()`
+    /// の `rq.syncOrInline` (= 実質 queue.sync) がキューの順番待ちでブロックされて
+    /// いる間に、その推論自身が ~100ms 程度で自主的に打ち切られる。
+    /// `cancelFlag`/`cancelSpeculation` (投機実行キャンセル用) とは別物にしている
+    /// — あちらは新しい `transcribe()` 呼び出しのたびに false へリセットされる
+    /// ため、終了処理のフラグと兼用すると「終了直前に別の transcribe が走って
+    /// リセットしてしまう」レースになる。
+    ///
+    /// **2026-09-26 round-5 review**: 以前は `cancelFlag` と同じ、素の
+    /// `UnsafeMutablePointer<Bool>` だった — 書き込み側 (終了処理スレッド) と
+    /// 読み取り側 (whisper_full の worker thread) の間に同期が一切なく、
+    /// ThreadSanitizer が実際のデータレースとして検出した。`koe_abort_flag`
+    /// (C11 `atomic_bool` + release/acquire、`Sources/CWhisper/whisper_bridge.c`
+    /// 参照) に置き換えて解消する — Swift 側からは opaque pointer としてしか
+    /// 触らない (`koe_abort_flag_set/get/destroy` 経由)。
+    private var terminationAbortFlag: OpaquePointer = koe_abort_flag_create()
+
+    /// `terminationAbortFlag` だけを立てる軽量な操作。`unloadAllForTermination()`
+    /// が「まず全インスタンスに打ち切りシグナルを送ってから、実際の解放を
+    /// "全体で1つ" の締め切りで待つ」ための最初のステップとして使う
+    /// (2026-09-26 round-5 — 以前はインスタンスごとに順番に
+    /// 立てて`timeout`秒待つを繰り返していたため、インスタンス数に比例して
+    /// 待ち時間が伸びてしまっていた)。
+    private func requestTerminationAbort() {
+        koe_abort_flag_set(terminationAbortFlag, true)
+    }
+
+    init() {
+        Self.registry.register(self)
+    }
 
     // MARK: - Model loading
 
@@ -37,20 +161,55 @@ final class WhisperContext {
 
         queue.async { [weak self] in
             guard let self else { return }
+            // このロード試行が「有効」だった世代を記録しておく。whisper_init は
+            // 数百ms〜数秒かかりうる重い呼び出し — その間に unload()/
+            // unloadForTermination() が割り込んで generation が進んでいれば、
+            // 今作ったばかりの ctx は publish せず捨てる。
+            let myGeneration = self.generation
+            if self.isShutDown {
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(false)
+                }
+                return
+            }
+
             var cparams = whisper_context_default_params()
             cparams.use_gpu = true
             cparams.flash_attn = true
 
             let ptr = whisper_init_from_file_with_params(path, cparams)
+
+            // ctx/isLoaded の publish は queue 上でここで行う (queue-confined
+            // state) — unload() の teardown も同じ queue 上で直列に走るため、
+            // 「load完了後にunloadが古いctxをfreeし損ねる」「unload後にloadが
+            // ctxを再publishしてしまう」という順序の食い違いが起きない。
+            if self.isShutDown || self.generation != myGeneration {
+                if let ptr { whisper_free(ptr) }
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(false)
+                }
+                return
+            }
+            if let ptr {
+                self.ctx = ptr
+                self.isLoaded = true
+            }
             DispatchQueue.main.async {
                 self.isLoading = false
-                if let ptr {
-                    self.ctx = ptr
-                    self.isLoaded = true
+                // 2026-09-26 round-4 review: この queue.async ブロックはここで
+                // 終わっており queue は空いている — この completion(true) が
+                // main で実際に実行される前に、別スレッドから
+                // unload()/unloadForTermination() が割り込んで上で publish した
+                // ctx を既に free してしまっている可能性がある。true を報告する
+                // 直前に `self.isLoaded` (isLoadedLock 越しの atomic read) を
+                // 読み直し、その時点でまだロードされたままかを確認する。
+                if ptr != nil && self.isLoaded {
                     klog("WhisperContext: model loaded (GPU enabled)")
                     completion(true)
                 } else {
-                    klog("WhisperContext: failed to load model")
+                    klog("WhisperContext: failed to load model (or unloaded before completion ran)")
                     completion(false)
                 }
             }
@@ -58,8 +217,24 @@ final class WhisperContext {
     }
 
     /// モデルを同期でロード（起動時用）。
+    ///
+    /// `loadModel` (非同期版) と違い、重い `whisper_init_from_file_with_params`
+    /// を **queue の外**（呼び出し元のスレッド）で実行する — publish だけを
+    /// `rq.syncOrInline` で queue に閉じ込める。つまり「build」と「publish」が
+    /// 別ステップに分かれるため、その間に `unload()` が割り込む余地が実際にある
+    /// (queue 1ブロックの中で build から publish まで完結する `loadModel` の
+    /// 非同期パスでは、同じ queue 上で他の何かが割り込むことは構造上あり得ない
+    /// ので generation の食い違いは通常起きない — ここでは genuinely 起き得る)。
     func loadModelSync(path: String) -> Bool {
         guard !isLoaded else { return true }
+        var myGeneration = 0
+        var shutDown = false
+        rq.syncOrInline {
+            myGeneration = generation
+            shutDown = isShutDown
+        }
+        guard !shutDown else { return false }
+
         var cparams = whisper_context_default_params()
         cparams.use_gpu = true
         cparams.flash_attn = true
@@ -67,17 +242,66 @@ final class WhisperContext {
             klog("WhisperContext: sync load failed")
             return false
         }
-        ctx = ptr
-        isLoaded = true
-        klog("WhisperContext: model loaded sync (GPU enabled)")
-        return true
+        var published = false
+        rq.syncOrInline {
+            if isShutDown || generation != myGeneration {
+                whisper_free(ptr)
+            } else {
+                ctx = ptr
+                isLoaded = true
+                published = true
+            }
+        }
+        if published {
+            klog("WhisperContext: model loaded sync (GPU enabled)")
+        }
+        return published
     }
 
+    /// モデルを解放する（モデル切替・低メモリ時の解放など通常の用途）。
+    /// **恒久的な拒否ではない** — この後の `loadModel`/`loadModelSync` は普通に
+    /// 成功する。in-flight のロードは `generation` を進めることで無効化する
+    /// (作り終えた ctx を publish せず free する) だけで、以後のロード自体は
+    /// 妨げない。
+    ///
+    /// `transcribe`/`transcribeBuffer`/`transcribeWithSpeakers` はすべて `queue`
+    /// 上で `ctx` を読んで `whisper_full` を実行する。ここでも同じ `queue` 上で
+    /// 直列化して、実行中/キュー待ちの推論が完了してから free することで、実行中の
+    /// 推論に対する use-after-free を防ぐ。
     func unload() {
-        if let ctx { whisper_free(ctx) }
-        ctx = nil
-        isLoaded = false
+        rq.syncOrInline {
+            generation += 1
+            if let ctx { whisper_free(ctx) }
+            ctx = nil
+            isLoaded = false
+        }
         klog("WhisperContext: unloaded")
+    }
+
+    /// アプリ終了専用。`AppDelegate.applicationWillTerminate` から必ず呼ぶこと —
+    /// `unload()` と違い、これは**恒久的**に以後の `loadModel`/`loadModelSync` を
+    /// 拒否する（アプリが終了する以上、二度とロードされるべきではない）。
+    ///
+    /// `WhisperContext.shared` は `static let` なので、プロセス終了時に Swift の
+    /// `deinit` が確実に呼ばれる保証はない（呼ばれなければ `whisper_free` が
+    /// 一度も走らず、whisper が保持する ggml Metal backend の解放は C++ 側の
+    /// 静的デストラクタ任せになる。Metal デバイスが既にティアダウンされた後に
+    /// `__cxa_finalize` 経由でそれが走ると `ggml_metal_device_free` で abort する
+    /// — 2026-09-19 の終了時クラッシュの原因）。
+    func unloadForTermination() {
+        // queue を経由せず直ちに立てる — 下の rq.syncOrInline がキューの順番
+        // 待ちでブロックされている間も、queue 上で今まさに走っている
+        // whisper_full (abort_callback 経由) がこれを見て自分から打ち切れる
+        // ようにするため (詳細は terminationAbortFlag のコメント参照)。
+        requestTerminationAbort()
+        rq.syncOrInline {
+            isShutDown = true
+            generation += 1
+            if let ctx { whisper_free(ctx) }
+            ctx = nil
+            isLoaded = false
+        }
+        klog("WhisperContext: unloaded for termination")
     }
 
     // MARK: - Settings snapshot (メインスレッドで読む)
@@ -131,6 +355,16 @@ final class WhisperContext {
     /// メイン認識パス: 投機実行をキャンセルしてから実行。
     func transcribe(url: URL, language: String = "ja", prompt: String = "",
                     completion: @escaping (String?) -> Void) {
+        // `isLoaded` はここでは呼び出し元のスレッド (UI 等) から読むが、
+        // `isLoadedLock` 越しの atomic な読み書きなのでデータレースにはならない。
+        // `ctx` (単なるポインタ値の比較) は意図的にレースを許容した「だめ元」の
+        // 早期リターンでしかない。本当の可否判定は必ず下の `queue.async` の中で
+        // `self.ctx`/`self.isLoaded` を読み直して行う (queue-confined) ため、
+        // ここが古い値を読んでも実害は「無駄に completion(nil) で早期returnする」
+        // か「無駄に queue.async を1個積んで、その中で正しく nil 判定される」
+        // だけで、use-after-free には繋がらない。ここを queue.sync 越しに
+        // 読むと、レイテンシに敏感な音声入力の全 transcribe 呼び出しに
+        // 同期キューホップが乗ってしまうため、意図的にしていない。
         guard isLoaded, ctx != nil else {
             klog("WhisperContext: model not loaded")
             completion(nil); return
@@ -211,6 +445,7 @@ final class WhisperContext {
                     ws.entropyThreshold,
                     -1.0,   // logprob_thold
                     0.6,    // no_speech_thold
+                    self.terminationAbortFlag,  // app termination can abort a long recognition (~100ms)
                     &outputBuf, Int32(bufSize)
                 )
             }
@@ -228,6 +463,8 @@ final class WhisperContext {
     /// メイン認識がリクエストされたらキャンセルされる。
     func transcribeBuffer(samples: [Float], language: String = "ja", prompt: String = "",
                           completion: @escaping (String?) -> Void) {
+        // 早期リターンの位置付けは transcribe() 冒頭のコメント参照
+        // (queue 外の「だめ元」チェック — 本判定は queue.async の中で再度行う)。
         guard isLoaded, ctx != nil else { completion(nil); return }
 
         let ws = WhisperSettings()
@@ -256,6 +493,10 @@ final class WhisperContext {
                     nThreads,
                     1,  // best_of=1 for speed (was ws.bestOf=5)
                     flagPtr,
+                    // 2026-09-26 round-5: 投機実行も app termination で
+                    // 打ち切れるようにする (cancelFlag は新しい transcribe()
+                    // によるキャンセル専用のまま、両方を or で見る)。
+                    self.terminationAbortFlag,
                     &outputBuf, Int32(bufSize)
                 )
             }
@@ -284,6 +525,8 @@ final class WhisperContext {
     /// whisper.cpp の tdrz_enable で話者交代を検出し、話者番号を割り当てる。
     func transcribeWithSpeakers(url: URL, language: String = "ja", prompt: String = "",
                                 completion: @escaping ([SpeakerSegment]) -> Void) {
+        // 早期リターンの位置付けは transcribe() 冒頭のコメント参照
+        // (queue 外の「だめ元」チェック — 本判定は queue.async の中で再度行う)。
         guard isLoaded, ctx != nil else {
             klog("WhisperContext: model not loaded (diarize)")
             completion([]); return
@@ -303,6 +546,12 @@ final class WhisperContext {
 
             // tinydiarize 有効化
             params.tdrz_enable = true
+            // アプリ終了時に長い話者分離認識を打ち切れるようにする
+            // (transcribe() と同じ terminationAbortFlag — 詳細はその宣言のコメント参照)。
+            // koe_whisper_abort_callback は koe_abort_flag* を受け取る C 関数
+            // (whisper_bridge.h/.c) — atomic な実体を Swift 側からは触らない。
+            params.abort_callback = koe_whisper_abort_callback
+            params.abort_callback_user_data = UnsafeMutableRawPointer(self.terminationAbortFlag)
 
             let langCStr = language == "auto" ? nil : strdup(language)
             defer { langCStr.map { free($0) } }
@@ -546,5 +795,6 @@ final class WhisperContext {
     deinit {
         unload()
         cancelFlag.deallocate()
+        koe_abort_flag_destroy(terminationAbortFlag)
     }
 }

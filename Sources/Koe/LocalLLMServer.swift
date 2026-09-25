@@ -1,16 +1,108 @@
 import Foundation
 import CLlama
+// koe_abort_flag_* (2026-09-26 round-5) is declared in CWhisper's
+// whisper_bridge.h, not CLlama's shim.h (which isn't part of the CLlama
+// module — see module.modulemap; ggml_backend_load_all resolves via
+// ggml-backend.h instead). Importing CWhisper here too just to reuse that
+// one shared atomic-flag helper — whisper_bridge.o is always linked into
+// the same binary as this file regardless.
+import CWhisper
 
 /// llama.cpp C API のSwiftラッパー（WhisperContextと同じパターン）。
 /// モデルをプロセス内メモリに保持し、Metal GPU で高速推論。
 final class LlamaContext {
     static let shared = LlamaContext()
 
+    /// プロセス内で生成された全 LlamaContext を弱参照で追跡するレジストリ。
+    /// 現状 `.shared` 以外の非共有インスタンスは作られていないが、
+    /// `WhisperContext` と同じ理由 (`InstanceRegistry.swift` 参照) で
+    /// 将来非共有インスタンスが増えても取りこぼさないよう用意しておく。
+    private static let registry = WeakInstanceRegistry<LlamaContext>()
+
+    /// プロセス内の全 LlamaContext インスタンス (`.shared` 含む) に対して
+    /// `unloadForTermination()` を呼ぶ。`AppDelegate.applicationWillTerminate`
+    /// はこれを呼ぶこと。挙動は `WhisperContext.unloadAllForTermination` と同じ
+    /// (bounded wait — 1インスタンスあたり `timeout` 秒までしか待たない)。
+    /// `unloadForTermination()` が queue を経由せず即座に `terminationAbortFlag`
+    /// を立てるので、実行中の `generate()` ループはトークン生成の合間にそれを
+    /// 見て自主的に打ち切られる (詳細は `terminationAbortFlag` のコメント参照)。
+    /// 戻り値は「全インスタンスが `timeout` 以内に解放できたか」— false なら
+    /// 呼び出し側 (AppDelegate) は `_exit(0)` で即座にプロセスを終了させるべき
+    /// (詳細は `WhisperContext.unloadAllForTermination` のコメント参照)。
+    ///
+    /// **2026-09-26 round-5**: `WhisperContext.unloadAllForTermination` と同じ
+    /// 理由で「全インスタンスに先に abort flag を立ててから、全体で1つの
+    /// 締め切りで並行に待つ」方式にした (以前はインスタンスごとに順番に
+    /// `timeout` 秒待っていた)。
+    @discardableResult
+    static func unloadAllForTermination(timeout: TimeInterval = 5) -> Bool {
+        let instances = registry.snapshot()
+        for ctx in instances { ctx.requestTerminationAbort() }
+
+        let group = DispatchGroup()
+        for ctx in instances {
+            group.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                ctx.unloadForTermination()
+                group.leave()
+            }
+        }
+        let result = group.wait(timeout: .now() + timeout)
+        if result == .timedOut {
+            klog("LlamaContext: unloadAllForTermination timed out waiting for one or more instances (best-effort, giving up)")
+        }
+        return result == .success
+    }
+
     private var model: OpaquePointer?   // llama_model*
     private var ctx: OpaquePointer?     // llama_context*
-    private let queue = DispatchQueue(label: "com.yuki.koe.llama", qos: .userInitiated)
-    private(set) var isLoaded = false
+    /// unload() を deinit/queue 内から呼んでも自己 dispatch_sync でデッドロック
+    /// しないための共有ラッパー。WhisperContext と共通実装 —
+    /// 詳細は ReentrantSerialQueue.swift 参照。
+    private let rq = ReentrantSerialQueue(label: "com.yuki.koe.llama")
+    private var queue: DispatchQueue { rq.queue }
+    /// `loadModel()` の冒頭 (`guard !isLoading, !isLoaded else {...}`) は queue の
+    /// 外・呼び出し元のスレッドから読む — `WhisperContext.isLoaded` と全く同じ
+    /// 理由・同じ仕組みで `isLoadedLock` 越しの atomic read/write にする
+    /// (2026-09-26 round-4 review: 以前はここが lock 保護されていなかった)。
+    private let isLoadedLock = NSLock()
+    private var _isLoaded = false
+    private(set) var isLoaded: Bool {
+        get { isLoadedLock.lock(); defer { isLoadedLock.unlock() }; return _isLoaded }
+        set { isLoadedLock.lock(); _isLoaded = newValue; isLoadedLock.unlock() }
+    }
     private(set) var isLoading = false
+    /// `ctx`/`model` と同じく `queue` 上でのみ読み書きする (queue-confined)。
+    /// 通常の `unload()`/恒久的な `unloadForTermination()` のどちらが呼ばれても
+    /// +1 される — 同じ理由・恒久フラグと分けた設計は `WhisperContext.generation`
+    /// のコメント参照 (モデル切替・低メモリ解放後の再ロードを壊さないため、
+    /// 「呼ばれたら二度とロードできない」フラグにしてはいけない)。
+    private var generation = 0
+    /// アプリ終了専用の恒久フラグ。`unloadForTermination()` だけが立てる。
+    private var isShutDown = false
+    /// アプリ終了専用の abort フラグ (2026-09-26 round-4)。詳細は
+    /// `WhisperContext.terminationAbortFlag` のコメント参照 — `generate()` の
+    /// トークン生成ループがこれをポーリングして自主的に打ち切る。
+    ///
+    /// **2026-09-26 round-5**: `WhisperContext.terminationAbortFlag` と同じ
+    /// 理由 (ThreadSanitizer が検出した実データレース) で、素の
+    /// `UnsafeMutablePointer<Bool>` から `koe_abort_flag` (C11 atomic_bool、
+    /// `Sources/CWhisper/whisper_bridge.c` に実体) に置き換えた。
+    /// `koe_abort_flag_*` は CWhisper モジュールの `whisper_bridge.h` で
+    /// 宣言されている (CLlama の `shim.h` はモジュールに含まれておらず
+    /// `ggml_backend_load_all` も実際には `ggml-backend.h` 経由で解決されて
+    /// いる) — このファイルの先頭で `import CWhisper` しているのはそのため。
+    private var terminationAbortFlag: OpaquePointer = koe_abort_flag_create()
+
+    /// `terminationAbortFlag` だけを立てる軽量な操作 — 詳細は
+    /// `WhisperContext.requestTerminationAbort()` のコメント参照。
+    private func requestTerminationAbort() {
+        koe_abort_flag_set(terminationAbortFlag, true)
+    }
+
+    init() {
+        Self.registry.register(self)
+    }
 
     // MARK: - Model catalog
 
@@ -146,6 +238,14 @@ final class LlamaContext {
 
         queue.async { [weak self] in
             guard let self else { return }
+            let myGeneration = self.generation
+            if self.isShutDown {
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(false)
+                }
+                return
+            }
 
             // Initialize backends (Metal etc.) — whisperと共有済みなら軽い
             ggml_backend_load_all()
@@ -186,24 +286,86 @@ final class LlamaContext {
                 return
             }
 
+            // ctx/model の publish は queue 上でここで行う (queue-confined
+            // state) — unload() の teardown も同じ queue 上で直列に走るため、
+            // 順序の食い違い (load完了後にunloadが古いctxをfreeし損ねる /
+            // unload後にloadがctxを再publishしてしまう) が起きない。
+            if self.isShutDown || self.generation != myGeneration {
+                // 終了処理、または通常の unload() が既にこの試行を無効化して
+                // いた — 今作ったばかりの ctx/model を publish せずその場で
+                // free する。
+                llama_free(context)
+                llama_model_free(mdl)
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(false)
+                }
+                return
+            }
+
+            self.model = mdl
+            self.ctx = context
+            self.isLoaded = true
+
             DispatchQueue.main.async {
-                self.model = mdl
-                self.ctx = context
-                self.isLoaded = true
                 self.isLoading = false
-                klog("Llama: model loaded (Metal GPU)")
-                completion(true)
+                // 2026-09-26 round-5 review: このブロックはここで終わっており
+                // queue は空いている — completion(true) が main で実際に実行
+                // される前に、別スレッドから unload()/unloadForTermination()
+                // が割り込んで上で publish した ctx/model を既に free して
+                // しまっている可能性がある (WhisperContext.loadModel() の
+                // round-4 修正と同じ理由)。true を報告する直前に
+                // `self.isLoaded` (isLoadedLock 越しの atomic read) を
+                // 読み直し、その時点でまだロードされたままかを確認する。
+                if self.isLoaded {
+                    klog("Llama: model loaded (Metal GPU)")
+                    completion(true)
+                } else {
+                    klog("Llama: model was unloaded before completion ran")
+                    completion(false)
+                }
             }
         }
     }
 
+    /// モデルを解放する（モデル切替・低メモリ時の解放など通常の用途）。
+    /// **恒久的な拒否ではない** — 詳細は `WhisperContext.unload()`/`.generation`
+    /// のコメント参照。この後の `loadModel()` は普通に成功しなければならない。
+    /// `generate()` は `queue` 上で `ctx`/`model` を使うため、ここも同じ `queue`
+    /// 上で直列化して実行中/キュー待ちの生成が終わってから free する。
     func unload() {
-        if let ctx { llama_free(ctx) }
-        if let model { llama_model_free(model) }
-        ctx = nil
-        model = nil
-        isLoaded = false
+        rq.syncOrInline {
+            generation += 1
+            if let ctx { llama_free(ctx) }
+            if let model { llama_model_free(model) }
+            ctx = nil
+            model = nil
+            isLoaded = false
+        }
         klog("Llama: unloaded")
+    }
+
+    /// アプリ終了専用。`unload()` と違い、以後の `loadModel()` を恒久的に拒否する
+    /// — 詳細・根本原因は `WhisperContext.unloadForTermination()` のコメント参照
+    /// (`LlamaContext.shared` も static let のため deinit がプロセス終了時に確実に
+    /// 走る保証がなく、llama.cpp が抱える ggml Metal backend が free されないまま
+    /// 終了すると `ggml_metal_device_free` が __cxa_finalize 時に abort しうる)。
+    func unloadForTermination() {
+        // queue を経由せず直ちに立てる — 下の rq.syncOrInline がキューの順番
+        // 待ちでブロックされている間も、queue 上で今まさに走っている
+        // generate() のトークン生成ループがこれを見て自分から打ち切れる
+        // ようにするため (詳細は terminationAbortFlag のコメント参照)。
+        requestTerminationAbort()
+        rq.syncOrInline {
+            isShutDown = true
+            generation += 1
+            if let ctx { llama_free(ctx) }
+            if let model { llama_model_free(model) }
+            ctx = nil
+            model = nil
+            isLoaded = false
+        }
+        klog("Llama: unloaded for termination")
     }
 
     // MARK: - Chat completion
@@ -211,12 +373,18 @@ final class LlamaContext {
     /// system + user メッセージからテキスト生成
     func generate(system: String, user: String, maxTokens: Int = 1024,
                   completion: @escaping (String?) -> Void) {
-        guard isLoaded, let model = model, let ctx = ctx else {
-            completion(nil); return
-        }
-
         queue.async { [weak self] in
-            guard self != nil else { completion(nil); return }
+            // isLoaded/model/ctx はここで queue 上から読む — 呼び出し時点
+            // (queue.async に積む前) に読んで捕まえると、その後キュー待ちの
+            // 間に unload() が先に走って free した生ポインタを使うことになる
+            // (use-after-free)。queue は直列なので、ここまで来た時点で
+            // unload()/unloadForTermination() がまだ走っていなければ ctx/model
+            // は確実に生きている。
+            guard let self, self.isLoaded, !self.isShutDown,
+                  let model = self.model, let ctx = self.ctx else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
 
             let vocab = llama_model_get_vocab(model)!
 
@@ -265,6 +433,13 @@ final class LlamaContext {
             var answerTokenCount = 0
 
             for _ in 0..<maxTokens {
+                // アプリ終了中なら speculative/長い生成でも即座に打ち切る —
+                // トークン1個分 (数十ms) 以内に抜けられるので
+                // unloadForTermination() の bounded wait をほぼ使わずに済む。
+                if koe_abort_flag_get(self.terminationAbortFlag) {
+                    klog("Llama: generate aborted by app termination")
+                    break
+                }
                 let tokenID = llama_sampler_sample(smpl, ctx, -1)
                 if tokenID == eosToken { break }
 
@@ -393,5 +568,8 @@ final class LlamaContext {
         task.resume()
     }
 
-    deinit { unload() }
+    deinit {
+        unload()
+        koe_abort_flag_destroy(terminationAbortFlag)
+    }
 }

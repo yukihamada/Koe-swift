@@ -1,5 +1,6 @@
 // Tests/KoeTests.swift — Standalone test runner (assert-based, no XCTest)
 import Foundation
+import CWhisper  // koe_abort_flag_* (2026-09-26 round-5, used by FakeAbortableWorker)
 
 var passed = 0
 var failed = 0
@@ -174,6 +175,403 @@ func testAgentCommandProperties() {
 }
 
 // ══════════════════════════════════════
+// ReentrantSerialQueue — the real, shared teardown-synchronization helper
+// used by both WhisperContext.unload() and LlamaContext.unload() (extracted
+// during the 2026-09-19 exit-crash fix). This exercises the ACTUAL
+// production type directly — no fake/mirror needed here.
+// ══════════════════════════════════════
+func testReentrantSerialQueueSyncFromOutside() {
+    print("\n--- ReentrantSerialQueue: syncOrInline from another thread ---")
+    let rq = ReentrantSerialQueue(label: "test.reentrant.outside")
+    var order: [String] = []
+    let group = DispatchGroup()
+    group.enter()
+    rq.async {
+        Thread.sleep(forTimeInterval: 0.05)
+        order.append("async-block")
+        group.leave()
+    }
+    rq.syncOrInline { order.append("sync-call") }  // must wait for the async block first (FIFO)
+    check(group.wait(timeout: .now() + 2) == .success, "async block completed")
+    check(order == ["async-block", "sync-call"],
+          "syncOrInline from outside the queue waits its turn behind a running async block (got \(order))")
+}
+
+func testReentrantSerialQueueSyncFromInsideDoesNotDeadlock() {
+    print("\n--- ReentrantSerialQueue: syncOrInline called FROM the queue itself (no deadlock) ---")
+    let rq = ReentrantSerialQueue(label: "test.reentrant.inside")
+    var ranInline = false
+    let sem = DispatchSemaphore(value: 0)
+    rq.async {
+        // A plain `queue.sync` here would deadlock (dispatch_sync onto the
+        // queue it's already running on) — this is exactly the scenario
+        // WhisperContext/LlamaContext's unload() must survive if it's ever
+        // invoked while already "on" their queue (e.g. from a completion
+        // callback, or deinit firing mid-block).
+        rq.syncOrInline { ranInline = true }
+        sem.signal()
+    }
+    let completed = sem.wait(timeout: .now() + 2) == .success
+    check(completed, "syncOrInline called from inside the queue's own block completes (no deadlock/hang)")
+    check(ranInline, "the inline block actually ran")
+}
+
+// ══════════════════════════════════════
+// WhisperContext/LlamaContext "generation token" race — simulated
+//
+// WhisperContext/LlamaContext themselves wrap real whisper.cpp/llama.cpp C
+// contexts (whisper_init_from_file_with_params/llama_model_load_from_file)
+// and can't be unit-tested without a real, multi-hundred-MB model file — not
+// something to require for a headless test run. FakeModelLoader below
+// mirrors their `loadModelSync`-shaped control flow: the slow "build" runs
+// OFF `rq`'s queue (this is the shape where a generation token actually
+// matters — a load that does build+publish atomically inside one single
+// `rq.async` block, like WhisperContext.loadModel's async path, can never
+// observe its own generation changing mid-block, since nothing else can run
+// on a serial queue while it holds it; `loadModelSync`'s build-outside/
+// publish-inside split is where a concurrent unload() genuinely can land in
+// between). This is a simulation of the pattern, not the production code
+// itself. The ReentrantSerialQueue tests above are what exercise the real,
+// shared code directly.
+//
+// 2026-09-26 review: the previous version of this simulation (and of
+// WhisperContext/LlamaContext themselves) used a single permanent
+// "terminating" flag for both "unload() was called" and "the app is
+// shutting down" — which meant ANY unload() (including the normal model-
+// switch / low-memory-reload unload() that SettingsWindowController and the
+// low-memory path use) permanently broke all future loads. Fixed in
+// production by splitting `unload()` (bumps `generation`, allows later
+// loads) from `unloadForTermination()`/`shutdown()` (also sets a permanent
+// `isShutDown`). Mirrored here.
+final class FakeGGMLResource {
+    let id: Int
+    private(set) var freed = false
+    init(id: Int) { self.id = id }
+    func free() { freed = true }
+}
+
+final class FakeModelLoader {
+    let rq = ReentrantSerialQueue(label: "test.fake-model-loader")
+    private var resource: FakeGGMLResource?
+    private var generation = 0
+    private var isShutDown = false
+    private(set) var freedIDs: [Int] = []
+    private(set) var publishedIDs: [Int] = []
+
+    /// Mirrors WhisperContext.loadModelSync: snapshot the generation, build
+    /// OFF `rq` (a real race window — a concurrent unload()/shutdown() can
+    /// run to completion while this sleep/build is in progress), then
+    /// publish-or-discard inside `rq`, gated by whether the generation is
+    /// still the one this attempt started with.
+    func load(id: Int, buildDelay: TimeInterval = 0, completion: @escaping (Bool) -> Void) {
+        var myGeneration = 0
+        var shutDown = false
+        rq.syncOrInline {
+            myGeneration = generation
+            shutDown = isShutDown
+        }
+        guard !shutDown else {
+            DispatchQueue.main.async { completion(false) }
+            return
+        }
+        DispatchQueue.global().async {
+            if buildDelay > 0 { Thread.sleep(forTimeInterval: buildDelay) }
+            let built = FakeGGMLResource(id: id)
+            self.rq.syncOrInline {
+                if self.isShutDown || self.generation != myGeneration {
+                    built.free()
+                    self.freedIDs.append(id)
+                    DispatchQueue.main.async { completion(false) }
+                } else {
+                    self.resource = built
+                    self.publishedIDs.append(id)
+                    DispatchQueue.main.async { completion(true) }
+                }
+            }
+        }
+    }
+
+    /// Mirrors LlamaContext.generate(): reads the resource from INSIDE the
+    /// queue block, not before submitting to it.
+    func generate(completion: @escaping (Int?) -> Void) {
+        rq.async { [weak self] in
+            guard let self, !self.isShutDown, let r = self.resource, !r.freed else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            DispatchQueue.main.async { completion(r.id) }
+        }
+    }
+
+    /// Normal unload — model switch / low-memory reload. Must NOT
+    /// permanently block later loads.
+    func unload() {
+        rq.syncOrInline {
+            generation += 1
+            if let r = resource { r.free(); freedIDs.append(r.id) }
+            resource = nil
+        }
+    }
+
+    /// Terminal shutdown — app is quitting. Permanently refuses all future
+    /// loads (mirrors WhisperContext.unloadForTermination()).
+    func shutdown() {
+        rq.syncOrInline {
+            isShutDown = true
+            generation += 1
+            if let r = resource { r.free(); freedIDs.append(r.id) }
+            resource = nil
+        }
+    }
+}
+
+func drainMainQueue(_ seconds: TimeInterval = 1) {
+    let deadline = Date().addingTimeInterval(seconds)
+    while Date() < deadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+    }
+}
+
+func testModelLoaderNormalUnloadAllowsLaterLoad() {
+    print("\n--- FakeModelLoader: normal unload() → a later load() still succeeds ---")
+    let loader = FakeModelLoader()
+    var firstOK: Bool?
+    loader.load(id: 1) { ok in firstOK = ok }
+    drainMainQueue(1)
+    check(firstOK == true, "initial load succeeds")
+
+    loader.unload()  // model switch / low-memory reload — must not latch permanently
+    var secondOK: Bool?
+    loader.load(id: 2) { ok in secondOK = ok }
+    drainMainQueue(1)
+    check(secondOK == true,
+          "a load after a normal (non-terminal) unload() still succeeds — unload() must not permanently block future loads")
+    check(loader.publishedIDs == [1, 2],
+          "both loads published in order (got \(loader.publishedIDs))")
+}
+
+func testModelLoaderStaleLoadFreedWhenUnloadedMidBuild() {
+    print("\n--- FakeModelLoader: unload() while a load's build is in flight → stale load freed ---")
+    // Unlike a single-atomic-queue-block load, `load()` here snapshots its
+    // generation and then builds OFF `rq` — so a concurrent unload() CAN
+    // genuinely run to completion (bumping the generation) while the build
+    // is still in progress, landing squarely between the snapshot and the
+    // publish check.
+    let loader = FakeModelLoader()
+    var result: Bool?
+    loader.load(id: 1, buildDelay: 0.2) { ok in result = ok }
+    Thread.sleep(forTimeInterval: 0.05)  // ensure the generation snapshot already happened
+    loader.unload()  // runs immediately — rq is free, the build is off on a different queue
+    drainMainQueue(1)
+    check(result == false,
+          "a load whose build finishes after a concurrent unload() reports failure (stale generation)")
+    check(loader.freedIDs.contains(1) && !loader.publishedIDs.contains(1),
+          "its resource is freed, never published (got freed=\(loader.freedIDs) published=\(loader.publishedIDs))")
+}
+
+func testModelLoaderShutdownRefusesFutureLoads() {
+    print("\n--- FakeModelLoader: shutdown() permanently refuses later loads ---")
+    let loader = FakeModelLoader()
+    loader.shutdown()  // app is quitting — nothing was ever loaded here
+    var result: Bool?
+    loader.load(id: 1) { ok in result = ok }
+    drainMainQueue(1)
+    check(result == false, "load() after shutdown() is refused")
+    check(loader.publishedIDs.isEmpty, "nothing gets published after shutdown() (got \(loader.publishedIDs))")
+}
+
+func testModelLoaderGenerateAfterUnloadReturnsNil() {
+    print("\n--- FakeModelLoader: generate() after unload() (no use-after-free) ---")
+    let loader = FakeModelLoader()
+    var loadOK: Bool?
+    loader.load(id: 3) { ok in loadOK = ok }
+    drainMainQueue(1)
+    check(loadOK == true, "initial load succeeds")
+
+    var firstResult: Int?
+    loader.generate { id in firstResult = id }
+    drainMainQueue(1)
+    check(firstResult == 3, "generate() works while loaded")
+
+    loader.unload()
+    var secondResult: Int?
+    var secondResultSet = false
+    loader.generate { id in secondResult = id; secondResultSet = true }
+    drainMainQueue(1)
+    check(secondResultSet && secondResult == nil,
+          "generate() after unload() returns nil instead of touching the freed resource")
+}
+
+// ══════════════════════════════════════
+// WeakInstanceRegistry — proves that a process-wide "unload all" call
+// reaches non-shared instances too, not just a single `.shared` singleton.
+//
+// 2026-09-26 round-3 review: SettingsWindowController.rerecognizeEntry/
+// batchRerecognize each create their OWN non-shared `WhisperContext()` (not
+// `.shared`) to re-transcribe with a user-selected model.
+// AppDelegate.applicationWillTerminate previously only called
+// `WhisperContext.shared.unloadForTermination()` — these non-shared
+// instances were never reached, so if the app quit while one was still
+// alive, its Metal-backed context could be freed by deinit/static
+// destructors at process exit instead — the same crash class
+// (ggml_metal_device_free during __cxa_finalize) this PR already fixes for
+// `.shared`. Fixed by giving WhisperContext/LlamaContext a process-wide
+// WeakInstanceRegistry (registered in `init()`) and a static
+// `unloadAllForTermination()` that iterates every live registered instance.
+//
+// FakeRegisteredContext below exercises the exact same `WeakInstanceRegistry`
+// generic type the production code uses (just instantiated for a fake
+// element type), so it needs no real whisper model file.
+// ══════════════════════════════════════
+final class FakeRegisteredContext {
+    private static let registry = WeakInstanceRegistry<FakeRegisteredContext>()
+    static func unloadAllForTermination() {
+        for ctx in registry.snapshot() { ctx.unloadForTermination() }
+    }
+
+    let id: Int
+    private(set) var unloadedForTermination = false
+
+    init(id: Int) {
+        self.id = id
+        Self.registry.register(self)
+    }
+
+    func unloadForTermination() {
+        unloadedForTermination = true
+    }
+}
+
+func testWeakInstanceRegistryReachesNonSharedInstances() {
+    print("\n--- WeakInstanceRegistry: unloadAllForTermination() reaches non-shared instances too ---")
+    let sharedLike = FakeRegisteredContext(id: 1)
+    // Simulates SettingsWindowController.rerecognizeEntry's `let ctx = WhisperContext()`
+    // — a second, non-shared instance the app-quit path must not skip.
+    let nonShared = FakeRegisteredContext(id: 2)
+
+    FakeRegisteredContext.unloadAllForTermination()
+
+    check(sharedLike.unloadedForTermination, "the first ('.shared'-like) instance is unloaded on termination")
+    check(nonShared.unloadedForTermination,
+          "a second, separately-created ('non-shared'-like) instance is ALSO unloaded on termination — this is exactly the gap the registry closes")
+}
+
+func testWeakInstanceRegistryDropsDeallocatedInstances() {
+    print("\n--- WeakInstanceRegistry: deallocated instances are dropped, not force-retained ---")
+    weak var weakRef: FakeRegisteredContext?
+    autoreleasepool {
+        let temp = FakeRegisteredContext(id: 99)
+        weakRef = temp
+        check(weakRef != nil, "instance alive while a strong reference exists")
+    }
+    check(weakRef == nil, "registering with the registry does not keep the instance alive (weak, not strong) after its only strong reference is released")
+    // Must not crash even though a dealloc'd instance was registered.
+    FakeRegisteredContext.unloadAllForTermination()
+    check(true, "unloadAllForTermination() does not crash when a registered instance has already been deallocated")
+}
+
+// Exercises the REAL WhisperContext (not a fake) end-to-end: does
+// `WhisperContext.unloadAllForTermination()` actually reach a non-shared
+// instance? Asserts on `isShutDown` directly (module-internal read, see its
+// doc comment) rather than round-tripping through `loadModel` with a bogus
+// path — `loadModel` would return `false` either way (refused early because
+// shut down, OR because the bogus path genuinely fails to open), so it can't
+// tell "termination reached this instance" apart from "this instance was
+// never going to load anyway". No real model file is needed either way.
+//
+// NOTE: this permanently shuts down the real `WhisperContext.shared`
+// singleton (isShutDown latches forever) for the remainder of this test
+// process — intentional (it mirrors real app termination) and harmless
+// here since no other test in this suite loads a real model into `.shared`.
+// Keep this test last among WhisperContext-touching tests if more are added.
+func testWhisperContextUnloadAllForTerminationReachesNonSharedInstance() {
+    print("\n--- WhisperContext.unloadAllForTermination(): reaches a real non-shared instance ---")
+    // `.shared` is a `static let` — lazily created on first access. Touch it
+    // explicitly first so it is registered before we snapshot the registry
+    // (otherwise this test's assertion about `.shared` would be vacuous).
+    let sharedCtx = WhisperContext.shared
+    // Simulates SettingsWindowController.rerecognizeEntry's `let ctx = WhisperContext()`.
+    let nonShared = WhisperContext()
+
+    check(!sharedCtx.isShutDown, ".shared is not shut down before termination")
+    check(!nonShared.isShutDown, "a freshly-created non-shared instance is not shut down before termination")
+
+    let allSucceeded = WhisperContext.unloadAllForTermination()
+
+    check(allSucceeded, "unloadAllForTermination() reports success — neither instance was busy/timed out")
+    check(sharedCtx.isShutDown, ".shared is shut down after unloadAllForTermination()")
+    check(nonShared.isShutDown,
+          "a separately-created, non-shared WhisperContext is ALSO shut down after unloadAllForTermination() — proves termination isn't limited to .shared")
+}
+
+// ══════════════════════════════════════
+// abort-flag pattern (2026-09-26 round-4 review)
+//
+// unloadForTermination()'s bounded wait alone isn't enough if a long
+// transcribe()/generate() is in flight — waiting for it to finish naturally
+// could exceed the timeout. The real fix: unloadForTermination() sets a
+// plain UnsafeMutablePointer<Bool> SYNCHRONOUSLY (not via the serial queue)
+// the instant it's called, and the in-flight work (whisper_full's
+// abort_callback / LlamaContext.generate()'s per-token loop check) polls
+// that same flag and bails out within about one "step" — not the full
+// remaining duration. FakeAbortableWorker mirrors this exact shape (a
+// worker loop on its own serial queue, polling a raw pointer flag) without
+// needing a real whisper/llama model.
+// ══════════════════════════════════════
+final class FakeAbortableWorker {
+    // 2026-09-26 round-5: uses the same real koe_abort_flag (C11 atomic_bool,
+    // see Sources/CWhisper/whisper_bridge.c) that WhisperContext/LlamaContext
+    // use in production — a plain UnsafeMutablePointer<Bool> here would be
+    // the exact data race ThreadSanitizer flagged in production code, just
+    // reproduced in the test mirror instead of fixed.
+    private var abortFlag: OpaquePointer = koe_abort_flag_create()
+    let rq = ReentrantSerialQueue(label: "test.fake-abortable-worker")
+
+    /// Mirrors LlamaContext.generate()'s token loop / a whisper_full call
+    /// whose abort_callback is polled between internal steps.
+    func runLongWork(steps: Int, stepDuration: TimeInterval, completion: @escaping (Int) -> Void) {
+        rq.async { [weak self] in
+            guard let self else { return }
+            var completedSteps = 0
+            for _ in 0..<steps {
+                if koe_abort_flag_get(self.abortFlag) { break }
+                Thread.sleep(forTimeInterval: stepDuration)
+                completedSteps += 1
+            }
+            DispatchQueue.main.async { completion(completedSteps) }
+        }
+    }
+
+    /// Mirrors unloadForTermination(): sets the flag synchronously, without
+    /// ever touching (or waiting on) the worker's own queue.
+    func requestAbort() {
+        koe_abort_flag_set(abortFlag, true)
+    }
+
+    deinit { koe_abort_flag_destroy(abortFlag) }
+}
+
+func testAbortFlagStopsLongRunningWorkQuickly() {
+    print("\n--- abort-flag pattern: requestAbort() lets in-flight work stop quickly instead of running to completion ---")
+    let worker = FakeAbortableWorker()
+    var completedSteps: Int?
+    // 20 steps * 0.05s = up to 1s of work if the abort flag is never observed.
+    worker.runLongWork(steps: 20, stepDuration: 0.05) { steps in completedSteps = steps }
+
+    // Give it a moment to actually start, then request abort almost
+    // immediately — well before all 20 steps could possibly finish.
+    Thread.sleep(forTimeInterval: 0.08)
+    worker.requestAbort()
+
+    drainMainQueue(1)
+    check(completedSteps != nil, "the work completes (aborted, not hung) within the drain window")
+    if let completedSteps {
+        check(completedSteps < 20,
+              "requestAbort() interrupts the loop well before all 20 steps finish (got \(completedSteps) steps — would be 20 if the flag were ignored)")
+    }
+}
+
+// ══════════════════════════════════════
 // Run all tests
 // ══════════════════════════════════════
 func runAllTests() {
@@ -183,7 +581,18 @@ func runAllTests() {
     testSettingsDefaults()
     testL10n()
     testLLMSanitization()
+    testReentrantSerialQueueSyncFromOutside()
+    testReentrantSerialQueueSyncFromInsideDoesNotDeadlock()
+    testModelLoaderNormalUnloadAllowsLaterLoad()
+    testModelLoaderStaleLoadFreedWhenUnloadedMidBuild()
+    testModelLoaderShutdownRefusesFutureLoads()
+    testModelLoaderGenerateAfterUnloadReturnsNil()
     testAgentCommandProperties()
+    testWeakInstanceRegistryReachesNonSharedInstances()
+    testWeakInstanceRegistryDropsDeallocatedInstances()
+    // Must run last: permanently shuts down the real WhisperContext.shared singleton.
+    testWhisperContextUnloadAllForTerminationReachesNonSharedInstance()
+    testAbortFlagStopsLongRunningWorkQuickly()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }
 }

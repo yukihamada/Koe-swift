@@ -310,6 +310,19 @@ final class LoggingAudioRecorder: AudioRecorder {
     var startResult = true
     /// what stop()/cancel() should look like they returned/left behind
     var stopReturnsURL: URL? = URL(fileURLWithPath: "/tmp/koe-test-fake.wav")
+    /// A real (never `.record()`-called, so no mic permission needed)
+    /// `AVAudioRecorder` standing in for "this session's" recorder, for the
+    /// identity guard `handleUnexpectedStop`/`checkWatchdog` added in the
+    /// 2026-09-26 round-3 review. This subclass overrides prepare()/start()
+    /// to no-ops and otherwise never touches the base class's real
+    /// `recorder` property, so tests that simulate a real
+    /// `AVAudioRecorderDelegate` callback must register this explicitly via
+    /// `setActiveSessionForTesting` and use this exact instance as the
+    /// callback's `recorder` argument.
+    let sessionRecorder: AVAudioRecorder = try! AVAudioRecorder(
+        url: FileManager.default.temporaryDirectory.appendingPathComponent("koe-test-logging-session-\(UUID().uuidString).wav"),
+        settings: [AVFormatIDKey: Int(kAudioFormatLinearPCM), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1]
+    )
 
     init(log: EventLog) {
         self.log = log
@@ -318,7 +331,10 @@ final class LoggingAudioRecorder: AudioRecorder {
 
     override func start() -> Bool {
         log.record("recorder.start")
-        if startResult { tempURL = stopReturnsURL }
+        if startResult {
+            tempURL = stopReturnsURL
+            setActiveSessionForTesting(sessionRecorder)
+        }
         return startResult
     }
     override func stop() -> URL? {
@@ -437,11 +453,10 @@ func testRecordingLifecycleUnexpectedStop() {
     // Simulate AVAudioRecorderDelegate firing on an OS-forced stop (not one
     // we called stop()/cancel() for) — this must reset state and post ended
     // exactly once, even though no explicit recorder.stop()/cancel() ran.
-    let dummy = try! AVAudioRecorder(
-        url: FileManager.default.temporaryDirectory.appendingPathComponent("koe-test-dummy.wav"),
-        settings: [AVFormatIDKey: Int(kAudioFormatLinearPCM), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1]
-    )
-    rec.audioRecorderDidFinishRecording(dummy, successfully: false)
+    // Uses `rec.sessionRecorder` (registered as the active session by
+    // LoggingAudioRecorder.start() above) rather than an unrelated recorder,
+    // since handleUnexpectedStop now guards on session identity.
+    rec.audioRecorderDidFinishRecording(rec.sessionRecorder, successfully: false)
     check(log.events == ["recorder.start", "notifier.began", "notifier.ended"],
           "unexpected finish (successfully=false) resets state and posts ended exactly once (got \(log.events))")
 
@@ -505,6 +520,10 @@ func testAudioRecorderHandleUnexpectedStopOrdering() {
     let log = EventLog()
     let ar = AudioRecorder()
     let backend = FakeAudioRecordingBackend(isRecording: true, log: log)
+    // handleUnexpectedStop now guards on identity against the "current
+    // session" — mark this backend as the active session so the ordering
+    // this test actually cares about is reached at all.
+    ar.setActiveSessionForTesting(backend)
     ar.onUnexpectedStop = { log.record("onUnexpectedStop") }
 
     ar.handleUnexpectedStop(backend)
@@ -519,12 +538,38 @@ func testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped() {
     let log = EventLog()
     let ar = AudioRecorder()
     let backend = FakeAudioRecordingBackend(isRecording: false, log: log)
+    ar.setActiveSessionForTesting(backend)
     ar.onUnexpectedStop = { log.record("onUnexpectedStop") }
 
     ar.handleUnexpectedStop(backend)
 
     check(log.events == ["onUnexpectedStop"],
           "stop() is not called again on an already-stopped backend, but onUnexpectedStop still fires (got \(log.events))")
+}
+
+func testAudioRecorderHandleUnexpectedStopIgnoresStaleSession() {
+    print("\n--- AudioRecorder.handleUnexpectedStop: a late callback from a PREVIOUS session is ignored ---")
+    // 2026-09-26 round-3 review: start A, stop A, start B, then deliver A's
+    // late failure callback — B must be untouched (still "recording", no
+    // stop() called on it) and no onUnexpectedStop (.ended) must fire.
+    let log = EventLog()
+    let ar = AudioRecorder()
+
+    let sessionA = FakeAudioRecordingBackend(isRecording: true, log: log)
+    ar.setActiveSessionForTesting(sessionA)   // "start A"
+    ar.setActiveSessionForTesting(nil)        // "stop A" (A is no longer current)
+
+    let sessionB = FakeAudioRecordingBackend(isRecording: true, log: log)
+    ar.setActiveSessionForTesting(sessionB)   // "start B"
+    ar.onUnexpectedStop = { log.record("onUnexpectedStop") }
+
+    // A's late/delayed failure callback arrives after B has already started.
+    ar.handleUnexpectedStop(sessionA)
+
+    check(log.events.isEmpty,
+          "A's stale callback has NO side effects at all — not even A's own stop() (got \(log.events))")
+    check(sessionB.isRecording,
+          "B is completely untouched and still recording (got isRecording=\(sessionB.isRecording))")
 }
 
 func testAudioRecorderEncodeErrorDidOccurFiresUnexpectedStop() {
@@ -537,6 +582,7 @@ func testAudioRecorderEncodeErrorDidOccurFiresUnexpectedStop() {
         settings: [AVFormatIDKey: Int(kAudioFormatLinearPCM), AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1]
     )
     let ar = AudioRecorder()
+    ar.setActiveSessionForTesting(dummy)  // mark `dummy` as the current session (identity guard)
     var unexpectedStopCount = 0
     ar.onUnexpectedStop = { unexpectedStopCount += 1 }
 
@@ -612,6 +658,7 @@ func runAllTests() {
     testRecordingLifecycleTermination()
     testAudioRecorderHandleUnexpectedStopOrdering()
     testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped()
+    testAudioRecorderHandleUnexpectedStopIgnoresStaleSession()
     testAudioRecorderEncodeErrorDidOccurFiresUnexpectedStop()
     testAudioRecorderWatchdogDetectsSilentStop()
     testAgentCommandProperties()

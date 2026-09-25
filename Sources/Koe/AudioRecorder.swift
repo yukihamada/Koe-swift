@@ -13,7 +13,17 @@ protocol AudioRecordingBackend: AnyObject {
 extension AVAudioRecorder: AudioRecordingBackend {}
 
 class AudioRecorder: NSObject, AVAudioRecorderDelegate {
-    private var recorder: AVAudioRecorder?
+    private var recorder: AVAudioRecorder? {
+        didSet { activeSessionRecorder = recorder }
+    }
+    /// `recorder` の「現在の値」を弱参照で追跡する identity 比較用のポインタ
+    /// (上の `didSet` で自動的に同期される)。`handleUnexpectedStop`/
+    /// `checkWatchdog` はこれを使って「このコールバックは今のセッションの
+    /// recorder から来たものか」を判定する — 型を `AVAudioRecorder?` ではなく
+    /// `AnyObject?` にしているのは、テストが `AVAudioRecorder` ではない
+    /// `FakeAudioRecordingBackend` を「現在のセッション」として
+    /// `setActiveSessionForTesting` 経由で注入できるようにするため。
+    private weak var activeSessionRecorder: AnyObject?
     var tempURL: URL?
 
     private let settings: [String: Any] = [
@@ -134,6 +144,11 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
 
     func stop() -> URL? {
         stopWatchdog()
+        // 2026-09-26 round-3 review: 以前はファイル move 失敗時などの早期
+        // return が restoreDefaultInputDevice() をスキップしていた —
+        // システムのデフォルト入力デバイスを切り替えたままにしてしまう。
+        // defer にして、どの exit path でも必ず復元する。
+        defer { restoreDefaultInputDevice() }
         guard let r = recorder else {
             klog("AudioRecorder: stop called but recorder is nil")
             return nil
@@ -159,9 +174,6 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         if !MeetingMode.shared.isActive {
             cleanOldFiles()
         }
-        // 順序重要: restore → recorder = nil → 次回 start() が applySelectedInputDevice → prepare の正しい順で動く
-        restoreDefaultInputDevice()
-        recorder = nil
         return dest
     }
 
@@ -343,7 +355,21 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
     /// テストが `AudioRecordingBackend` の fake を渡して直接呼べるよう
     /// `private` にしない。stop() → onUnexpectedStop の順序はここで保証する
     /// (この2行は同期・単一スレッドで隣接しており、間に非同期の隙間はない)。
+    ///
+    /// **identity ガード (2026-09-26 round-3 review)**: `AVAudioRecorderDelegate`
+    /// のコールバックや watchdog の tick は、呼ばれた時点で本当に「今の
+    /// セッション」の recorder から来たものとは限らない — 例えば
+    /// 「セッションA停止 → セッションB開始」の間に挟まって届く、Aの遅延した
+    /// 失敗コールバック。ここで identity チェックをせずに進むと、Bがまだ
+    /// 録音中なのに `self.recorder = nil` で B を握り潰し、誤って `.ended`
+    /// (onUnexpectedStop) を発火してしまう。渡された `recorder` が
+    /// `activeSessionRecorder` (= 現在の `self.recorder`) と同一でなければ、
+    /// 古いセッションのコールバックとして黙って無視する。
     func handleUnexpectedStop(_ recorder: AudioRecordingBackend) {
+        guard recorder === activeSessionRecorder else {
+            klog("AudioRecorder: ignoring unexpected-stop callback from a stale/previous session's recorder")
+            return
+        }
         stopWatchdog()
         if recorder.isRecording {
             recorder.stop()
@@ -351,6 +377,15 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         self.recorder = nil
         restoreDefaultInputDevice()
         onUnexpectedStop?()
+    }
+
+    /// テスト専用: identity ガード用の「現在のセッション」を直接注入する。
+    /// 本体コードは `recorder` の `didSet` 経由でのみ更新するが (常に
+    /// `AVAudioRecorder`)、テストは実マイクなしで動く `FakeAudioRecordingBackend`
+    /// を「今のセッション」として扱いたいことがあるため、独立して差し替え
+    /// られるようにする。
+    func setActiveSessionForTesting(_ session: AnyObject?) {
+        activeSessionRecorder = session
     }
 
     // MARK: - Watchdog (AirPods 切断等、AVAudioRecorderDelegate が発火しない停止の検出)

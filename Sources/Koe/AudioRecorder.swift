@@ -47,12 +47,27 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         settingObserver = AppSettings.shared.$audioInputDeviceUID
             .dropFirst()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self = self else { return }
-                if self.recorder?.isRecording == true { return }  // 録音中は触らない
-                self.recorder = nil
-                klog("AudioRecorder: dropped recorder after input device change (will rebuild at next start)")
-            }
+            .sink { [weak self] _ in self?.handleInputDeviceChange() }
+    }
+
+    /// 入力デバイス設定が変わった時の処理。テストが `AppSettings.shared` の
+    /// 実 publisher に触らず直接呼べるよう `private` にしない
+    /// (`checkWatchdog()`/`handleUnexpectedStop()` と同じ理由)。
+    ///
+    /// 2026-09-26 round-4 review: 以前は「録音中でなければ `recorder = nil`」
+    /// するだけだった。しかし `recorder` が「ロードされてはいるが録音していない」
+    /// のは、通常の停止後の残骸だけでなく、**システムがデバイス消失等で無音の
+    /// まま停止させていて、watchdog/delegate もまだそれに気づいていない**
+    /// ケースでもありうる。単に `recorder = nil` すると、後から来る
+    /// watchdog/delegate の identity チェックが「もう nil だから何もしない」
+    /// と誤判定し、`.ended` (dictation notification) が永久に飛ばなくなる。
+    /// `handleUnexpectedStop()` 経由にすることで、この経路自身がその「最後に
+    /// 気づいた者」になり、確実に ended を出してから recorder を握り潰す。
+    func handleInputDeviceChange() {
+        guard let r = recorder else { return }
+        if r.isRecording { return }  // 録音中は触らない（次回 start() まで待つ）
+        handleUnexpectedStop(r)
+        klog("AudioRecorder: input device changed while recorder was already stopped — routed through handleUnexpectedStop")
     }
 
     /// アプリ専用ディレクトリ (0700) に音声ファイルを保存。

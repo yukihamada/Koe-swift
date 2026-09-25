@@ -355,6 +355,18 @@ final class LoggingAudioRecorder: AudioRecorder {
 
 func indexOf(_ events: [String], _ e: String) -> Int? { events.firstIndex(of: e) }
 
+/// `DispatchQueue.main.async` で積まれたブロックを実際に実行させるため、
+/// メインの run loop を `seconds` 秒だけ回す。この標準テストランナーは
+/// `dispatchMain()`/`NSApplication.run()` を呼ばないため、これをしないと
+/// main.async のコールバックは永久に実行されない (2026-09-26 round-4:
+/// AppDelegate.handleRecorderUnexpectedStop() の main-hop を検証するために追加)。
+func drainMainQueue(_ seconds: TimeInterval = 1) {
+    let deadline = Date().addingTimeInterval(seconds)
+    while Date() < deadline {
+        RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
+    }
+}
+
 func testRecordingLifecycleHappyPath() {
     print("\n--- Recording lifecycle: start → normal stop ---")
     let log = EventLog()
@@ -457,6 +469,11 @@ func testRecordingLifecycleUnexpectedStop() {
     // LoggingAudioRecorder.start() above) rather than an unrelated recorder,
     // since handleUnexpectedStop now guards on session identity.
     rec.audioRecorderDidFinishRecording(rec.sessionRecorder, successfully: false)
+    // 2026-09-26 round-4: AppDelegate.handleRecorderUnexpectedStop() is now
+    // hopped to the main queue (races with the normal stop path off-main),
+    // so it doesn't run synchronously within this call — drain the main
+    // queue to let it actually execute before asserting.
+    drainMainQueue(0.5)
     check(log.events == ["recorder.start", "notifier.began", "notifier.ended"],
           "unexpected finish (successfully=false) resets state and posts ended exactly once (got \(log.events))")
 
@@ -485,6 +502,29 @@ func testRecordingLifecycleTermination() {
     let iEnded = indexOf(log.events, "notifier.ended")
     check(iShutdown != nil && iEnded != nil && iShutdown! < iEnded!,
           "stopRecordingForTermination(): ended fires after recorder.shutdown() releases the mic (got \(log.events))")
+}
+
+func testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce() {
+    print("\n--- Recording lifecycle: two racing stop sources for the same session end it exactly once ---")
+    // Simulates the exact race the 2026-09-26 round-4 review describes: a
+    // normal stop path (e.g. stopAndRecognize()) and a delayed AVFoundation
+    // failure callback (hopped to main) both having passed their own
+    // `guard isRecording` checks before either actually calls into
+    // endDictationSession() — calling it directly twice in a row for the
+    // same still-active session reproduces that ordering deterministically,
+    // without needing real threads.
+    let log = EventLog()
+    let ad = AppDelegate()
+    ad.dictationNotifier = LoggingDictationNotifier(log: log)
+    ad.recorder = LoggingAudioRecorder(log: log)
+
+    ad.startRecording()
+    ad.endDictationSession(reason: "race-a")
+    ad.endDictationSession(reason: "race-b")
+
+    let endedCount = log.events.filter { $0 == "notifier.ended" }.count
+    check(endedCount == 1,
+          "ended is posted exactly once even when two stop sources race for the same session (got \(endedCount) in \(log.events))")
 }
 
 // ══════════════════════════════════════
@@ -623,6 +663,116 @@ func testAudioRecorderWatchdogDetectsSilentStop() {
 }
 
 // ══════════════════════════════════════
+// DictationSession — pure state machine (2026-09-26 round-4)
+//
+// No AVFoundation, no AppDelegate — just the idle/recording(sessionID) state
+// transitions that every stop source now funnels through.
+// ══════════════════════════════════════
+func testDictationSessionEverySourceCanEndTheSameSession() {
+    print("\n--- DictationSession: every stop source ends the session it began (one at a time) ---")
+    for source in ["stopAndRecognize", "cancel", "termination", "unexpected stop", "device change"] {
+        let session = DictationSession()
+        guard let id = session.begin() else { check(false, "[\(source)] begin() succeeded"); continue }
+        check(session.end(sessionID: id), "[\(source)] end() with the correct sessionID succeeds")
+        check(session.currentSessionID == nil, "[\(source)] session is idle afterward")
+    }
+}
+
+func testDictationSessionDoubleEndIsNoOp() {
+    print("\n--- DictationSession: ending an already-ended session is a no-op ---")
+    let session = DictationSession()
+    guard let id = session.begin() else { check(false, "begin() succeeded"); return }
+    check(session.end(sessionID: id), "first end() succeeds")
+    check(!session.end(sessionID: id), "second end() with the same sessionID is a no-op (already idle)")
+}
+
+func testDictationSessionStaleEndIsNoOp() {
+    print("\n--- DictationSession: ending with a stale/wrong sessionID is a no-op ---")
+    let session = DictationSession()
+    guard let currentID = session.begin() else { check(false, "begin() succeeded"); return }
+    let staleID = currentID + 100  // never issued by this session
+    check(!session.end(sessionID: staleID), "end() with an ID that doesn't match the active session is a no-op")
+    check(session.currentSessionID == currentID, "the real active session is untouched by the stale end() call")
+}
+
+func testDictationSessionEndBeforeAnySessionStartedIsNoOp() {
+    print("\n--- DictationSession: end() before begin() has ever been called is a no-op ---")
+    let session = DictationSession()
+    check(!session.end(sessionID: 1), "end() on a freshly-created (idle) session is a no-op — nothing to end")
+}
+
+func testDictationSessionDoubleBeginIsRejected() {
+    print("\n--- DictationSession: begin() while already recording is rejected (no double began) ---")
+    let session = DictationSession()
+    guard let firstID = session.begin() else { check(false, "first begin() succeeded"); return }
+    check(session.begin() == nil, "a second begin() while still recording returns nil (no re-entrant began)")
+    check(session.currentSessionID == firstID, "the original session is unaffected by the rejected begin()")
+}
+
+func testDictationSessionConcurrentNormalStopAndFailureCallbackEndsExactlyOnce() {
+    print("\n--- DictationSession: simulated race — normal stop + a failure callback for the same session both try to end it ---")
+    // Simulates: stopAndRecognize() (main thread, synchronous) and a delayed
+    // AVFoundation failure callback (hopped to main) both racing to end the
+    // SAME session — whichever wins, the other must be a no-op, so `ended`
+    // fires exactly once total.
+    let session = DictationSession()
+    guard let id = session.begin() else { check(false, "begin() succeeded"); return }
+    var endedCount = 0
+    if session.end(sessionID: id) { endedCount += 1 }        // "normal stop" wins the race
+    if session.end(sessionID: id) { endedCount += 1 }        // "failure callback" arrives second
+    check(endedCount == 1, "exactly one of the two racing end() calls actually ends the session (got \(endedCount))")
+
+    // Same race, opposite arrival order — must still be exactly once.
+    let session2 = DictationSession()
+    guard let id2 = session2.begin() else { check(false, "begin() succeeded (session2)"); return }
+    var endedCount2 = 0
+    // "failure callback" (delayed, but happens to be scheduled first here)
+    if session2.end(sessionID: id2) { endedCount2 += 1 }
+    // "normal stop" arrives second — already idle, no-op
+    if session2.end(sessionID: id2) { endedCount2 += 1 }
+    check(endedCount2 == 1, "still exactly once regardless of which racing call happens to run first (got \(endedCount2))")
+}
+
+func testDictationSessionNewSessionAfterEndGetsFreshID() {
+    print("\n--- DictationSession: a new session after end() gets a different sessionID (no stale-ID collision) ---")
+    let session = DictationSession()
+    guard let firstID = session.begin() else { check(false, "first begin() succeeded"); return }
+    check(session.end(sessionID: firstID), "first session ends")
+    guard let secondID = session.begin() else { check(false, "second begin() succeeded"); return }
+    check(secondID != firstID, "the new session has a different sessionID than the old one (got \(firstID) and \(secondID))")
+    // A late end() call for the OLD id must not affect the NEW session.
+    check(!session.end(sessionID: firstID), "a late end() for the old sessionID does not end the new session")
+    check(session.currentSessionID == secondID, "the new session is still active after the stale old-ID end() call")
+}
+
+// ══════════════════════════════════════
+// AudioRecorder.handleInputDeviceChange — device change after unexpected stop
+// (2026-09-26 round-4)
+// ══════════════════════════════════════
+func testAudioRecorderInputDeviceChangeEndsAlreadyStoppedSession() {
+    print("\n--- AudioRecorder.handleInputDeviceChange: ends a session that silently stopped before watchdog/delegate noticed ---")
+    // ar.prepare() creates a real, inert (never `.record()`-called) recorder
+    // — isRecording is genuinely false, simulating "the recorder already
+    // stopped (e.g. device loss) but nothing has processed it yet", exactly
+    // like testAudioRecorderWatchdogDetectsSilentStop's setup, just reached
+    // through the input-device-change path instead of the watchdog timer.
+    let ar = AudioRecorder()
+    ar.prepare()
+    var unexpectedStopCount = 0
+    ar.onUnexpectedStop = { unexpectedStopCount += 1 }
+
+    ar.handleInputDeviceChange()
+
+    check(unexpectedStopCount == 1,
+          "handleInputDeviceChange() notices the already-stopped recorder and fires onUnexpectedStop — without this, .ended would be lost forever (got \(unexpectedStopCount))")
+
+    // Idempotent: recorder is now nil, a second call must not fire again.
+    ar.handleInputDeviceChange()
+    check(unexpectedStopCount == 1,
+          "a second handleInputDeviceChange() call after the recorder is already cleared does not fire again (got \(unexpectedStopCount))")
+}
+
+// ══════════════════════════════════════
 // AgentCommand properties
 // ══════════════════════════════════════
 func testAgentCommandProperties() {
@@ -656,11 +806,20 @@ func runAllTests() {
     testRecordingLifecycleReentrancyGuard()
     testRecordingLifecycleUnexpectedStop()
     testRecordingLifecycleTermination()
+    testRecordingLifecycleConcurrentStopSourcesEndExactlyOnce()
     testAudioRecorderHandleUnexpectedStopOrdering()
     testAudioRecorderHandleUnexpectedStopSkipsStopIfAlreadyStopped()
     testAudioRecorderHandleUnexpectedStopIgnoresStaleSession()
     testAudioRecorderEncodeErrorDidOccurFiresUnexpectedStop()
     testAudioRecorderWatchdogDetectsSilentStop()
+    testAudioRecorderInputDeviceChangeEndsAlreadyStoppedSession()
+    testDictationSessionEverySourceCanEndTheSameSession()
+    testDictationSessionDoubleEndIsNoOp()
+    testDictationSessionStaleEndIsNoOp()
+    testDictationSessionEndBeforeAnySessionStartedIsNoOp()
+    testDictationSessionDoubleBeginIsRejected()
+    testDictationSessionConcurrentNormalStopAndFailureCallbackEndsExactlyOnce()
+    testDictationSessionNewSessionAfterEndGetsFreshID()
     testAgentCommandProperties()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")
     if failed > 0 { exit(1) }

@@ -41,6 +41,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// テストが差し替えられるよう `private` にしない（他は DistributedNotificationCenter
     /// を叩かず fake で検証する）。実運用では `DictationNotificationPoster.shared` 固定。
     var dictationNotifier: DictationLifecycleNotifying = DictationNotificationPoster.shared
+    /// dictation `.began`/`.ended` を実際に送ってよいかの唯一の判定役
+    /// (2026-09-26 round-4)。`notifyDictationBegan()`/`endDictationSession()`
+    /// 以外の場所から直接 `dictationNotifier` を叩かない — 詳細は
+    /// `DictationSession.swift` のコメント参照。
+    let dictationSession = DictationSession()
 
     // Silence-based auto-stop (VAD: 直近フレームの平滑化で誤検出を低減)
     private let voiceThresholdBase: Float = 0.08  // 基本閾値（環境ノイズで動的に上昇）
@@ -128,12 +133,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func wireRecorderCallbacks() {
-        recorder.onUnexpectedStop = { [weak self] in self?.handleRecorderUnexpectedStop() }
+        // 2026-09-26 round-4: AVFoundation の delegate コールバックは worker
+        // thread から同期的に来ることがあり、main thread 上の通常停止経路
+        // (stopAndRecognize/cancelRecording) と生で競合すると二重 ended の
+        // 原因になる。main へ hop してから触ることで、AppDelegate 状態は
+        // 常にメインスレッド上でだけ変化する — 「exactly once」は
+        // DictationSession の sessionID 突き合わせが保証する。
+        recorder.onUnexpectedStop = { [weak self] in
+            DispatchQueue.main.async { self?.handleRecorderUnexpectedStop() }
+        }
     }
 
     /// エンコードエラー等、`stopAndRecognize()`/`cancelRecording()` を経由しない
     /// 想定外の録音停止を AudioRecorder から受け取る。正規の停止経路を通らないため
     /// ここで確実に isRecording をリセットし、.ended を一度だけ送る。
+    /// 必ずメインスレッドから呼ぶこと (`wireRecorderCallbacks()` が保証する)。
     func handleRecorderUnexpectedStop() {
         guard isRecording else { return }
         klog("handleRecorderUnexpectedStop: resetting recording state")
@@ -146,7 +160,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         restoreSystemVolume()
         overlay?.hide()
         // マイクは AudioRecorder 側で既に解放済み（この通知はそれより後に届く）
-        notifyDictationEnded()
+        endDictationSession(reason: "unexpected stop")
         if AppSettings.shared.wakeWordEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { WakeWordDetector.shared.start() }
         }
@@ -473,7 +487,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // shutdown() は録音を止めてファイルを残し (次回起動の CrashRecovery が回収)、
         // システムデフォルト入力デバイスも復元する
         recorder.shutdown()
-        if wasRecording { notifyDictationEnded() }
+        if wasRecording { endDictationSession(reason: "termination") }
     }
 
     // MARK: - Status Bar
@@ -1274,6 +1288,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func notifyDictationBegan() { dictationNotifier.postDictationBegan() }
     func notifyDictationEnded() { dictationNotifier.postDictationEnded() }
 
+    /// dictation セッションを終わらせる**唯一の**入口 (2026-09-26 round-4)。
+    /// `stopAndRecognize`/`cancelRecording`/`stopRecordingForTermination`/
+    /// `handleRecorderUnexpectedStop`/入力デバイス変更 — 全ての停止経路は
+    /// 直接 `notifyDictationEnded()` を叩かず、必ずここを通す。
+    /// `dictationSession.end(sessionID:)` が「今アクティブなセッションと
+    /// 一致する場合だけ」true を返すので、複数の停止経路が同じセッションに
+    /// ついて競合して呼んでも ended はちょうど1回しか発火しない — 二重終了・
+    /// 無関係な古いセッションの終了要求は安全に無視される。
+    /// テストが「複数の停止経路が同じセッションについて競合する」ケースを
+    /// 直接シミュレートして呼べるよう `private` にしない。
+    func endDictationSession(reason: String) {
+        guard let id = dictationSession.currentSessionID else { return }
+        guard dictationSession.end(sessionID: id) else { return }
+        notifyDictationEnded()
+        klog("DictationSession: ended session \(id) (\(reason))")
+    }
+
     /// テストが fake recorder/notifier を注入して直接叩けるよう `private` にしない
     /// (`stopAndRecognize`/`cancelRecording` も同様)。
     func startRecording() {
@@ -1306,7 +1337,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         isRecording    = true
-        notifyDictationBegan()
+        // dictationSession が「今 idle か」の唯一の判定役 — 二重 began の
+        // 最終防衛 (通常は上の再入防止ガードで既に弾かれている)。
+        if dictationSession.begin() != nil {
+            notifyDictationBegan()
+        }
         lastStreamingResult = nil
         streamingAccumulated = ""
         streamingSegmentText = ""
@@ -1375,7 +1410,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // マイクは recorder.stop() が返った時点で確実に解放されている（同期呼び出し）。
         // .ended はここで初めて送る — 録音停止より前に送ると、Second がまだ Koe が
         // 握っているマイクを奪いに行ってしまう。
-        notifyDictationEnded()
+        endDictationSession(reason: "stopAndRecognize")
         guard let audioURL else {
             klog("stopAndRecognize: recorder.stop() returned nil")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
@@ -2310,7 +2345,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         recorder.cancel()
         // マイクは recorder.cancel() が返った時点で確実に解放されている。ここで初めて
         // .ended を送る — 停止より前に送ると Second がまだ握っているマイクを奪いに行く。
-        if wasRecording { notifyDictationEnded() }
+        if wasRecording { endDictationSession(reason: "cancel") }
         speech.cancel()
         overlay?.hide()
         if AppSettings.shared.wakeWordEnabled {

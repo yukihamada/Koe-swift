@@ -16,10 +16,13 @@ final class LlamaContext {
     private(set) var isLoaded = false
     private(set) var isLoading = false
     /// `ctx`/`model` と同じく `queue` 上でのみ読み書きする (queue-confined)。
-    /// `unload()` がこれを立てた後は、その時点で走っていた/後から来た `loadModel`
-    /// が作り終えた ctx/model を publish せず即座に free する — 同じ理由は
-    /// `WhisperContext.terminating` のコメント参照。
-    private var terminating = false
+    /// 通常の `unload()`/恒久的な `unloadForTermination()` のどちらが呼ばれても
+    /// +1 される — 同じ理由・恒久フラグと分けた設計は `WhisperContext.generation`
+    /// のコメント参照 (モデル切替・低メモリ解放後の再ロードを壊さないため、
+    /// 「呼ばれたら二度とロードできない」フラグにしてはいけない)。
+    private var generation = 0
+    /// アプリ終了専用の恒久フラグ。`unloadForTermination()` だけが立てる。
+    private var isShutDown = false
 
     // MARK: - Model catalog
 
@@ -155,6 +158,14 @@ final class LlamaContext {
 
         queue.async { [weak self] in
             guard let self else { return }
+            let myGeneration = self.generation
+            if self.isShutDown {
+                DispatchQueue.main.async {
+                    self.isLoading = false
+                    completion(false)
+                }
+                return
+            }
 
             // Initialize backends (Metal etc.) — whisperと共有済みなら軽い
             ggml_backend_load_all()
@@ -199,9 +210,10 @@ final class LlamaContext {
             // state) — unload() の teardown も同じ queue 上で直列に走るため、
             // 順序の食い違い (load完了後にunloadが古いctxをfreeし損ねる /
             // unload後にloadがctxを再publishしてしまう) が起きない。
-            if self.terminating {
-                // 終了処理が既に始まっていた — 今作ったばかりの ctx/model を
-                // publish せずその場で free する。
+            if self.isShutDown || self.generation != myGeneration {
+                // 終了処理、または通常の unload() が既にこの試行を無効化して
+                // いた — 今作ったばかりの ctx/model を publish せずその場で
+                // free する。
                 llama_free(context)
                 llama_model_free(mdl)
                 DispatchQueue.main.async {
@@ -223,15 +235,14 @@ final class LlamaContext {
         }
     }
 
-    /// アプリ終了時に明示的に呼ぶこと — `WhisperContext.unload()` と同じ理由
-    /// (`LlamaContext.shared` も static let のため deinit がプロセス終了時に確実に
-    /// 走る保証がなく、llama.cpp が抱える ggml Metal backend が free されないまま
-    /// 終了すると `ggml_metal_device_free` が __cxa_finalize 時に abort しうる)。
+    /// モデルを解放する（モデル切替・低メモリ時の解放など通常の用途）。
+    /// **恒久的な拒否ではない** — 詳細は `WhisperContext.unload()`/`.generation`
+    /// のコメント参照。この後の `loadModel()` は普通に成功しなければならない。
     /// `generate()` は `queue` 上で `ctx`/`model` を使うため、ここも同じ `queue`
     /// 上で直列化して実行中/キュー待ちの生成が終わってから free する。
     func unload() {
         rq.syncOrInline {
-            terminating = true
+            generation += 1
             if let ctx { llama_free(ctx) }
             if let model { llama_model_free(model) }
             ctx = nil
@@ -239,6 +250,24 @@ final class LlamaContext {
             isLoaded = false
         }
         klog("Llama: unloaded")
+    }
+
+    /// アプリ終了専用。`unload()` と違い、以後の `loadModel()` を恒久的に拒否する
+    /// — 詳細・根本原因は `WhisperContext.unloadForTermination()` のコメント参照
+    /// (`LlamaContext.shared` も static let のため deinit がプロセス終了時に確実に
+    /// 走る保証がなく、llama.cpp が抱える ggml Metal backend が free されないまま
+    /// 終了すると `ggml_metal_device_free` が __cxa_finalize 時に abort しうる)。
+    func unloadForTermination() {
+        rq.syncOrInline {
+            isShutDown = true
+            generation += 1
+            if let ctx { llama_free(ctx) }
+            if let model { llama_model_free(model) }
+            ctx = nil
+            model = nil
+            isLoaded = false
+        }
+        klog("Llama: unloaded for termination")
     }
 
     // MARK: - Chat completion
@@ -251,8 +280,9 @@ final class LlamaContext {
             // (queue.async に積む前) に読んで捕まえると、その後キュー待ちの
             // 間に unload() が先に走って free した生ポインタを使うことになる
             // (use-after-free)。queue は直列なので、ここまで来た時点で
-            // unload() がまだ走っていなければ ctx/model は確実に生きている。
-            guard let self, self.isLoaded, !self.terminating,
+            // unload()/unloadForTermination() がまだ走っていなければ ctx/model
+            // は確実に生きている。
+            guard let self, self.isLoaded, !self.isShutDown,
                   let model = self.model, let ctx = self.ctx else {
                 DispatchQueue.main.async { completion(nil) }
                 return

@@ -420,9 +420,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // ggml の Metal backend が誰にも free されず、Metal デバイス消滅後の
         // __cxa_finalize で ggml_metal_device_free が abort する
         // (2026-09-19 終了時クラッシュの原因)。
-        WhisperContext.shared.unload()
+        WhisperContext.shared.unloadForTermination()
         // LLM後処理用のローカル llama.cpp モデル（ロードされていれば）も同じ理由で解放
-        LlamaContext.shared.unload()
+        LlamaContext.shared.unloadForTermination()
         // Carbon の global hotkey / event handler を確実に解放
         // (deinit はアプリ終了時に確実には呼ばれない)
         unregisterAllCarbonHotKeys()

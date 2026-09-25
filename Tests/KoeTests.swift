@@ -216,18 +216,32 @@ func testReentrantSerialQueueSyncFromInsideDoesNotDeadlock() {
 }
 
 // ══════════════════════════════════════
-// WhisperContext/LlamaContext "terminating flag" race — simulated
+// WhisperContext/LlamaContext "generation token" race — simulated
 //
 // WhisperContext/LlamaContext themselves wrap real whisper.cpp/llama.cpp C
 // contexts (whisper_init_from_file_with_params/llama_model_load_from_file)
 // and can't be unit-tested without a real, multi-hundred-MB model file — not
 // something to require for a headless test run. FakeModelLoader below
-// mirrors their exact control-flow shape (build off to the side, publish
-// INSIDE the same queue block that checks `terminating`, unload() sets
-// `terminating` and frees under the same queue) using a fake resource
-// instead — it is a simulation of the pattern, not the production code
+// mirrors their `loadModelSync`-shaped control flow: the slow "build" runs
+// OFF `rq`'s queue (this is the shape where a generation token actually
+// matters — a load that does build+publish atomically inside one single
+// `rq.async` block, like WhisperContext.loadModel's async path, can never
+// observe its own generation changing mid-block, since nothing else can run
+// on a serial queue while it holds it; `loadModelSync`'s build-outside/
+// publish-inside split is where a concurrent unload() genuinely can land in
+// between). This is a simulation of the pattern, not the production code
 // itself. The ReentrantSerialQueue tests above are what exercise the real,
 // shared code directly.
+//
+// 2026-09-26 review: the previous version of this simulation (and of
+// WhisperContext/LlamaContext themselves) used a single permanent
+// "terminating" flag for both "unload() was called" and "the app is
+// shutting down" — which meant ANY unload() (including the normal model-
+// switch / low-memory-reload unload() that SettingsWindowController and the
+// low-memory path use) permanently broke all future loads. Fixed in
+// production by splitting `unload()` (bumps `generation`, allows later
+// loads) from `unloadForTermination()`/`shutdown()` (also sets a permanent
+// `isShutDown`). Mirrored here.
 final class FakeGGMLResource {
     let id: Int
     private(set) var freed = false
@@ -238,30 +252,41 @@ final class FakeGGMLResource {
 final class FakeModelLoader {
     let rq = ReentrantSerialQueue(label: "test.fake-model-loader")
     private var resource: FakeGGMLResource?
-    private var terminating = false
+    private var generation = 0
+    private var isShutDown = false
     private(set) var freedIDs: [Int] = []
     private(set) var publishedIDs: [Int] = []
 
-    /// Mirrors WhisperContext.loadModel/LlamaContext.loadModel: the "slow
-    /// build" happens on `rq`'s queue, and publishing (or, if `terminating`
-    /// was already set, disposing the freshly-built resource instead) also
-    /// happens inside that SAME queue block — never split across a hop to
-    /// another queue, which is exactly what let the original bug happen
-    /// (publish-after-unload / unload-sees-nil-and-frees-nothing).
+    /// Mirrors WhisperContext.loadModelSync: snapshot the generation, build
+    /// OFF `rq` (a real race window — a concurrent unload()/shutdown() can
+    /// run to completion while this sleep/build is in progress), then
+    /// publish-or-discard inside `rq`, gated by whether the generation is
+    /// still the one this attempt started with.
     func load(id: Int, buildDelay: TimeInterval = 0, completion: @escaping (Bool) -> Void) {
-        rq.async { [weak self] in
-            guard let self else { return }
+        var myGeneration = 0
+        var shutDown = false
+        rq.syncOrInline {
+            myGeneration = generation
+            shutDown = isShutDown
+        }
+        guard !shutDown else {
+            DispatchQueue.main.async { completion(false) }
+            return
+        }
+        DispatchQueue.global().async {
             if buildDelay > 0 { Thread.sleep(forTimeInterval: buildDelay) }
             let built = FakeGGMLResource(id: id)
-            if self.terminating {
-                built.free()
-                self.freedIDs.append(id)
-                DispatchQueue.main.async { completion(false) }
-                return
+            self.rq.syncOrInline {
+                if self.isShutDown || self.generation != myGeneration {
+                    built.free()
+                    self.freedIDs.append(id)
+                    DispatchQueue.main.async { completion(false) }
+                } else {
+                    self.resource = built
+                    self.publishedIDs.append(id)
+                    DispatchQueue.main.async { completion(true) }
+                }
             }
-            self.resource = built
-            self.publishedIDs.append(id)
-            DispatchQueue.main.async { completion(true) }
         }
     }
 
@@ -269,7 +294,7 @@ final class FakeModelLoader {
     /// queue block, not before submitting to it.
     func generate(completion: @escaping (Int?) -> Void) {
         rq.async { [weak self] in
-            guard let self, !self.terminating, let r = self.resource, !r.freed else {
+            guard let self, !self.isShutDown, let r = self.resource, !r.freed else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
@@ -277,13 +302,23 @@ final class FakeModelLoader {
         }
     }
 
+    /// Normal unload — model switch / low-memory reload. Must NOT
+    /// permanently block later loads.
     func unload() {
         rq.syncOrInline {
-            terminating = true
-            if let r = resource {
-                r.free()
-                freedIDs.append(r.id)
-            }
+            generation += 1
+            if let r = resource { r.free(); freedIDs.append(r.id) }
+            resource = nil
+        }
+    }
+
+    /// Terminal shutdown — app is quitting. Permanently refuses all future
+    /// loads (mirrors WhisperContext.unloadForTermination()).
+    func shutdown() {
+        rq.syncOrInline {
+            isShutDown = true
+            generation += 1
+            if let r = resource { r.free(); freedIDs.append(r.id) }
             resource = nil
         }
     }
@@ -296,48 +331,52 @@ func drainMainQueue(_ seconds: TimeInterval = 1) {
     }
 }
 
-func testModelLoaderUnloadDuringInFlightLoad() {
-    print("\n--- FakeModelLoader: unload() called while a load's build is still in-flight ---")
-    // Because `rq` is a single serial queue, a load's build that has already
-    // been dequeued and started running always finishes (and makes its
-    // publish-or-discard decision) BEFORE a concurrently-called unload()
-    // gets its turn — unload() is submitted after the load and must wait in
-    // line (FIFO). So in this exact interleaving the load sees
-    // `terminating == false` and legitimately publishes; the invariant this
-    // test actually protects is what happens next: unload() must still find
-    // and free that just-published resource — not see a stale nil and leave
-    // it dangling (the original bug: publish deferred to a *different*
-    // queue could let it happen strictly after unload() had already run).
+func testModelLoaderNormalUnloadAllowsLaterLoad() {
+    print("\n--- FakeModelLoader: normal unload() → a later load() still succeeds ---")
     let loader = FakeModelLoader()
-    var loadCompletedSuccessfully: Bool?
-    loader.load(id: 1, buildDelay: 0.2) { ok in loadCompletedSuccessfully = ok }
-    Thread.sleep(forTimeInterval: 0.05)  // let the load's block actually start running
-    loader.unload()
+    var firstOK: Bool?
+    loader.load(id: 1) { ok in firstOK = ok }
     drainMainQueue(1)
-    check(loadCompletedSuccessfully == true,
-          "a load already running when unload() is called still completes and reports success (got \(String(describing: loadCompletedSuccessfully)))")
-    check(loader.freedIDs == [1],
-          "unload() finds and frees exactly the resource that load just published — no leak (got freed=\(loader.freedIDs) published=\(loader.publishedIDs))")
+    check(firstOK == true, "initial load succeeds")
 
-    // The real invariant: no revival after unload() returns.
-    var afterUnload: Int?
-    var afterUnloadSet = false
-    loader.generate { id in afterUnload = id; afterUnloadSet = true }
+    loader.unload()  // model switch / low-memory reload — must not latch permanently
+    var secondOK: Bool?
+    loader.load(id: 2) { ok in secondOK = ok }
     drainMainQueue(1)
-    check(afterUnloadSet && afterUnload == nil,
-          "generate() after this sequence returns nil — the resource is gone, not silently revived")
+    check(secondOK == true,
+          "a load after a normal (non-terminal) unload() still succeeds — unload() must not permanently block future loads")
+    check(loader.publishedIDs == [1, 2],
+          "both loads published in order (got \(loader.publishedIDs))")
 }
 
-func testModelLoaderLoadAfterUnloadIsAlwaysDiscarded() {
-    print("\n--- FakeModelLoader: load() called after unload() already completed ---")
+func testModelLoaderStaleLoadFreedWhenUnloadedMidBuild() {
+    print("\n--- FakeModelLoader: unload() while a load's build is in flight → stale load freed ---")
+    // Unlike a single-atomic-queue-block load, `load()` here snapshots its
+    // generation and then builds OFF `rq` — so a concurrent unload() CAN
+    // genuinely run to completion (bumping the generation) while the build
+    // is still in progress, landing squarely between the snapshot and the
+    // publish check.
     let loader = FakeModelLoader()
-    loader.unload()  // nothing was ever loaded — a no-op teardown, but sets terminating
     var result: Bool?
-    loader.load(id: 2) { ok in result = ok }
+    loader.load(id: 1, buildDelay: 0.2) { ok in result = ok }
+    Thread.sleep(forTimeInterval: 0.05)  // ensure the generation snapshot already happened
+    loader.unload()  // runs immediately — rq is free, the build is off on a different queue
     drainMainQueue(1)
-    check(result == false, "load() after unload() reports failure")
-    check(loader.freedIDs == [2] && loader.publishedIDs.isEmpty,
-          "its resource is freed immediately instead of published (got freed=\(loader.freedIDs) published=\(loader.publishedIDs))")
+    check(result == false,
+          "a load whose build finishes after a concurrent unload() reports failure (stale generation)")
+    check(loader.freedIDs.contains(1) && !loader.publishedIDs.contains(1),
+          "its resource is freed, never published (got freed=\(loader.freedIDs) published=\(loader.publishedIDs))")
+}
+
+func testModelLoaderShutdownRefusesFutureLoads() {
+    print("\n--- FakeModelLoader: shutdown() permanently refuses later loads ---")
+    let loader = FakeModelLoader()
+    loader.shutdown()  // app is quitting — nothing was ever loaded here
+    var result: Bool?
+    loader.load(id: 1) { ok in result = ok }
+    drainMainQueue(1)
+    check(result == false, "load() after shutdown() is refused")
+    check(loader.publishedIDs.isEmpty, "nothing gets published after shutdown() (got \(loader.publishedIDs))")
 }
 
 func testModelLoaderGenerateAfterUnloadReturnsNil() {
@@ -374,8 +413,9 @@ func runAllTests() {
     testLLMSanitization()
     testReentrantSerialQueueSyncFromOutside()
     testReentrantSerialQueueSyncFromInsideDoesNotDeadlock()
-    testModelLoaderUnloadDuringInFlightLoad()
-    testModelLoaderLoadAfterUnloadIsAlwaysDiscarded()
+    testModelLoaderNormalUnloadAllowsLaterLoad()
+    testModelLoaderStaleLoadFreedWhenUnloadedMidBuild()
+    testModelLoaderShutdownRefusesFutureLoads()
     testModelLoaderGenerateAfterUnloadReturnsNil()
     testAgentCommandProperties()
     print("\n=== Results: \(passed) passed, \(failed) failed ===")

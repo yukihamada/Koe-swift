@@ -1485,12 +1485,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         recognitionPartialID = PartialTranscriptStore.shared.currentSessionID
 
         let audioURL = recorder.stop()
-        // マイクは recorder.stop() が返った時点で確実に解放されている（同期呼び出し）。
-        // .ended はここで初めて送る — 録音停止より前に送ると、Second がまだ Koe が
-        // 握っているマイクを奪いに行ってしまう。
-        endDictationSession(reason: "stopAndRecognize")
         guard let audioURL else {
-            klog("stopAndRecognize: recorder.stop() returned nil")
+            // round-11 review: recorder.stop() が nil を返すのは「バックエンドが
+            // 停止要求を無視してまだ録音中」の場合を含む (AudioRecorder.stopActive
+            // 参照) — この時点で .ended を送ると、Second がまだ Koe が握っている
+            // マイクを奪いに行ってしまう。AudioRecorder 内部で一度だけ再試行が
+            // スケジュールされ、それでも止まらなければ既存の watchdog が実際の
+            // 停止を検出した時点で handleRecorderUnexpectedStop 経由の通常の
+            // 「想定外停止」経路として .ended を送る — ここでは送らない。
+            klog("stopAndRecognize: recorder.stop() returned nil — not posting ended (backend may still be recording; watchdog will finish it)")
             PartialTranscriptStore.shared.finish(id: recognitionPartialID)
             overlay?.hide()
             if AppSettings.shared.wakeWordEnabled {
@@ -1498,6 +1501,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // マイクは recorder.stop() が非nilを返した時点で確実に解放されている
+        // (AudioRecorder.stopActive が isRecording == false を確認済み)。
+        // .ended はここで初めて送る — 録音停止より前に送ると、Second がまだ Koe が
+        // 握っているマイクを奪いに行ってしまう。
+        endDictationSession(reason: "stopAndRecognize")
 
         // 音声レベルが低すぎた場合のみスキップ（ハルシネーション防止）
         // speechDetected は参考情報のみ — peakLevel が十分あれば必ず認識する
@@ -2420,10 +2428,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         PartialTranscriptStore.shared.finishCurrent()
         PartialTranscriptStore.shared.finish(id: recognitionPartialID)
         recognitionPartialID = nil
-        recorder.cancel()
-        // マイクは recorder.cancel() が返った時点で確実に解放されている。ここで初めて
-        // .ended を送る — 停止より前に送ると Second がまだ握っているマイクを奪いに行く。
-        if wasRecording { endDictationSession(reason: "cancel") }
+        let cancelledBackend = recorder.cancel()
+        // round-11 review: recorder.cancel() が false を返すのは「バックエンドが
+        // 停止要求を無視してまだ録音中」の場合を含む — この時 .ended を送ると
+        // Second がまだ握っているマイクを奪いに行ってしまう。AudioRecorder 内部で
+        // 一度だけ再試行がスケジュールされ、それでも止まらなければ既存の watchdog
+        // が実際の停止を検出した時点で通常の「想定外停止」経路として .ended を送る。
+        // マイクは recorder.cancel() が true を返した時点で確実に解放されている。
+        // .ended を送るのはその時だけ — 停止より前に送ると Second がまだ握っている
+        // マイクを奪いに行く。
+        if wasRecording && cancelledBackend { endDictationSession(reason: "cancel") }
         speech.cancel()
         overlay?.hide()
         if AppSettings.shared.wakeWordEnabled {

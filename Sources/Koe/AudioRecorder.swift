@@ -74,14 +74,39 @@ private final class RecordingContext {
 }
 
 class AudioRecorder: NSObject, AVAudioRecorderDelegate {
-    /// 想定外の録音停止の理由。呼び出し側 (AppDelegate) は現状これを区別
-    /// せずにフルリセットするだけだが、型として持たせておくことで将来の
-    /// 分岐 (例: エンコードエラーだけ再試行する等) を安全に足せるようにする。
+    /// 録音停止の理由。想定外系 (`encodeError`/`finishedUnsuccessfully`/
+    /// `watchdogSilentStop`/`inputDeviceChangedWhileStopped`) は
+    /// `onUnexpectedStop` 経由で呼び出し側 (AppDelegate) にも渡り、そちらは
+    /// 現状これを区別せずフルリセットするだけだが、型として持たせておく
+    /// ことで将来の分岐を安全に足せるようにする。
+    ///
+    /// **round-11 review**: `normalStop`/`cancelStop`/`shutdownStop` は
+    /// `stopActive(reason:)` 内部のログ用途のみに使う意図的な停止の理由 —
+    /// これらが `onUnexpectedStop` に渡ることはない (呼び出し側は
+    /// `stop()`/`cancel()` の戻り値で直接成否を知る)。
     enum Reason: Equatable {
         case encodeError(String?)
         case finishedUnsuccessfully
         case watchdogSilentStop
         case inputDeviceChangedWhileStopped
+        case normalStop
+        case cancelStop
+        case shutdownStop
+    }
+
+    /// `stopActive(reason:)` の結果。「今アクティブなセッションについて
+    /// 呼び出し側が `.ended` を送ってよいか」を型で強制する (round-11)。
+    private enum StopResult {
+        /// backend が実際に停止したことを確認できた。呼び出し側は `.ended`
+        /// を送ってよい。
+        case stopped(sessionID: UUID, tempURL: URL)
+        /// backend が停止要求を無視し、まだ録音中。`currentContext` は
+        /// クリアされていない (セッションは生きている扱い) — 呼び出し側は
+        /// `.ended` を送ってはいけない。最終的な検出と通知は watchdog に
+        /// 委ねられる。
+        case stillRecording(sessionID: UUID)
+        /// 呼び出し時点で既にアクティブなセッションが無かった。
+        case noActiveSession
     }
 
     /// **2026-09-26 round-9 review**: `currentContext`/pre-warm 用プロパティ/
@@ -312,50 +337,102 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         restoreDefaultInputDevice()
     }
 
-    /// **round-10 review**: 必ず `currentContext.backend` (= 実際に録音して
-    /// いる recorder) を止める。`prewarmedRecorder` には一切触れない —
-    /// 別枠なので触る理由がない。
-    func stop() -> URL? {
+    /// 全ての「停止試行」が通る唯一の入口 (round-11 review)。
+    ///
+    /// **背景**: round-10 までは `stop()`/`cancel()`/`shutdown()`/
+    /// 想定外停止 (`performUnexpectedStopOnMain`) がそれぞれ独立に
+    /// 「`backend.stop()` を呼んで `currentContext` を nil にする」ロジックを
+    /// 持っていた。`stop()` だけは `isRecording` を再チェックして成功を
+    /// 偽装しないようにしていたが、`cancel()`/`shutdown()` は再チェックせず
+    /// 無条件に `currentContext = nil` していた — backend が `stop()` を
+    /// 呼ばれても実際には録音を止めない (テストの fake で再現可能、実機でも
+    /// 理論上あり得る) 場合、マイクがまだ解放されていないのに呼び出し側
+    /// (AppDelegate) はセッションが終わったと思い込んでしまう。
+    ///
+    /// **ルール**: セッション X について `.ended` を送ってよいのは、X の
+    /// backend が実際に「録音していない」と観測できた時だけ。この関数が
+    /// その唯一の判定者になる。
+    ///
+    /// - backend が停止を確認できた (`isRecording == false`) →
+    ///   `currentContext` をクリアし `.stopped` を返す。呼び出し側は
+    ///   これを見て `.ended` を送ってよい。
+    /// - まだ録音中 (backend が停止要求を無視した) → `currentContext` は
+    ///   **そのまま保持**する (セッションは生きている扱い・UI はエラー
+    ///   状態のまま)。ログを出し、次の main run loop tick で一度だけ
+    ///   `backend.stop()` を再試行する。それでも止まらなければ、既に
+    ///   稼働している watchdog (`performWatchdogCheckOnMain`、1秒毎) が
+    ///   `isRecording == false` になった瞬間を検出し、想定外停止経路
+    ///   (`onUnexpectedStop`) 経由で最終的に `.ended` を送る —
+    ///   「本当に止まったことが確認できるまで watchdog が面倒を見る」
+    ///   ことが保証される。
+    /// - 呼び出し時点で `currentContext` が既に nil → `.noActiveSession`。
+    ///
+    /// `force`: shutdown/termination 専用の唯一のドキュメント化された例外。
+    /// プロセスが終了する直前は「本当に止まるまで待つ」余地が無い —
+    /// プロセスが終了すれば OS がマイクを強制的に解放する。`force: true`
+    /// では `backend.stop()` は試みるが、結果に関わらず必ず
+    /// `currentContext` をクリアして `.stopped` を返す。`shutdown()` だけが
+    /// これを使う。
+    @discardableResult
+    private func stopActive(reason: Reason, force: Bool = false) -> StopResult {
         assertMainThreadForMutation()
+        guard let context = currentContext else { return .noActiveSession }
+        let backend = context.backend
+        if backend.isRecording {
+            backend.stop()
+        }
+        guard !backend.isRecording || force else {
+            klog("AudioRecorder: stopActive(reason: \(reason)) — backend refused to stop, keeping session active and scheduling one retry")
+            let contextSnapshot = context
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.currentContext === contextSnapshot else { return }
+                if contextSnapshot.backend.isRecording {
+                    contextSnapshot.backend.stop()
+                    klog("AudioRecorder: stopActive retry — re-issued stop() for still-active session")
+                }
+                // ここで isRecording が false になったことを検出して .ended を
+                // 送るのは watchdog の役目 (performWatchdogCheckOnMain)。
+                // watchdog はこのパスでは止めていないので、次の tick で拾う。
+            }
+            return .stillRecording(sessionID: context.sessionID)
+        }
         stopWatchdog()
-        // 2026-09-26 round-3 review: 以前はファイル move 失敗時などの早期
-        // return が restoreDefaultInputDevice() をスキップしていた —
-        // システムのデフォルト入力デバイスを切り替えたままにしてしまう。
-        // defer にして、どの exit path でも必ず復元する。
-        defer { restoreDefaultInputDevice() }
-        guard let context = currentContext else {
+        let sessionID = context.sessionID
+        let tempURL = context.tempURL
+        currentContext = nil
+        restoreDefaultInputDevice()
+        return .stopped(sessionID: sessionID, tempURL: tempURL)
+    }
+
+    /// **round-10/11 review**: `stopActive(reason:)` に一本化。backend が
+    /// 実際に停止を確認できた時だけ非nilを返す。
+    func stop() -> URL? {
+        switch stopActive(reason: .normalStop) {
+        case .noActiveSession:
             klog("AudioRecorder: stop called but no session is active")
             return nil
-        }
-        let r = context.backend
-        if r.isRecording {
-            r.stop()
-        }
-        let src = context.tempURL
-        currentContext = nil
-        guard !r.isRecording else {
-            // 実際には起きないはず (AVAudioRecorder.stop() は同期的) だが、
-            // マイクが本当に解放されたことを確認する前に「成功」を報告しない。
-            klog("AudioRecorder: stop() did not actually release the active recorder — not reporting success")
+        case .stillRecording:
+            klog("AudioRecorder: stop() — backend refused to release the active recorder; not reporting success (retry scheduled, watchdog will finish it)")
             return nil
+        case .stopped(_, let src):
+            // 一意なファイル名で保存（議事録モードで次の録音に上書きされないように）
+            let id = UUID().uuidString.prefix(8)
+            let dest = Self.audioDir.appendingPathComponent("recognize_\(id).wav")
+            do {
+                // move (rename) — 長時間録音の巨大 WAV をコピーしない & 同一ボリューム内でアトミック
+                try FileManager.default.moveItem(at: src, to: dest)
+            } catch {
+                klog("AudioRecorder: move failed: \(error.localizedDescription)")
+                return nil
+            }
+            let size = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
+            klog("Recording stopped, size=\(size) bytes -> \(dest.lastPathComponent)")
+            // 古い一時ファイルを掃除（議事録モード中は保持、通常時は最新5件以外を削除）
+            if !MeetingMode.shared.isActive {
+                cleanOldFiles()
+            }
+            return dest
         }
-        // 一意なファイル名で保存（議事録モードで次の録音に上書きされないように）
-        let id = UUID().uuidString.prefix(8)
-        let dest = Self.audioDir.appendingPathComponent("recognize_\(id).wav")
-        do {
-            // move (rename) — 長時間録音の巨大 WAV をコピーしない & 同一ボリューム内でアトミック
-            try FileManager.default.moveItem(at: src, to: dest)
-        } catch {
-            klog("AudioRecorder: move failed: \(error.localizedDescription)")
-            return nil
-        }
-        let size = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? Int) ?? 0
-        klog("Recording stopped, size=\(size) bytes -> \(dest.lastPathComponent)")
-        // 古い一時ファイルを掃除（議事録モード中は保持、通常時は最新5件以外を削除）
-        if !MeetingMode.shared.isActive {
-            cleanOldFiles()
-        }
-        return dest
     }
 
     /// 古い recognize_*.wav を掃除（最新5件を残す）
@@ -373,33 +450,49 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
         }
     }
 
-    /// **round-10 review**: 必ず `currentContext.backend` を止める。
-    func cancel() {
+    /// **round-11 review**: `stopActive(reason:)` に一本化。backend が実際に
+    /// 停止を確認できた時だけ true を返し、一時ファイルを削除する。まだ
+    /// 録音中 (backend が停止を拒否した) 場合はセッションを生かしたまま
+    /// false を返す — 呼び出し側 (AppDelegate) はこの場合 `.ended` を送っては
+    /// いけない。最終的な検出と通知は `stopActive` が仕込む再試行 + 既存の
+    /// watchdog に委ねられる (通常の想定外停止経路として `.ended` が届く)。
+    @discardableResult
+    func cancel() -> Bool {
         assertMainThreadForMutation()
-        stopWatchdog()
-        if let context = currentContext {
-            context.backend.stop()
-            try? FileManager.default.removeItem(at: context.tempURL)
+        guard let context = currentContext else {
+            klog("AudioRecorder: cancel called but no session is active")
+            return false
         }
-        currentContext = nil
-        klog("Recording cancelled")
-        // restoreDefaultInputDevice() を先に呼んでから recorder = nil。
-        // ここでは pre-prepare せず、次回 start() で applySelectedInputDevice → prepare の順を保証する。
-        restoreDefaultInputDevice()
+        let tempURL = context.tempURL
+        switch stopActive(reason: .cancelStop) {
+        case .stopped:
+            try? FileManager.default.removeItem(at: tempURL)
+            klog("Recording cancelled")
+            return true
+        case .stillRecording:
+            klog("AudioRecorder: cancel() — backend refused to stop; session kept active (temp file not deleted), watchdog will finish the cancel once it observes isRecording == false")
+            return false
+        case .noActiveSession:
+            return false
+        }
     }
 
     /// アプリ終了時用: 録音を止めるがファイルは**削除しない**（cancel と違い、
     /// 録音中に終了しても次回起動時に CrashRecovery が rec_*.wav を回収できる）。
-    /// **round-10 review**: 必ず `currentContext.backend` を止める。
+    ///
+    /// **round-11 review**: shutdown/termination は `stopActive` の唯一の
+    /// ドキュメント化された例外 (`force: true`) — プロセスが終了する直前は
+    /// 「backend が本当に止まるまで待つ」余地が無く、プロセスの終了自体が
+    /// OS によるマイクの強制解放になるため、backend の停止確認に関わらず
+    /// 必ず `currentContext` をクリアする。呼び出し側
+    /// (`stopRecordingForTermination`) はこれを見ずに常に `.ended` を送る。
     func shutdown() {
         assertMainThreadForMutation()
-        stopWatchdog()
-        if let context = currentContext, context.backend.isRecording {
-            context.backend.stop()
-            klog("AudioRecorder: shutdown — in-progress recording preserved for recovery")
+        let wasRecording = currentContext?.backend.isRecording ?? false
+        stopActive(reason: .shutdownStop, force: true)
+        if wasRecording {
+            klog("AudioRecorder: shutdown — in-progress recording preserved for recovery (backend stop forced regardless of outcome)")
         }
-        currentContext = nil
-        restoreDefaultInputDevice()
     }
 
     // MARK: - 入力デバイス切り替え
@@ -574,15 +667,23 @@ class AudioRecorder: NSObject, AVAudioRecorderDelegate {
             klog("AudioRecorder: ignoring unexpected-stop callback from a stale/previous session's recorder")
             return
         }
-        stopWatchdog()
-        if recorder.isRecording {
-            recorder.stop()
-        }
-        let sessionID = context.sessionID
+        // round-11 review: `stopActive` に一本化。`context` はここで既に
+        // identity 確認済みなので、`stopActive` 内部で再度 `currentContext`
+        // を読んでも同じインスタンスを指す。`onUnexpectedStop` は
+        // `stopActive` が `currentContext` をクリアする前に `context` から
+        // 一度だけスナップショットして使う (round-7/8 の TOCTOU 対策を維持)。
         let onUnexpectedStop = context.onUnexpectedStop
-        currentContext = nil
-        restoreDefaultInputDevice()
-        onUnexpectedStop(sessionID, reason)
+        switch stopActive(reason: reason) {
+        case .stopped(let sessionID, _):
+            onUnexpectedStop(sessionID, reason)
+        case .stillRecording:
+            // backend がこの時点でも停止を拒否した — stopActive が既に
+            // 再試行をスケジュール済み。watchdog が最終的に成功を検出し、
+            // この関数を再度通して onUnexpectedStop を呼ぶ。
+            klog("AudioRecorder: performUnexpectedStopOnMain — backend still recording after stop attempt, deferring to retry/watchdog")
+        case .noActiveSession:
+            break
+        }
     }
 
     /// テスト専用の読み取り専用アクセサ: 今アクティブなセッションの
